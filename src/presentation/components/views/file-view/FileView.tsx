@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
-import { readTextFile } from '@tauri-apps/plugin-fs'
 import { useFileStore, createFileMetadata } from '../../../../application/store/file-store'
 import { useTopicStore } from '../../../../application/store/topic-store'
 import PDFViewer from './PDFViewer'
@@ -14,10 +13,11 @@ function FileView() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const loadFile = useCallback(async (path: string) => {
+  const loadTextFile = useCallback(async (path: string) => {
     setLoading(true)
     setError(null)
     try {
+      const { readTextFile } = await import('@tauri-apps/plugin-fs')
       const content = await readTextFile(path)
       setFileContent(content)
     } catch (err) {
@@ -31,11 +31,16 @@ function FileView() {
 
   useEffect(() => {
     if (currentFile) {
-      loadFile(currentFile.path)
+      if (currentFile.type === 'pdf') {
+        setFileContent(null)
+        setLoading(false)
+      } else {
+        loadTextFile(currentFile.path)
+      }
     } else {
       setFileContent(null)
     }
-  }, [currentFile, loadFile])
+  }, [currentFile, loadTextFile])
 
   const handleOpenFile = async () => {
     try {

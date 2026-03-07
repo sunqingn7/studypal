@@ -2,7 +2,9 @@ import { create } from 'zustand'
 import { FileMetadata, FileState, getFileType } from '../../domain/models/file'
 
 interface FileStore extends FileState {
+  currentPage: number
   setCurrentFile: (file: FileMetadata | null) => void
+  setCurrentPage: (page: number) => void
   addToHistory: (file: FileMetadata) => void
   removeFromHistory: (fileId: string) => void
   clearHistory: () => void
@@ -11,13 +13,18 @@ interface FileStore extends FileState {
 
 export const useFileStore = create<FileStore>((set, get) => ({
   currentFile: null,
+  currentPage: 1,
   fileHistory: [],
 
   setCurrentFile: (file) => {
     if (file) {
       get().addToHistory(file)
     }
-    set({ currentFile: file })
+    set({ currentFile: file, currentPage: 1 })
+  },
+
+  setCurrentPage: (page) => {
+    set({ currentPage: page })
   },
 
   addToHistory: (file) => {

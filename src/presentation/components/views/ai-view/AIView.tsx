@@ -4,17 +4,20 @@ import { useFileStore } from '../../../../application/store/file-store'
 import { useNoteStore } from '../../../../application/store/note-store'
 import { useTopicStore } from '../../../../application/store/topic-store'
 import { llamaCppProvider } from '../../../../infrastructure/ai-providers/llamacpp-provider'
+import { getCurrentPageText, getAllPagesText } from '../../../../infrastructure/file-handlers/pdf-utils'
+import { searchWeb, fetchWebContent } from '../../../../infrastructure/web-service'
 import { ChatMessage } from '../../../../domain/models/ai-context'
 import './AIView.css'
 
 function AIView() {
   const { config, chatHistory, addMessage, clearHistory, isStreaming, setStreaming } = useAIStore()
-  const { currentFile } = useFileStore()
+  const { currentFile, currentPage } = useFileStore()
   const { getActiveNote } = useNoteStore()
   const { activeTopicId } = useTopicStore()
   
   const [input, setInput] = useState('')
   const [showConfig, setShowConfig] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -26,16 +29,43 @@ function AIView() {
     scrollToBottom()
   }, [chatHistory])
 
-  const buildContext = useCallback(() => {
+  const extractPdfText = useCallback(async (message: string): Promise<string> => {
+    if (!currentFile || currentFile.type !== 'pdf') return ''
+
+    const lowerMessage = message.toLowerCase()
+    
+    if (lowerMessage.includes('whole') || lowerMessage.includes('entire') || lowerMessage.includes('all pages')) {
+      return await getAllPagesText(currentFile.path)
+    }
+    
+    return await getCurrentPageText(currentFile.path, currentPage)
+  }, [currentFile, currentPage])
+
+  const extractNoteText = useCallback(() => {
+    const activeNote = getActiveNote()
+    if (!activeNote) return ''
+    
+    const text = activeNote.content.replace(/<[^>]*>/g, ' ').trim()
+    return text ? `[Current Note: ${activeNote.title}]\n${text}` : ''
+  }, [getActiveNote])
+
+  const buildContext = useCallback(async (message: string): Promise<string> => {
     let context = ''
     
     if (currentFile) {
       context += `[Current file: ${currentFile.name}]\n`
+      
+      if (currentFile.type === 'pdf') {
+        const pdfText = await extractPdfText(message)
+        if (pdfText) {
+          context += `[PDF Content]\n${pdfText}\n`
+        }
+      }
     }
     
-    const activeNote = getActiveNote()
-    if (activeNote) {
-      context += `[Current note: ${activeNote.title}]\n${activeNote.content}\n`
+    const noteText = extractNoteText()
+    if (noteText) {
+      context += `${noteText}\n`
     }
     
     if (activeTopicId) {
@@ -43,20 +73,66 @@ function AIView() {
     }
     
     return context
-  }, [currentFile, getActiveNote, activeTopicId])
+  }, [currentFile, activeTopicId, extractPdfText, extractNoteText])
+
+  const handleWebSearch = async (query: string): Promise<string> => {
+    try {
+      const results = await searchWeb(query)
+      if (results.length === 0) {
+        return 'No search results found.'
+      }
+      
+      const formatted = results.map((r, i) => 
+        `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`
+      ).join('\n\n')
+      
+      return `[Web Search Results]\n${formatted}`
+    } catch (error) {
+      return `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+    }
+  }
+
+  const handleFetchUrl = async (url: string): Promise<string> => {
+    try {
+      const content = await fetchWebContent(url)
+      const snippet = content.slice(0, 3000)
+      return `[Web Content from ${url}]\n${snippet}${content.length > 3000 ? '\n...(truncated)' : ''}`
+    } catch (error) {
+      return `Failed to fetch: ${error instanceof Error ? error.message : 'Unknown error'}`
+    }
+  }
 
   const handleSend = async () => {
-    if (!input.trim() || isStreaming) return
+    if (!input.trim() || isStreaming || isProcessing) return
 
     const userMessage = input.trim()
     setInput('')
 
     addMessage('user', userMessage)
     setStreaming(true)
+    setIsProcessing(true)
 
     try {
-      const context = buildContext()
-      const fullMessage = context ? `[Context]\n${context}\n\n[User Question]\n${userMessage}` : userMessage
+      const context = await buildContext(userMessage)
+      
+      const lowerMessage = userMessage.toLowerCase()
+      let additionalContext = ''
+      
+      if (lowerMessage.includes('search') || lowerMessage.includes('look up') || lowerMessage.includes('find information')) {
+        const query = userMessage.replace(/(search|look up|find information about)/gi, '').trim()
+        additionalContext = await handleWebSearch(query)
+      } else if (lowerMessage.match(/(https?:\/\/[^\s]+)/)) {
+        const urlMatch = userMessage.match(/(https?:\/\/[^\s]+)/)
+        if (urlMatch) {
+          additionalContext = await handleFetchUrl(urlMatch[1])
+        }
+      }
+      
+      const fullMessage = context 
+        ? `[Context]\n${context}${additionalContext ? '\n\n' + additionalContext : ''}\n\n[User Question]\n${userMessage}`
+        : additionalContext 
+          ? `${additionalContext}\n\n[User Question]\n${userMessage}`
+          : userMessage
       
       const messages: ChatMessage[] = [
         ...chatHistory,
@@ -79,6 +155,7 @@ function AIView() {
       addMessage('assistant', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setStreaming(false)
+      setIsProcessing(false)
     }
   }
 
@@ -136,7 +213,7 @@ function AIView() {
             <div className="chat-empty">
               <p>Ask me anything about your study materials!</p>
               <p className="chat-hint">
-                Tip: You can mention "this topic", "global notes", "the whole file" to include more context.
+                Tip: Ask about "the page", "the whole file", or "search for..." to include content.
               </p>
             </div>
           ) : (
@@ -147,7 +224,7 @@ function AIView() {
               </div>
             ))
           )}
-          {isStreaming && (
+          {(isStreaming || isProcessing) && (
             <div className="chat-message assistant streaming">
               <div className="message-role">AI</div>
               <div className="message-content">
@@ -165,13 +242,13 @@ function AIView() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask a question..."
-            disabled={isStreaming}
+            placeholder="Ask a question... (try 'search for...')"
+            disabled={isStreaming || isProcessing}
           />
           <button
             className="send-button"
             onClick={handleSend}
-            disabled={!input.trim() || isStreaming}
+            disabled={!input.trim() || isStreaming || isProcessing}
           >
             Send
           </button>
