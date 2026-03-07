@@ -1,5 +1,7 @@
 use tauri::Manager;
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::Path;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ChatMessage {
@@ -12,6 +14,48 @@ struct ChatRequest {
     endpoint: String,
     model: String,
     messages: Vec<ChatMessage>,
+}
+
+#[tauri::command]
+async fn extract_pdf_text(path: String) -> Result<String, String> {
+    println!("[RUST] extract_pdf_text called for: {}", path);
+    log::info!("Extracting PDF text from: {}", path);
+    
+    // Check if file exists
+    if !Path::new(&path).exists() {
+        let msg = format!("File not found: {}", path);
+        println!("[RUST] {}", msg);
+        return Err(msg);
+    }
+    
+    // Read PDF file
+    let bytes = match fs::read(&path) {
+        Ok(b) => b,
+        Err(e) => {
+            let msg = format!("Failed to read PDF: {}", e);
+            println!("[RUST] {}", msg);
+            return Err(msg);
+        }
+    };
+    
+    println!("[RUST] PDF file size: {} bytes", bytes.len());
+    
+    // Extract text using pdf-extract
+    match pdf_extract::extract_text_from_mem(&bytes) {
+        Ok(text) => {
+            let trimmed = text.trim().to_string();
+            println!("[RUST] Extracted {} characters of text", trimmed.len());
+            if trimmed.len() > 500 {
+                println!("[RUST] Preview: {}...", &trimmed[..500.min(trimmed.len())]);
+            }
+            Ok(trimmed)
+        }
+        Err(e) => {
+            let msg = format!("Failed to extract PDF text: {}", e);
+            println!("[RUST] {}", msg);
+            Err(msg)
+        }
+    }
 }
 
 #[tauri::command]
@@ -151,7 +195,7 @@ pub fn run() {
                 .level(log::LevelFilter::Info)
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![fetch_web_content, search_web, chat_with_ai, test_invoke])
+        .invoke_handler(tauri::generate_handler![fetch_web_content, search_web, chat_with_ai, test_invoke, extract_pdf_text])
         .setup(|app| {
             let _app_handle = app.handle().clone();
             
