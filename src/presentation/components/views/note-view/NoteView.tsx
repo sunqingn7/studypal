@@ -22,12 +22,13 @@ function NoteView() {
     ],
     content: activeNote?.content || '',
     onUpdate: ({ editor }) => {
-      if (activeTabId) {
+      const noteId = activeNote?.id
+      if (noteId) {
         if (saveTimeoutRef.current) {
           clearTimeout(saveTimeoutRef.current)
         }
         saveTimeoutRef.current = setTimeout(() => {
-          updateNoteContent(activeTabId, editor.getHTML())
+          updateNoteContent(noteId, editor.getHTML())
         }, 500)
       }
     },

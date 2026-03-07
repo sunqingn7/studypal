@@ -32,13 +32,18 @@ function AIView() {
   const extractPdfText = useCallback(async (message: string): Promise<string> => {
     if (!currentFile || currentFile.type !== 'pdf') return ''
 
-    const lowerMessage = message.toLowerCase()
-    
-    if (lowerMessage.includes('whole') || lowerMessage.includes('entire') || lowerMessage.includes('all pages')) {
-      return await getAllPagesText(currentFile.path)
+    try {
+      const lowerMessage = message.toLowerCase()
+
+      if (lowerMessage.includes('whole') || lowerMessage.includes('entire') || lowerMessage.includes('all pages')) {
+        return await getAllPagesText(currentFile.path)
+      }
+
+      return await getCurrentPageText(currentFile.path, currentPage)
+    } catch (error: any) {
+      console.error('[AIView] Error extracting PDF text:', error)
+      return ''
     }
-    
-    return await getCurrentPageText(currentFile.path, currentPage)
   }, [currentFile, currentPage])
 
   const extractNoteText = useCallback(() => {
@@ -51,27 +56,36 @@ function AIView() {
 
   const buildContext = useCallback(async (message: string): Promise<string> => {
     let context = ''
-    
-    if (currentFile) {
-      context += `[Current file: ${currentFile.name}]\n`
-      
-      if (currentFile.type === 'pdf') {
-        const pdfText = await extractPdfText(message)
-        if (pdfText) {
-          context += `[PDF Content]\n${pdfText}\n`
+
+    try {
+      if (currentFile) {
+        context += `[Current file: ${currentFile.name}]\n`
+
+        if (currentFile.type === 'pdf') {
+          try {
+            const pdfText = await extractPdfText(message)
+            if (pdfText) {
+              context += `[PDF Content]\n${pdfText}\n`
+            }
+          } catch (pdfError: any) {
+            console.error('[AIView] PDF text extraction failed:', pdfError)
+            // Continue without PDF content
+          }
         }
       }
+
+      const noteText = extractNoteText()
+      if (noteText) {
+        context += `${noteText}\n`
+      }
+
+      if (activeTopicId) {
+        context += `[Current topic ID: ${activeTopicId}]\n`
+      }
+    } catch (error: any) {
+      console.error('[AIView] Error building context:', error)
     }
-    
-    const noteText = extractNoteText()
-    if (noteText) {
-      context += `${noteText}\n`
-    }
-    
-    if (activeTopicId) {
-      context += `[Current topic ID: ${activeTopicId}]\n`
-    }
-    
+
     return context
   }, [currentFile, activeTopicId, extractPdfText, extractNoteText])
 
@@ -103,9 +117,16 @@ function AIView() {
   }
 
   const handleSend = async () => {
-    if (!input.trim() || isStreaming || isProcessing) return
+    console.log('[AIView] handleSend called')
+    console.log('[AIView] Current config:', { endpoint: config.endpoint, model: config.model })
+
+    if (!input.trim() || isStreaming || isProcessing) {
+      console.log('[AIView] Early return - input empty or already processing')
+      return
+    }
 
     const userMessage = input.trim()
+    console.log('[AIView] User message:', userMessage)
     setInput('')
 
     addMessage('user', userMessage)
@@ -113,7 +134,9 @@ function AIView() {
     setIsProcessing(true)
 
     try {
+      console.log('[AIView] Building context...')
       const context = await buildContext(userMessage)
+      console.log('[AIView] Context built:', context ? 'yes (length: ' + context.length + ')' : 'no')
       
       const lowerMessage = userMessage.toLowerCase()
       let additionalContext = ''
@@ -134,20 +157,47 @@ function AIView() {
           ? `${additionalContext}\n\n[User Question]\n${userMessage}`
           : userMessage
       
-      const messages: ChatMessage[] = [
-        ...chatHistory,
-        { id: crypto.randomUUID(), role: 'user', content: fullMessage, timestamp: Date.now() },
-      ]
+    // Build messages for API - use full context message for the last user message
+    // Get all messages except the last user message we just added
+    const previousMessages = chatHistory.slice(0, -1)
+    // Create the full message with context for the current query
+    const currentMessage: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: fullMessage,
+      timestamp: Date.now(),
+    }
+    const messages: ChatMessage[] = [...previousMessages, currentMessage]
 
-      let fullResponse = ''
-      
+    // Debug logging
+    console.log('[AIView] Sending to AI:', {
+      endpoint: config.endpoint,
+      model: config.model,
+      messageCount: messages.length,
+      lastMessagePreview: messages[messages.length - 1]?.content?.slice(0, 100) + '...'
+    })
+
+    let fullResponse = ''
+    console.log('[AIView] About to call llamaCppProvider.streamChat...')
+    console.log('[AIView] Config being passed:', JSON.stringify(config))
+
+    try {
       await llamaCppProvider.streamChat(
         messages,
         config,
         (chunk) => {
+          console.log('[AIView] Received chunk, length:', chunk.length)
           fullResponse += chunk
         }
       )
+      console.log('[AIView] streamChat completed successfully')
+    } catch (e: any) {
+      console.error('[AIView] streamChat threw error:', e)
+      console.error('[AIView] error name:', e?.name)
+      console.error('[AIView] error message:', e?.message)
+      console.error('[AIView] error stack:', e?.stack)
+      throw e
+    }
 
       addMessage('assistant', fullResponse)
     } catch (error) {

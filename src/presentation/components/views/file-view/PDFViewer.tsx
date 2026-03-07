@@ -116,6 +116,16 @@ function PDFViewer({ path }: PDFViewerProps) {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (loading || error) return
 
+      // Ignore keyboard events when typing in input fields
+      const target = e.target as HTMLElement
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      ) {
+        return
+      }
+
       switch (e.key) {
         case 'PageUp':
         case 'ArrowUp':
