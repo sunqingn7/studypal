@@ -1,0 +1,118 @@
+.file-view {
+  display: flex;
+  flex-direction: column;
+}
+
+.file-view .view-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.file-view .file-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: calc(100% - 40px);
+}
+
+.file-view .header-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.file-view .header-button:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.file-view-content {
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+.file-view-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary);
+}
+
+.file-view-empty .empty-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.file-view-empty h3 {
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+
+.file-view-empty p {
+  margin-bottom: 24px;
+}
+
+.file-view-empty .open-button {
+  padding: 10px 24px;
+  background-color: var(--accent-color);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.file-view-empty .open-button:hover {
+  background-color: var(--accent-hover);
+}
+
+.file-view-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary);
+}
+
+.file-view-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #e74c3c;
+}
+
+.file-view-error button {
+  margin-top: 16px;
+  padding: 8px 16px;
+  background-color: var(--bg-tertiary);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--bg-tertiary);
+  border-top-color: var(--accent-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

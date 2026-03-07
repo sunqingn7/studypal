@@ -1,0 +1,16 @@
+.text-viewer {
+  height: 100%;
+  overflow: auto;
+  background-color: var(--bg-primary);
+}
+
+.text-content {
+  margin: 0;
+  padding: 16px;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: var(--text-primary);
+}

@@ -1,0 +1,130 @@
+.note-view {
+  display: flex;
+  flex-direction: column;
+}
+
+.note-view-header {
+  padding: 0 !important;
+}
+
+.note-tabs {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  gap: 4px;
+  overflow-x: auto;
+}
+
+.note-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background-color: var(--bg-secondary);
+  border-radius: 4px;
+  cursor: pointer;
+  min-width: 80px;
+  max-width: 150px;
+  transition: background-color 0.2s;
+}
+
+.note-tab:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.note-tab.active {
+  background-color: var(--accent-color);
+  color: white;
+}
+
+.note-tab .tab-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.note-tab .tab-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  opacity: 0.6;
+}
+
+.note-tab .tab-close:hover {
+  opacity: 1;
+}
+
+.add-tab-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+}
+
+.add-tab-button:hover {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.note-view-content {
+  padding: 0 !important;
+}
+
+.note-editor {
+  height: 100%;
+}
+
+.note-editor .ProseMirror {
+  height: 100%;
+  padding: 16px;
+  outline: none;
+  overflow-y: auto;
+}
+
+.note-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--text-secondary);
+  pointer-events: none;
+  height: 0;
+}
+
+.note-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary);
+}
+
+.note-empty button {
+  margin-top: 16px;
+  padding: 8px 16px;
+  background-color: var(--accent-color);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.note-empty button:hover {
+  background-color: var(--accent-hover);
+}
+
+.tab-rename-input {
+  width: 100%;
+  padding: 2px 4px;
+  font-size: 12px;
+  border: 1px solid var(--accent-color);
+  border-radius: 2px;
+  outline: none;
+}
