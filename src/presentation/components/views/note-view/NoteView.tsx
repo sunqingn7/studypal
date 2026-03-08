@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -6,10 +6,13 @@ import { useNoteStore } from '../../../../application/store/note-store'
 import { useTopicStore } from '../../../../application/store/topic-store'
 import './NoteView.css'
 
+const FONT_SIZES = [12, 14, 16, 18, 20, 22, 24, 28, 32]
+
 function NoteView() {
   const { tabs, activeTabId, addTab, removeTab, setActiveTab, renameTab, updateNoteContent, getActiveNote } = useNoteStore()
   const { activeTopicId } = useTopicStore()
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const [fontSize, setFontSize] = useState(16)
 
   const activeNote = getActiveNote()
 
@@ -21,6 +24,11 @@ function NoteView() {
       }),
     ],
     content: activeNote?.content || '',
+    editorProps: {
+      attributes: {
+        style: `font-size: ${fontSize}px`,
+      },
+    },
     onUpdate: ({ editor }) => {
       const noteId = activeNote?.id
       if (noteId) {
@@ -33,6 +41,18 @@ function NoteView() {
       }
     },
   })
+
+  useEffect(() => {
+    if (editor) {
+      editor.setOptions({
+        editorProps: {
+          attributes: {
+            style: `font-size: ${fontSize}px`,
+          },
+        },
+      })
+    }
+  }, [fontSize, editor])
 
   useEffect(() => {
     if (editor && activeNote) {
@@ -84,7 +104,7 @@ function NoteView() {
         input.remove()
       }
     })
-    
+
     const tabElement = (e.target as HTMLElement).closest('.note-tab')
     if (tabElement) {
       tabElement.appendChild(input)
@@ -92,6 +112,30 @@ function NoteView() {
       input.select()
     }
   }, [handleRenameTab])
+
+  const decreaseFontSize = () => {
+    setFontSize((prev) => Math.max(10, prev - 2))
+  }
+
+  const increaseFontSize = () => {
+    setFontSize((prev) => Math.min(48, prev + 2))
+  }
+
+  const setSpecificFontSize = (size: number) => {
+    setFontSize(size)
+  }
+
+  if (!editor) {
+    return (
+      <div className="view-container note-view">
+        <div className="view-content note-view-content">
+          <div className="note-empty">
+            <p>Loading editor...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="view-container note-view">
@@ -117,16 +161,95 @@ function NoteView() {
             +
           </button>
         </div>
-      </div>
-      <div className="view-content note-view-content">
-        {editor ? (
-          <EditorContent editor={editor} className="note-editor" />
-        ) : (
-          <div className="note-empty">
-            <p>Create a new note to get started</p>
-            <button onClick={handleAddTab}>New Note</button>
+        
+        <div className="note-toolbar">
+          <div className="toolbar-group">
+            <button
+              className="toolbar-button"
+              onClick={() => editor.chain().focus().toggleBold().run()}
+              disabled={!editor.can().chain().focus().toggleBold().run()}
+              title="Bold (Ctrl+B)"
+            >
+              <strong>B</strong>
+            </button>
+            <button
+              className="toolbar-button"
+              onClick={() => editor.chain().focus().toggleItalic().run()}
+              disabled={!editor.can().chain().focus().toggleItalic().run()}
+              title="Italic (Ctrl+I)"
+            >
+              <em>I</em>
+            </button>
+            <button
+              className="toolbar-button"
+              onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+              disabled={!editor.can().chain().focus().toggleHeading({ level: 1 }).run()}
+              title="Heading 1"
+            >
+              H1
+            </button>
+            <button
+              className="toolbar-button"
+              onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+              disabled={!editor.can().chain().focus().toggleHeading({ level: 2 }).run()}
+              title="Heading 2"
+            >
+              H2
+            </button>
+            <button
+              className="toolbar-button"
+              onClick={() => editor.chain().focus().toggleBulletList().run()}
+              disabled={!editor.can().chain().focus().toggleBulletList().run()}
+              title="Bullet List"
+            >
+              • List
+            </button>
+            <button
+              className="toolbar-button"
+              onClick={() => editor.chain().focus().toggleOrderedList().run()}
+              disabled={!editor.can().chain().focus().toggleOrderedList().run()}
+              title="Numbered List"
+            >
+              1. List
+            </button>
           </div>
-        )}
+          
+          <div className="toolbar-separator" />
+          
+          <div className="toolbar-group font-size-controls">
+            <span className="font-size-label">Size:</span>
+            <button
+              className="toolbar-button font-size-button"
+              onClick={decreaseFontSize}
+              title="Decrease font size"
+            >
+              A-
+            </button>
+            <select
+              className="font-size-select"
+              value={fontSize}
+              onChange={(e) => setSpecificFontSize(Number(e.target.value))}
+              title="Font size"
+            >
+              {FONT_SIZES.map((size) => (
+                <option key={size} value={size}>
+                  {size}px
+                </option>
+              ))}
+            </select>
+            <button
+              className="toolbar-button font-size-button"
+              onClick={increaseFontSize}
+              title="Increase font size"
+            >
+              A+
+            </button>
+          </div>
+        </div>
+      </div>
+      
+      <div className="view-content note-view-content">
+        <EditorContent editor={editor} className="note-editor" />
       </div>
     </div>
   )

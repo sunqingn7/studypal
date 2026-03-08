@@ -16,6 +16,8 @@ import { searchWeb, fetchWebContent } from '../../../../infrastructure/web-servi
 import { ChatMessage } from '../../../../domain/models/ai-context'
 import './AIView.css'
 
+const FONT_SIZES = [12, 14, 16, 18, 20, 22, 24, 28, 32]
+
 function AIView() {
   const {
     tabs,
@@ -39,6 +41,7 @@ function AIView() {
 
   const [showConfig, setShowConfig] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [fontSize, setFontSize] = useState(14)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const activeMessages = getActiveMessages()
@@ -313,6 +316,35 @@ function AIView() {
           </button>
         </div>
         <div className="ai-actions">
+          <div className="font-size-controls">
+            <span className="font-size-label">Size:</span>
+            <button
+              className="ai-action-button font-size-button"
+              onClick={() => setFontSize((prev) => Math.max(10, prev - 2))}
+              title="Decrease font size"
+            >
+              A-
+            </button>
+            <select
+              className="font-size-select"
+              value={fontSize}
+              onChange={(e) => setFontSize(Number(e.target.value))}
+              title="Font size"
+            >
+              {FONT_SIZES.map((size) => (
+                <option key={size} value={size}>
+                  {size}px
+                </option>
+              ))}
+            </select>
+            <button
+              className="ai-action-button font-size-button"
+              onClick={() => setFontSize((prev) => Math.min(48, prev + 2))}
+              title="Increase font size"
+            >
+              A+
+            </button>
+          </div>
           <button className="ai-action-button" onClick={handleNewChat} title="Clear Chat">
             🗑️
           </button>
@@ -358,7 +390,7 @@ function AIView() {
 activeMessages.map((msg) => (
             <div key={msg.id} className={`chat-message ${msg.role}`}>
               <div className="message-role">{msg.role === 'user' ? 'You' : 'AI'}</div>
-              <div className="message-content">
+              <div className="message-content" style={{ fontSize: `${fontSize}px` }}>
                 {msg.role === 'user' ? (
                   // User messages are HTML from TipTap editor
                   <div dangerouslySetInnerHTML={{ __html: msg.content }} />

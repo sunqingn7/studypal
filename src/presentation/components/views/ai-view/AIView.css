@@ -8,6 +8,8 @@
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .chat-tabs {
@@ -90,6 +92,41 @@
 .add-tab-button:hover {
   border-color: var(--accent-color);
   color: var(--accent-color);
+}
+
+/* Font size controls */
+.font-size-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.font-size-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.font-size-button {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.font-size-select {
+  padding: 4px 8px;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  min-width: 60px;
+  height: 28px;
+}
+
+.font-size-select:focus {
+  outline: none;
+  border-color: var(--accent-color);
+}
 }
 
 .ai-actions {
