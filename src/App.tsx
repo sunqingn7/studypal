@@ -1,24 +1,19 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import MainLayout from './presentation/layouts/MainLayout'
 import { loadAllPlugins, unloadAllPlugins } from './infrastructure/plugins/plugin-loader'
+import { useThemeStore } from './application/store/theme-store'
 
 function App() {
-  const [theme, setTheme] = useState<'light' | 'dark'>('light')
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-    setTheme(mediaQuery.matches ? 'dark' : 'light')
-
-    const handler = (e: MediaQueryListEvent) => {
-      setTheme(e.matches ? 'dark' : 'light')
-    }
-    mediaQuery.addEventListener('change', handler)
-    return () => mediaQuery.removeEventListener('change', handler)
-  }, [])
+  const { theme, toggleTheme } = useThemeStore()
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
+
+  // Expose theme toggle to window for Tauri
+  useEffect(() => {
+    ;(window as any).toggleTheme = toggleTheme
+  }, [toggleTheme])
 
   // Load plugins on app start
   useEffect(() => {

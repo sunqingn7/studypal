@@ -31,28 +31,28 @@ const getFileIcon = (filename: string) => {
     
     switch (ext) {
       case 'pdf':
-        return <FileText className="w-3.5 h-3.5 text-[#e74c3c]" />;
+        return <FileText className="w-3.5 h-3.5 text-red-500 dark:text-red-400" />;
       case 'epub':
-        return <FileText className="w-3.5 h-3.5 text-[#4a90d9]" />;
+        return <FileText className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />;
       case 'txt':
-        return <FileText className="w-3.5 h-3.5 text-[#cccccc]" />;
+        return <FileText className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />;
       case 'md':
-        return <FileText className="w-3.5 h-3.5 text-[#519aba]" />;
+        return <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />;
       case 'js':
       case 'jsx':
-        return <FileCode className="w-3.5 h-3.5 text-[#f7df1e]" />;
+        return <FileCode className="w-3.5 h-3.5 text-yellow-500 dark:text-yellow-400" />;
       case 'ts':
       case 'tsx':
-        return <FileCode className="w-3.5 h-3.5 text-[#3178c6]" />;
+        return <FileCode className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />;
       case 'json':
-        return <FileJson className="w-3.5 h-3.5 text-[#f7df1e]" />;
+        return <FileJson className="w-3.5 h-3.5 text-yellow-500 dark:text-yellow-400" />;
       case 'png':
       case 'jpg':
       case 'jpeg':
       case 'gif':
-        return <FileImage className="w-3.5 h-3.5 text-[#a074c4]" />;
+        return <FileImage className="w-3.5 h-3.5 text-purple-500 dark:text-purple-400" />;
       default:
-        return <FileType2 className="w-3.5 h-3.5 text-[#cccccc]" />;
+        return <FileType2 className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />;
     }
   };
 
@@ -194,16 +194,17 @@ export const FileBrowserView: React.FC<FileBrowserViewProps> = ({ context }) => 
 
     return (
       <div key={node.item.path}>
-        <div
-         className={`
+       <div
+          className={`
             group flex items-center px-2 cursor-pointer
-            hover:bg-[#2a2d2e]
-            ${isSelected ? 'bg-[#37373d]' : ''}
+            hover:bg-[var(--sidebar-hover-bg)]
+            ${isSelected ? 'bg-[var(--sidebar-active-bg)]' : ''}
             ${isRoot ? 'font-semibold' : ''}
           `}
           style={{ 
             paddingLeft: `${indentWidth + 4}px`,
-            height: '24px'
+            height: '24px',
+            color: isSelected ? 'var(--sidebar-active-fg)' : 'var(--sidebar-fg)'
           }}
           onClick={() => {
             if (node.item.type === 'directory') {
@@ -230,9 +231,9 @@ export const FileBrowserView: React.FC<FileBrowserViewProps> = ({ context }) => 
           <span className="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0 mr-1.5">
             {node.item.type === 'directory' ? (
               node.isExpanded ? (
-                <FolderOpen className="w-3.5 h-3.5 text-[#dcb67a]" />
+                <FolderOpen className="w-3.5 h-3.5 text-[var(--folder-open-color)]" />
               ) : (
-                <Folder className="w-3.5 h-3.5 text-[#dcb67a]" />
+                <Folder className="w-3.5 h-3.5 text-[var(--folder-color)]" />
               )
             ) : (
               getFileIcon(node.item.name)
@@ -241,10 +242,7 @@ export const FileBrowserView: React.FC<FileBrowserViewProps> = ({ context }) => 
 
           {/* Filename */}
           <span 
-            className={`
-              truncate flex-1 select-none
-              ${isSelected ? 'text-white font-medium' : 'text-[#cccccc]'}
-            `}
+            className="truncate flex-1 select-none"
             style={{ fontSize: '13px' }}
           >
             {node.item.name}
@@ -267,22 +265,22 @@ export const FileBrowserView: React.FC<FileBrowserViewProps> = ({ context }) => 
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-full text-[#cccccc] p-4 bg-[#252526]" style={{ fontSize: '13px' }}>
+      <div className="flex items-center justify-center h-full text-[var(--sidebar-fg)] p-4 bg-[var(--sidebar-bg)]" style={{ fontSize: '13px' }}>
         <p>{error}</p>
       </div>
     );
   }
 
   return (
-    <div className="h-full flex flex-col bg-[#252526]">
+    <div className="h-full flex flex-col bg-[var(--sidebar-bg)]">
       {/* Header */}
-      <div className="flex items-center justify-between h-[28px] px-1 bg-[#252526] text-[#cccccc]">
+      <div className="flex items-center justify-between h-[28px] px-1 bg-[var(--sidebar-bg)] text-[var(--sidebar-fg)]">
         <span className="text-[11px] font-semibold px-2 select-none">
           EXPLORER
         </span>
         <button
           onClick={refresh}
-          className="w-5 h-5 flex items-center justify-center rounded hover:bg-[#37373d] text-[#cccccc]"
+          className="w-5 h-5 flex items-center justify-center rounded hover:bg-[var(--sidebar-hover-bg)] text-[var(--sidebar-fg)]"
           title="Refresh"
         >
           <RefreshCw className="w-3 h-3" />

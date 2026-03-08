@@ -29,7 +29,7 @@
     "react-resizable-panels": "^4.7.1",
     "rehype-katex": "^7.0.1",
     "remark-math": "^6.0.0",
-    "zustand": "^5.0.11"
+    "zustand": "^4.5.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.1",
