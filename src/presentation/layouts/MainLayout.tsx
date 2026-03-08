@@ -16,7 +16,6 @@ function MainLayout() {
     filePath: currentFile?.path
   }
 
-  // Check if file browser plugin is available
   useEffect(() => {
     const checkPlugins = () => {
       const viewPlugins = pluginRegistry.getViewPluginsForContext(pluginContext)
@@ -24,58 +23,51 @@ function MainLayout() {
     }
     
     checkPlugins()
-    // Check again after a short delay to ensure plugins are loaded
     const timer = setTimeout(checkPlugins, 500)
     return () => clearTimeout(timer)
   }, [pluginContext])
 
-  return (
+ return (
     <div className="app-container h-screen w-screen overflow-hidden">
-      <Group orientation="horizontal" className="h-full">
+      <Group orientation="horizontal" className="h-full" id="main-group">
         {/* Left Sidebar: File Browser */}
-        {showFileBrowser && (
-          <>
-            <Panel 
-              id="sidebar" 
-              defaultSize={25} 
-              minSize={20} 
-              maxSize={50}
-              className="min-w-[250px]"
-            >
-              {hasFileBrowser ? (
-                <FileBrowserView context={pluginContext} />
-              ) : (
-                <div className="flex items-center justify-center h-full text-[var(--sidebar-fg)] opacity-50 p-4">
-                  <p>Loading file browser...</p>
-                </div>
-              )}
-            </Panel>
-            <Separator />
-          </>
+        <Panel 
+          id="sidebar" 
+          defaultSize={25} 
+          minSize={5}
+          className="sidebar-panel"
+        >
+        {showFileBrowser && hasFileBrowser && <FileBrowserView context={pluginContext} />}
+        {showFileBrowser && !hasFileBrowser && (
+          <div className="flex items-center justify-center h-full text-[var(--sidebar-fg)] opacity-50 p-4">
+            <p>Loading file browser...</p>
+          </div>
         )}
+          </Panel>
+        <Separator className="panel-resize-handle" />
         
         {/* Main Content Area: File View */}
         <Panel 
           id="file" 
-          defaultSize={showFileBrowser ? 35 : 60} 
-          minSize={30}
+          defaultSize={35} 
+          minSize={20}
         >
           <FileView />
         </Panel>
         
-        <Separator />
+        <Separator className="panel-resize-handle" />
         
-        {/* Right Panel: AI + Notes */}
+        {/* Right Panel: AI + Notes (vertical) */}
         <Panel 
           id="right" 
           defaultSize={40} 
-          minSize={25}
+          minSize={20}
         >
           <Group orientation="vertical" className="h-full">
             <Panel id="ai" defaultSize={50} minSize={20}>
               <AIView />
             </Panel>
-            <Separator />
+            <Separator className="panel-resize-handle-vertical" />
             <Panel id="note" defaultSize={50} minSize={20}>
               <NoteView />
             </Panel>

@@ -221,16 +221,17 @@ export const FileBrowserView: React.FC<FileBrowserViewProps> = ({ context }) => 
           {/* Filename - 13px font */}
           <span 
             className={`
-              text-[13px] truncate flex-1 select-none
+              truncate flex-1 select-none
               ${isSelected ? 'text-gray-900 dark:text-gray-100 font-medium' : 'text-gray-700 dark:text-gray-300'}
             `}
+            style={{ fontSize: '13px' }}
           >
             {node.item.name}
           </span>
 
           {/* File size (only show on hover or for selected) */}
           {node.item.size !== undefined && node.item.type === 'file' && (
-            <span className="text-[11px] text-gray-400 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <span className="text-gray-400 ml-2 opacity-0 group-hover:opacity-100 transition-opacity" style={{ fontSize: '11px' }}>
               {formatFileSize(node.item.size)}
             </span>
           )}
@@ -258,7 +259,7 @@ export const FileBrowserView: React.FC<FileBrowserViewProps> = ({ context }) => 
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-500 p-4 text-[13px]">
+      <div className="flex items-center justify-center h-full text-gray-500 p-4" style={{ fontSize: '13px' }}>
         <p>{error}</p>
       </div>
     );
