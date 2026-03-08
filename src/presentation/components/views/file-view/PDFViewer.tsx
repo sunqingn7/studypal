@@ -15,6 +15,21 @@ interface PDFViewerProps {
   path: string
 }
 
+interface TextItem {
+  str: string
+  dir: string
+  width: number
+  height: number
+  transform: number[]
+  fontName: string
+  hasEOL: boolean
+}
+
+interface TextContent {
+  items: TextItem[]
+  styles: Record<string, unknown>
+}
+
 function PDFViewer({ path }: PDFViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const { setCurrentPage: updateStorePage } = useFileStore()
@@ -25,7 +40,8 @@ function PDFViewer({ path }: PDFViewerProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [pageMode, setPageMode] = useState<PageMode>('single')
-  const [canvasRefs] = useState(() => new Map<number, HTMLCanvasElement>())
+  const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map())
+  const textLayerRefs = useRef<Map<number, HTMLDivElement>>(new Map())
 
   const setCurrentPage = useCallback((page: number | ((prev: number) => number)) => {
     if (typeof page === 'function') {
@@ -67,10 +83,42 @@ function PDFViewer({ path }: PDFViewerProps) {
       }
 
       await page.render(renderContext).promise
+
+      // Extract and render text layer
+      const textContent = await page.getTextContent()
+
+      // Render text layer
+      const textLayerDiv = textLayerRefs.current.get(pageNum)
+      if (textLayerDiv) {
+        renderTextLayer(textLayerDiv, textContent as TextContent, viewport)
+      }
     } catch (err) {
       console.error(`Error rendering page ${pageNum}:`, err)
     }
   }, [pdf, scale])
+
+  const renderTextLayer = (container: HTMLDivElement, textContent: TextContent, viewport: pdfjsLib.PageViewport) => {
+    container.innerHTML = ''
+    container.style.width = `${viewport.width}px`
+    container.style.height = `${viewport.height}px`
+
+    textContent.items.forEach((item: TextItem) => {
+      const tx = pdfjsLib.Util.transform(viewport.transform, item.transform)
+      const textDiv = document.createElement('div')
+      textDiv.textContent = item.str
+      textDiv.style.position = 'absolute'
+      textDiv.style.left = `${tx[4]}px`
+      textDiv.style.top = `${tx[5]}px`
+      textDiv.style.fontSize = `${item.height}px`
+      textDiv.style.fontFamily = item.fontName
+      textDiv.style.whiteSpace = 'pre'
+      textDiv.style.transform = `scaleX(${tx[0] / item.width})`
+      textDiv.style.transformOrigin = 'left bottom'
+      textDiv.style.userSelect = 'text'
+      textDiv.style.cursor = 'text'
+      container.appendChild(textDiv)
+    })
+  }
 
   useEffect(() => {
     const loadPdf = async () => {
@@ -102,15 +150,22 @@ function PDFViewer({ path }: PDFViewerProps) {
   useEffect(() => {
     if (!pdf) return
 
-    const canvas1 = canvasRefs.get(1)
-    const canvas2 = canvasRefs.get(2)
+    const loadVisiblePages = async () => {
+      const canvas1 = canvasRefs.current.get(1)
+      const canvas2 = canvasRefs.current.get(2)
 
-    renderPage(currentPage, canvas1 || null)
-    const secondPage = getSecondPage()
-    if (secondPage) {
-      renderPage(secondPage, canvas2 || null)
+      if (canvas1) {
+        await renderPage(currentPage, canvas1)
+      }
+
+      const secondPage = getSecondPage()
+      if (secondPage && canvas2) {
+        await renderPage(secondPage, canvas2)
+      }
     }
-  }, [pdf, currentPage, scale, pageMode, renderPage, getSecondPage, canvasRefs])
+
+    loadVisiblePages()
+  }, [pdf, currentPage, scale, pageMode, renderPage, getSecondPage])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -124,6 +179,11 @@ function PDFViewer({ path }: PDFViewerProps) {
         target.isContentEditable
       ) {
         return
+      }
+
+      // Allow copy shortcuts (Cmd+C, Ctrl+C)
+      if ((e.metaKey || e.ctrlKey) && e.key === 'c') {
+        return // Let the browser handle copy
       }
 
       switch (e.key) {
@@ -155,7 +215,7 @@ function PDFViewer({ path }: PDFViewerProps) {
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     if (loading || error) return
-    
+
     const container = containerRef.current
     if (!container) return
 
@@ -254,19 +314,38 @@ function PDFViewer({ path }: PDFViewerProps) {
         onWheel={handleWheel}
       >
         <div className={`pdf-pages ${pageMode}`}>
-          <canvas
-            ref={(el) => {
-              if (el) canvasRefs.set(1, el)
-              else canvasRefs.delete(1)
-            }}
-          />
-          {pageMode === 'double' && currentPage < totalPages && (
+          <div className="pdf-page-wrapper">
             <canvas
               ref={(el) => {
-                if (el) canvasRefs.set(2, el)
-                else canvasRefs.delete(2)
+                if (el) canvasRefs.current.set(1, el)
+                else canvasRefs.current.delete(1)
               }}
             />
+            <div
+              className="pdf-text-layer"
+              ref={(el) => {
+                if (el) textLayerRefs.current.set(currentPage, el)
+                else textLayerRefs.current.delete(currentPage)
+              }}
+            />
+          </div>
+          {pageMode === 'double' && currentPage < totalPages && (
+            <div className="pdf-page-wrapper">
+              <canvas
+                ref={(el) => {
+                  if (el) canvasRefs.current.set(2, el)
+                  else canvasRefs.current.delete(2)
+                }}
+              />
+              <div
+                className="pdf-text-layer"
+                ref={(el) => {
+                  const secondPage = currentPage + 1
+                  if (el) textLayerRefs.current.set(secondPage, el)
+                  else textLayerRefs.current.delete(secondPage)
+                }}
+              />
+            </div>
           )}
         </div>
       </div>

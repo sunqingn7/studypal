@@ -7,10 +7,89 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 8px 12px;
 }
 
-.ai-title {
-  font-weight: 600;
+.chat-tabs {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  overflow-x: auto;
+}
+
+.chat-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  background-color: var(--bg-tertiary);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+  transition: background-color 0.2s;
+}
+
+.chat-tab:hover {
+  background-color: var(--bg-secondary);
+}
+
+.chat-tab.active {
+  background-color: var(--accent-color);
+  color: white;
+}
+
+.chat-tab .tab-title {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-tab .tab-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+  color: inherit;
+  opacity: 0.6;
+}
+
+.chat-tab .tab-close:hover {
+  opacity: 1;
+}
+
+.chat-tab.active .tab-close {
+  color: white;
+}
+
+.tab-rename-input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  padding: 2px 4px;
+  border: 1px solid var(--accent-color);
+  border-radius: 3px;
+  font-size: 13px;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.add-tab-button {
+  background: none;
+  border: 1px dashed var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px 8px;
+  color: var(--text-secondary);
+}
+
+.add-tab-button:hover {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
 }
 
 .ai-actions {
@@ -126,7 +205,14 @@
 .message-content {
   font-size: 13px;
   line-height: 1.4;
-  white-space: pre-wrap;
+}
+
+.message-content p {
+  margin: 0 0 8px 0;
+}
+
+.message-content p:last-child {
+  margin-bottom: 0;
 }
 
 .chat-message.streaming .message-content {
@@ -153,6 +239,7 @@
   padding: 12px;
   border-top: 1px solid var(--border-color);
   background-color: var(--bg-secondary);
+  align-items: flex-end;
 }
 
 .chat-input {
@@ -161,21 +248,27 @@
   border: 1px solid var(--border-color);
   border-radius: 8px;
   font-size: 13px;
-  resize: none;
-  height: 40px;
-  max-height: 100px;
   background-color: var(--bg-primary);
   color: var(--text-primary);
-  font-family: inherit;
+  max-height: 150px;
+  overflow-y: auto;
 }
 
-.chat-input:focus {
+.chat-input .ProseMirror {
+  min-height: 20px;
   outline: none;
-  border-color: var(--accent-color);
 }
 
-.chat-input::placeholder {
+.chat-input .ProseMirror p.is-editor-empty::before {
+  content: attr(data-placeholder);
+  float: left;
   color: var(--text-secondary);
+  pointer-events: none;
+  height: 0;
+}
+
+.chat-input:focus-within {
+  border-color: var(--accent-color);
 }
 
 .send-button {
@@ -188,6 +281,7 @@
   font-size: 13px;
   transition: background-color 0.2s;
   align-self: flex-end;
+  height: fit-content;
 }
 
 .send-button:hover:not(:disabled) {

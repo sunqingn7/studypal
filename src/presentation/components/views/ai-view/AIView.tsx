@@ -1,5 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { useAIStore } from '../../../../application/store/ai-store'
+import { useEditor, EditorContent } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import Placeholder from '@tiptap/extension-placeholder'
+import { useAIChatStore } from '../../../../application/store/ai-chat-store'
 import { useFileStore } from '../../../../application/store/file-store'
 import { useNoteStore } from '../../../../application/store/note-store'
 import { useTopicStore } from '../../../../application/store/topic-store'
@@ -10,24 +13,113 @@ import { ChatMessage } from '../../../../domain/models/ai-context'
 import './AIView.css'
 
 function AIView() {
-  const { config, chatHistory, addMessage, clearHistory, isStreaming, setStreaming } = useAIStore()
+  const {
+    tabs,
+    activeTabId,
+    config,
+    isStreaming,
+    addTab,
+    removeTab,
+    setActiveTab,
+    renameTab,
+    addMessage,
+    clearChat,
+    getActiveMessages,
+    setConfig,
+    setStreaming,
+  } = useAIChatStore()
+
   const { currentFile, currentPage } = useFileStore()
   const { getActiveNote } = useNoteStore()
   const { activeTopicId } = useTopicStore()
-  
-  const [input, setInput] = useState('')
+
   const [showConfig, setShowConfig] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  const activeMessages = getActiveMessages()
+
+  // Rich text editor for input
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Placeholder.configure({
+        placeholder: 'Ask a question... (try "search for...")',
+      }),
+    ],
+    content: '',
+    editorProps: {
+      attributes: {
+        class: 'chat-editor',
+      },
+      handleKeyDown: (_, event) => {
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault()
+          handleSend()
+          return true
+        }
+        return false
+      },
+    },
+  })
+
+  useEffect(() => {
+    if (tabs.length === 0) {
+      addTab()
+    }
+  }, [])
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [activeMessages])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
-  useEffect(() => {
-    scrollToBottom()
-  }, [chatHistory])
+  const handleAddTab = useCallback(() => {
+    addTab()
+  }, [addTab])
+
+  const handleRemoveTab = useCallback((tabId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    removeTab(tabId)
+  }, [removeTab])
+
+  const handleTabClick = useCallback((tabId: string) => {
+    setActiveTab(tabId)
+  }, [setActiveTab])
+
+  const handleRenameTab = useCallback((tabId: string, newTitle: string) => {
+    renameTab(tabId, newTitle)
+  }, [renameTab])
+
+  const handleDoubleClick = useCallback((tabId: string, currentTitle: string, e: React.MouseEvent) => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.value = currentTitle
+    input.className = 'tab-rename-input'
+    input.addEventListener('blur', () => {
+      if (input.value.trim()) {
+        handleRenameTab(tabId, input.value.trim())
+      }
+      input.remove()
+    })
+    input.addEventListener('keydown', (keyEvent) => {
+      if (keyEvent.key === 'Enter') {
+        input.blur()
+      } else if (keyEvent.key === 'Escape') {
+        input.remove()
+      }
+    })
+
+    const tabElement = (e.target as HTMLElement).closest('.chat-tab')
+    if (tabElement) {
+      tabElement.appendChild(input)
+      input.focus()
+      input.select()
+    }
+  }, [handleRenameTab])
 
   const extractPdfText = useCallback(async (message: string): Promise<string> => {
     if (!currentFile || currentFile.type !== 'pdf') return ''
@@ -49,7 +141,7 @@ function AIView() {
   const extractNoteText = useCallback(() => {
     const activeNote = getActiveNote()
     if (!activeNote) return ''
-    
+
     const text = activeNote.content.replace(/<[^>]*>/g, ' ').trim()
     return text ? `[Current Note: ${activeNote.title}]\n${text}` : ''
   }, [getActiveNote])
@@ -69,7 +161,6 @@ function AIView() {
             }
           } catch (pdfError: any) {
             console.error('[AIView] PDF text extraction failed:', pdfError)
-            // Continue without PDF content
           }
         }
       }
@@ -95,11 +186,11 @@ function AIView() {
       if (results.length === 0) {
         return 'No search results found.'
       }
-      
-      const formatted = results.map((r, i) => 
-        `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`
+
+      const formatted = results.map((r, i) =>
+        `${i + 1}. ${r.title}\n ${r.url}\n ${r.snippet}`
       ).join('\n\n')
-      
+
       return `[Web Search Results]\n${formatted}`
     } catch (error) {
       return `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -117,30 +208,27 @@ function AIView() {
   }
 
   const handleSend = async () => {
-    console.log('[AIView] handleSend called')
-    console.log('[AIView] Current config:', { endpoint: config.endpoint, model: config.model })
+    if (!activeTabId || !editor || isStreaming || isProcessing) return
 
-    if (!input.trim() || isStreaming || isProcessing) {
-      console.log('[AIView] Early return - input empty or already processing')
-      return
-    }
+    const htmlContent = editor.getHTML()
+    const textContent = editor.getText().trim()
 
-    const userMessage = input.trim()
-    console.log('[AIView] User message:', userMessage)
-    setInput('')
+    if (!textContent) return
 
-    addMessage('user', userMessage)
+    const userMessage = textContent
+    editor.commands.clearContent()
+
+    if (!activeTabId) return
+    addMessage(activeTabId, 'user', htmlContent)
     setStreaming(true)
     setIsProcessing(true)
 
     try {
-      console.log('[AIView] Building context...')
       const context = await buildContext(userMessage)
-      console.log('[AIView] Context built:', context ? 'yes (length: ' + context.length + ')' : 'no')
-      
+
       const lowerMessage = userMessage.toLowerCase()
       let additionalContext = ''
-      
+
       if (lowerMessage.includes('search') || lowerMessage.includes('look up') || lowerMessage.includes('find information')) {
         const query = userMessage.replace(/(search|look up|find information about)/gi, '').trim()
         additionalContext = await handleWebSearch(query)
@@ -150,83 +238,79 @@ function AIView() {
           additionalContext = await handleFetchUrl(urlMatch[1])
         }
       }
-      
-      const fullMessage = context 
+
+      const fullMessage = context
         ? `[Context]\n${context}${additionalContext ? '\n\n' + additionalContext : ''}\n\n[User Question]\n${userMessage}`
-        : additionalContext 
-          ? `${additionalContext}\n\n[User Question]\n${userMessage}`
-          : userMessage
-      
-    // Build messages for API - use full context message for the last user message
-    // Get all messages except the last user message we just added
-    const previousMessages = chatHistory.slice(0, -1)
-    // Create the full message with context for the current query
-    const currentMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content: fullMessage,
-      timestamp: Date.now(),
-    }
-    const messages: ChatMessage[] = [...previousMessages, currentMessage]
+        : additionalContext
+        ? `${additionalContext}\n\n[User Question]\n${userMessage}`
+        : userMessage
 
-    // Debug logging
-    console.log('[AIView] Sending to AI:', {
-      endpoint: config.endpoint,
-      model: config.model,
-      messageCount: messages.length,
-      lastMessagePreview: messages[messages.length - 1]?.content?.slice(0, 100) + '...'
-    })
+      const previousMessages = activeMessages.slice(0, -1)
+      const currentMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: 'user',
+        content: fullMessage,
+        timestamp: Date.now(),
+      }
+      const messages: ChatMessage[] = [...previousMessages, currentMessage]
 
-    let fullResponse = ''
-    console.log('[AIView] About to call llamaCppProvider.streamChat...')
-    console.log('[AIView] Config being passed:', JSON.stringify(config))
+      let fullResponse = ''
 
-    try {
       await llamaCppProvider.streamChat(
         messages,
         config,
         (chunk) => {
-          console.log('[AIView] Received chunk, length:', chunk.length)
           fullResponse += chunk
         }
       )
-      console.log('[AIView] streamChat completed successfully')
-    } catch (e: any) {
-      console.error('[AIView] streamChat threw error:', e)
-      console.error('[AIView] error name:', e?.name)
-      console.error('[AIView] error message:', e?.message)
-      console.error('[AIView] error stack:', e?.stack)
-      throw e
-    }
 
-      addMessage('assistant', fullResponse)
+      if (activeTabId) {
+        addMessage(activeTabId, 'assistant', fullResponse)
+      }
     } catch (error) {
       console.error('AI Error:', error)
-      addMessage('assistant', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      if (activeTabId) {
+        addMessage(activeTabId, 'assistant', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      }
     } finally {
       setStreaming(false)
       setIsProcessing(false)
     }
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
-    }
-  }
-
   const handleNewChat = () => {
-    clearHistory()
+    if (activeTabId) {
+      clearChat(activeTabId)
+    }
   }
 
   return (
     <div className="view-container ai-view">
       <div className="view-header ai-view-header">
-        <span className="ai-title">AI Assistant</span>
+        <div className="chat-tabs">
+          {tabs.map((tab) => (
+            <div
+              key={tab.id}
+              className={`chat-tab ${tab.id === activeTabId ? 'active' : ''}`}
+              onClick={() => handleTabClick(tab.id)}
+              onDoubleClick={(e) => handleDoubleClick(tab.id, tab.title, e)}
+            >
+              <span className="tab-title">{tab.title}</span>
+              <button
+                className="tab-close"
+                onClick={(e) => handleRemoveTab(tab.id, e)}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          <button className="add-tab-button" onClick={handleAddTab}>
+            +
+          </button>
+        </div>
         <div className="ai-actions">
-          <button className="ai-action-button" onClick={handleNewChat} title="New Chat">
-            💬
+          <button className="ai-action-button" onClick={handleNewChat} title="Clear Chat">
+            🗑️
           </button>
           <button className="ai-action-button" onClick={() => setShowConfig(!showConfig)} title="Settings">
             ⚙️
@@ -241,7 +325,7 @@ function AIView() {
             <input
               type="text"
               value={config.endpoint}
-              onChange={(e) => useAIStore.getState().setConfig({ endpoint: e.target.value })}
+              onChange={(e) => setConfig({ endpoint: e.target.value })}
               placeholder="http://localhost:8080"
             />
           </div>
@@ -250,7 +334,7 @@ function AIView() {
             <input
               type="text"
               value={config.model}
-              onChange={(e) => useAIStore.getState().setConfig({ model: e.target.value })}
+              onChange={(e) => setConfig({ model: e.target.value })}
               placeholder="llama2"
             />
           </div>
@@ -259,7 +343,7 @@ function AIView() {
 
       <div className="view-content ai-view-content">
         <div className="chat-messages">
-          {chatHistory.length === 0 ? (
+          {activeMessages.length === 0 ? (
             <div className="chat-empty">
               <p>Ask me anything about your study materials!</p>
               <p className="chat-hint">
@@ -267,10 +351,13 @@ function AIView() {
               </p>
             </div>
           ) : (
-            chatHistory.map((msg) => (
+            activeMessages.map((msg) => (
               <div key={msg.id} className={`chat-message ${msg.role}`}>
                 <div className="message-role">{msg.role === 'user' ? 'You' : 'AI'}</div>
-                <div className="message-content">{msg.content}</div>
+                <div
+                  className="message-content"
+                  dangerouslySetInnerHTML={{ __html: msg.content }}
+                />
               </div>
             ))
           )}
@@ -286,19 +373,16 @@ function AIView() {
         </div>
 
         <div className="chat-input-container">
-          <textarea
-            ref={inputRef}
-            className="chat-input"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask a question... (try 'search for...')"
-            disabled={isStreaming || isProcessing}
-          />
+          {editor && (
+            <EditorContent
+              editor={editor}
+              className="chat-input"
+            />
+          )}
           <button
             className="send-button"
             onClick={handleSend}
-            disabled={!input.trim() || isStreaming || isProcessing}
+            disabled={!editor?.getText().trim() || isStreaming || isProcessing}
           >
             Send
           </button>
