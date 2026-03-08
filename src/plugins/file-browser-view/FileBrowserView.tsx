@@ -31,28 +31,28 @@ const getFileIcon = (filename: string) => {
     
     switch (ext) {
       case 'pdf':
-        return <FileText className="w-4 h-4 text-[#e74c3c]" />;
+        return <FileText className="w-3.5 h-3.5 text-[#e74c3c]" />;
       case 'epub':
-        return <FileText className="w-4 h-4 text-[#4a90d9]" />;
+        return <FileText className="w-3.5 h-3.5 text-[#4a90d9]" />;
       case 'txt':
-        return <FileText className="w-4 h-4 text-[#cccccc]" />;
+        return <FileText className="w-3.5 h-3.5 text-[#cccccc]" />;
       case 'md':
-        return <FileText className="w-4 h-4 text-[#519aba]" />;
+        return <FileText className="w-3.5 h-3.5 text-[#519aba]" />;
       case 'js':
       case 'jsx':
-        return <FileCode className="w-4 h-4 text-[#f7df1e]" />;
+        return <FileCode className="w-3.5 h-3.5 text-[#f7df1e]" />;
       case 'ts':
       case 'tsx':
-        return <FileCode className="w-4 h-4 text-[#3178c6]" />;
+        return <FileCode className="w-3.5 h-3.5 text-[#3178c6]" />;
       case 'json':
-        return <FileJson className="w-4 h-4 text-[#f7df1e]" />;
+        return <FileJson className="w-3.5 h-3.5 text-[#f7df1e]" />;
       case 'png':
       case 'jpg':
       case 'jpeg':
       case 'gif':
-        return <FileImage className="w-4 h-4 text-[#a074c4]" />;
+        return <FileImage className="w-3.5 h-3.5 text-[#a074c4]" />;
       default:
-        return <FileType2 className="w-4 h-4 text-[#cccccc]" />;
+        return <FileType2 className="w-3.5 h-3.5 text-[#cccccc]" />;
     }
   };
 
@@ -215,24 +215,24 @@ export const FileBrowserView: React.FC<FileBrowserViewProps> = ({ context }) => 
         >
           {/* Chevron for folders (except root) */}
           {!isRoot && node.item.type === 'directory' && (
-            <span className="w-4 h-4 flex items-center justify-center flex-shrink-0 mr-0.5 opacity-60">
+            <span className="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0 mr-0.5 opacity-60">
               {node.isLoading ? (
                 <RefreshCw className="w-3 h-3 animate-spin" />
               ) : node.isExpanded ? (
-                <ChevronDown className="w-3.5 h-3.5" />
+                <ChevronDown className="w-3 h-3" />
               ) : (
-                <ChevronRight className="w-3.5 h-3.5" />
+                <ChevronRight className="w-3 h-3" />
               )}
             </span>
           )}
 
           {/* Icon */}
-          <span className="w-4 h-4 flex items-center justify-center flex-shrink-0 mr-1.5">
+          <span className="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0 mr-1.5">
             {node.item.type === 'directory' ? (
               node.isExpanded ? (
-                <FolderOpen className="w-4 h-4 text-[#dcb67a]" />
+                <FolderOpen className="w-3.5 h-3.5 text-[#dcb67a]" />
               ) : (
-                <Folder className="w-4 h-4 text-[#dcb67a]" />
+                <Folder className="w-3.5 h-3.5 text-[#dcb67a]" />
               )
             ) : (
               getFileIcon(node.item.name)
@@ -285,7 +285,7 @@ export const FileBrowserView: React.FC<FileBrowserViewProps> = ({ context }) => 
           className="w-5 h-5 flex items-center justify-center rounded hover:bg-[#37373d] text-[#cccccc]"
           title="Refresh"
         >
-          <RefreshCw className="w-3.5 h-3.5" />
+          <RefreshCw className="w-3 h-3" />
         </button>
       </div>
 
