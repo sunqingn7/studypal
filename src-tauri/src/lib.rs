@@ -1,6 +1,5 @@
 use tauri::Manager;
 use serde::{Deserialize, Serialize};
-use std::fs;
 use std::path::Path;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -28,34 +27,44 @@ async fn extract_pdf_text(path: String) -> Result<String, String> {
         return Err(msg);
     }
     
-    // Read PDF file
-    let bytes = match fs::read(&path) {
-        Ok(b) => b,
+    // Load PDF using lopdf
+    let doc = match lopdf::Document::load(&path) {
+        Ok(d) => d,
         Err(e) => {
-            let msg = format!("Failed to read PDF: {}", e);
+            let msg = format!("Failed to load PDF: {}", e);
             println!("[RUST] {}", msg);
             return Err(msg);
         }
     };
     
-    println!("[RUST] PDF file size: {} bytes", bytes.len());
+    println!("[RUST] PDF loaded, extracting text...");
     
-    // Extract text using pdf-extract
-    match pdf_extract::extract_text_from_mem(&bytes) {
-        Ok(text) => {
-            let trimmed = text.trim().to_string();
-            println!("[RUST] Extracted {} characters of text", trimmed.len());
-            if trimmed.len() > 500 {
-                println!("[RUST] Preview: {}...", &trimmed[..500.min(trimmed.len())]);
+    // Extract text from all pages
+    let mut text_parts: Vec<String> = Vec::new();
+    let page_numbers: Vec<u32> = doc.get_pages().into_keys().collect();
+    
+    for page_num in page_numbers {
+        match doc.extract_text(&[page_num]) {
+            Ok(page_text) => {
+                let trimmed = page_text.trim();
+                if !trimmed.is_empty() {
+                    text_parts.push(format!("--- Page {} ---\n{}", page_num, trimmed));
+                }
             }
-            Ok(trimmed)
-        }
-        Err(e) => {
-            let msg = format!("Failed to extract PDF text: {}", e);
-            println!("[RUST] {}", msg);
-            Err(msg)
+            Err(e) => {
+                println!("[RUST] Error extracting text from page {}: {}", page_num, e);
+            }
         }
     }
+    
+    let full_text = text_parts.join("\n\n");
+    println!("[RUST] Extracted {} characters from {} pages", full_text.len(), text_parts.len());
+    
+    if full_text.len() > 500 {
+        println!("[RUST] Preview: {}...", &full_text[..500.min(full_text.len())]);
+    }
+    
+    Ok(full_text)
 }
 
 #[tauri::command]
