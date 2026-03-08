@@ -5,11 +5,12 @@
 
 .ai-view-header {
   display: flex;
-  justify-content: space-between;
+  flex-direction: row;
   align-items: center;
   padding: 8px 12px;
   gap: 8px;
   min-height: 44px;
+  overflow: hidden;
 }
 
 .chat-tabs {
@@ -98,13 +99,23 @@
 /* Font size controls */
 .font-size-controls {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .font-size-label {
   font-size: 12px;
   color: var(--text-secondary);
+  display: none;
+}
+
+@media (min-width: 1200px) {
+  .font-size-label {
+    display: inline;
+  }
 }
 
 .font-size-button {
@@ -113,14 +124,15 @@
 }
 
 .font-size-select {
-  padding: 4px 8px;
+  padding: 4px 4px 4px 8px;
   background-color: var(--bg-primary);
   border: 1px solid var(--border-color);
   border-radius: 4px;
   font-size: 12px;
   color: var(--text-primary);
   cursor: pointer;
-  min-width: 60px;
+  width: 55px;
+  min-width: 55px;
   height: 28px;
 }
 
@@ -128,14 +140,15 @@
   outline: none;
   border-color: var(--accent-color);
 }
-}
 
 .ai-actions {
   display: flex;
+  flex-direction: row;
   gap: 4px;
   align-items: center;
   flex-shrink: 0;
   white-space: nowrap;
+  flex-wrap: nowrap;
 }
 
 .ai-action-button {
