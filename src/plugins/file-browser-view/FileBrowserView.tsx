@@ -27,32 +27,34 @@ interface TreeNode {
 
 // File icon based on extension
 const getFileIcon = (filename: string) => {
-  const ext = filename.split('.').pop()?.toLowerCase() || '';
-  
-  switch (ext) {
-    case 'pdf':
-      return <FileText className="w-4 h-4 text-red-400" />;
-    case 'epub':
-      return <FileText className="w-4 h-4 text-blue-400" />;
-    case 'txt':
-    case 'md':
-      return <FileText className="w-4 h-4 text-gray-400" />;
-    case 'js':
-    case 'ts':
-    case 'jsx':
-    case 'tsx':
-      return <FileCode className="w-4 h-4 text-yellow-400" />;
-    case 'json':
-      return <FileJson className="w-4 h-4 text-yellow-300" />;
-    case 'png':
-    case 'jpg':
-    case 'jpeg':
-    case 'gif':
-      return <FileImage className="w-4 h-4 text-purple-400" />;
-    default:
-      return <FileType2 className="w-4 h-4 text-gray-400" />;
-  }
-};
+    const ext = filename.split('.').pop()?.toLowerCase() || '';
+    
+    switch (ext) {
+      case 'pdf':
+        return <FileText className="w-4 h-4 text-[#e74c3c]" />;
+      case 'epub':
+        return <FileText className="w-4 h-4 text-[#4a90d9]" />;
+      case 'txt':
+        return <FileText className="w-4 h-4 text-[#cccccc]" />;
+      case 'md':
+        return <FileText className="w-4 h-4 text-[#519aba]" />;
+      case 'js':
+      case 'jsx':
+        return <FileCode className="w-4 h-4 text-[#f7df1e]" />;
+      case 'ts':
+      case 'tsx':
+        return <FileCode className="w-4 h-4 text-[#3178c6]" />;
+      case 'json':
+        return <FileJson className="w-4 h-4 text-[#f7df1e]" />;
+      case 'png':
+      case 'jpg':
+      case 'jpeg':
+      case 'gif':
+        return <FileImage className="w-4 h-4 text-[#a074c4]" />;
+      default:
+        return <FileType2 className="w-4 h-4 text-[#cccccc]" />;
+    }
+  };
 
 export const FileBrowserView: React.FC<FileBrowserViewProps> = ({ context }) => {
   const [rootPath, setRootPath] = useState<string>('');
@@ -88,12 +90,26 @@ export const FileBrowserView: React.FC<FileBrowserViewProps> = ({ context }) => 
         setRootPath(parentDir);
         const items = await loadDirectory(parentDir);
 
-        const tree = items.map(item => ({
-          item,
-          children: [],
-          isExpanded: false,
+        // Create root node for the current folder
+        const rootItem: FileItem = {
+          name: parentDir.split('/').pop() || 'Explorer',
+          path: parentDir,
+          type: 'directory',
+          size: undefined,
+          lastModified: new Date(0)
+        };
+
+        const tree: TreeNode[] = [{
+          item: rootItem,
+          children: items.map(item => ({
+            item,
+            children: [],
+            isExpanded: false,
+            isLoading: false
+          })),
+          isExpanded: true,
           isLoading: false
-        }));
+        }];
 
         setTreeData(tree);
         setError(null);
@@ -173,17 +189,22 @@ export const FileBrowserView: React.FC<FileBrowserViewProps> = ({ context }) => 
 
   const renderTreeNode = (node: TreeNode, index: number, depth: number = 0, parentPath: number[] = []) => {
     const isSelected = node.item.path === context.filePath;
-    const indentWidth = depth * 8;
+    const isRoot = depth === 0;
+    const indentWidth = depth * 16;
 
     return (
       <div key={node.item.path}>
         <div
-          className={`
-            group flex items-center h-[22px] px-2 cursor-pointer
-            hover:bg-gray-100 dark:hover:bg-gray-700
-            ${isSelected ? 'bg-blue-50 dark:bg-blue-900/30' : ''}
+         className={`
+            group flex items-center px-2 cursor-pointer
+            hover:bg-[#2a2d2e]
+            ${isSelected ? 'bg-[#37373d]' : ''}
+            ${isRoot ? 'font-semibold' : ''}
           `}
-          style={{ paddingLeft: `${indentWidth + 8}px` }}
+          style={{ 
+            paddingLeft: `${indentWidth + 4}px`,
+            height: '24px'
+          }}
           onClick={() => {
             if (node.item.type === 'directory') {
               toggleNode(node, index, parentPath);
@@ -192,49 +213,42 @@ export const FileBrowserView: React.FC<FileBrowserViewProps> = ({ context }) => 
             }
           }}
         >
-          {/* Chevron or spacer */}
-          <span className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-70">
-            {node.item.type === 'directory' && (
-              node.isLoading ? (
+          {/* Chevron for folders (except root) */}
+          {!isRoot && node.item.type === 'directory' && (
+            <span className="w-4 h-4 flex items-center justify-center flex-shrink-0 mr-0.5 opacity-60">
+              {node.isLoading ? (
                 <RefreshCw className="w-3 h-3 animate-spin" />
               ) : node.isExpanded ? (
                 <ChevronDown className="w-3.5 h-3.5" />
               ) : (
                 <ChevronRight className="w-3.5 h-3.5" />
-              )
-            )}
-          </span>
+              )}
+            </span>
+          )}
 
           {/* Icon */}
-          <span className="w-4 h-4 flex items-center justify-center flex-shrink-0 mx-1">
+          <span className="w-4 h-4 flex items-center justify-center flex-shrink-0 mr-1.5">
             {node.item.type === 'directory' ? (
               node.isExpanded ? (
-                <FolderOpen className="w-4 h-4 text-yellow-600 dark:text-yellow-500" />
+                <FolderOpen className="w-4 h-4 text-[#dcb67a]" />
               ) : (
-                <Folder className="w-4 h-4 text-yellow-600 dark:text-yellow-500" />
+                <Folder className="w-4 h-4 text-[#dcb67a]" />
               )
             ) : (
               getFileIcon(node.item.name)
             )}
           </span>
 
-          {/* Filename - 13px font */}
+          {/* Filename */}
           <span 
             className={`
               truncate flex-1 select-none
-              ${isSelected ? 'text-gray-900 dark:text-gray-100 font-medium' : 'text-gray-700 dark:text-gray-300'}
+              ${isSelected ? 'text-white font-medium' : 'text-[#cccccc]'}
             `}
             style={{ fontSize: '13px' }}
           >
             {node.item.name}
           </span>
-
-          {/* File size (only show on hover or for selected) */}
-          {node.item.size !== undefined && node.item.type === 'file' && (
-            <span className="text-gray-400 ml-2 opacity-0 group-hover:opacity-100 transition-opacity" style={{ fontSize: '11px' }}>
-              {formatFileSize(node.item.size)}
-            </span>
-          )}
         </div>
 
         {/* Children */}
@@ -249,32 +263,26 @@ export const FileBrowserView: React.FC<FileBrowserViewProps> = ({ context }) => 
     );
   };
 
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + sizes[i];
-  };
+  
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-500 p-4" style={{ fontSize: '13px' }}>
+      <div className="flex items-center justify-center h-full text-[#cccccc] p-4 bg-[#252526]" style={{ fontSize: '13px' }}>
         <p>{error}</p>
       </div>
     );
   }
 
   return (
-    <div className="h-full flex flex-col bg-gray-50 dark:bg-[#252526]">
+    <div className="h-full flex flex-col bg-[#252526]">
       {/* Header */}
-      <div className="flex items-center justify-between h-[35px] px-3 border-b border-gray-200 dark:border-gray-700">
-        <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 truncate flex-1">
-          {rootPath ? rootPath.split('/').pop() || 'Explorer' : 'Explorer'}
-        </h3>
+      <div className="flex items-center justify-between h-[28px] px-1 bg-[#252526] text-[#cccccc]">
+        <span className="text-[11px] font-semibold px-2 select-none">
+          EXPLORER
+        </span>
         <button
           onClick={refresh}
-          className="w-6 h-6 flex items-center justify-center rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+          className="w-5 h-5 flex items-center justify-center rounded hover:bg-[#37373d] text-[#cccccc]"
           title="Refresh"
         >
           <RefreshCw className="w-3.5 h-3.5" />
@@ -282,13 +290,8 @@ export const FileBrowserView: React.FC<FileBrowserViewProps> = ({ context }) => 
       </div>
 
       {/* File tree */}
-      <div className="flex-1 overflow-auto py-1">
+      <div className="flex-1 overflow-auto">
         {treeData.map((node, index) => renderTreeNode(node, index))}
-      </div>
-
-      {/* Footer */}
-      <div className="h-[22px] px-3 border-t border-gray-200 dark:border-gray-700 flex items-center text-[11px] text-gray-400">
-        {treeData.length} items
       </div>
     </div>
   );
