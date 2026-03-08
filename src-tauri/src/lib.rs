@@ -17,8 +17,11 @@ struct ChatRequest {
 }
 
 #[tauri::command]
-async fn extract_pdf_text(path: String) -> Result<String, String> {
+async fn extract_pdf_text(path: String, page_numbers: Option<Vec<u32>>) -> Result<String, String> {
     println!("[RUST] extract_pdf_text called for: {}", path);
+    if let Some(ref pages) = page_numbers {
+        println!("[RUST] Requested pages: {:?}", pages);
+    }
     log::info!("Extracting PDF text from: {}", path);
     
     // Check if file exists
@@ -28,10 +31,30 @@ async fn extract_pdf_text(path: String) -> Result<String, String> {
         return Err(msg);
     }
     
+    // Build pdftotext arguments
+    let mut args: Vec<String> = vec!["-layout".to_string(), "-enc".to_string(), "UTF-8".to_string()];
+    
+    // Add page range if specified
+    let page_args: Vec<String> = if let Some(ref pages) = page_numbers {
+        if !pages.is_empty() {
+            // Convert page numbers to "first-last" format for pdftotext
+            let first_page = *pages.iter().min().unwrap_or(&1);
+            let last_page = *pages.iter().max().unwrap_or(&first_page);
+            vec!["-f".to_string(), first_page.to_string(), "-l".to_string(), last_page.to_string()]
+        } else {
+            vec![]
+        }
+    } else {
+        vec![]
+    };
+    args.extend(page_args);
+    args.push(path.clone());
+    args.push("-".to_string());
+    
     // Try to use pdftotext command-line tool (commonly available)
-    println!("[RUST] Trying pdftotext...");
+    println!("[RUST] Trying pdftotext with args: {:?}", args);
     let output = Command::new("pdftotext")
-        .args(&["-layout", "-enc", "UTF-8", &path, "-"])
+        .args(&args)
         .output();
     
     match output {
@@ -50,22 +73,25 @@ async fn extract_pdf_text(path: String) -> Result<String, String> {
         }
     }
     
-    // Fallback: try pdf2txt.py (from pdfminer)
-    println!("[RUST] Trying pdf2txt.py...");
-    let output = Command::new("pdf2txt.py")
-        .args(&[&path])
-        .output();
-    
-    match output {
-        Ok(result) => {
-            if result.status.success() {
-                let text = String::from_utf8_lossy(&result.stdout).to_string();
-                println!("[RUST] pdf2txt.py succeeded, extracted {} characters", text.len());
-                return Ok(text);
+    // Fallback: try pdf2txt.py (from pdfminer) - doesn't support page ranges well
+    // Only use if no specific pages requested
+    if page_numbers.is_none() {
+        println!("[RUST] Trying pdf2txt.py...");
+        let output = Command::new("pdf2txt.py")
+            .args(&[&path])
+            .output();
+        
+        match output {
+            Ok(result) => {
+                if result.status.success() {
+                    let text = String::from_utf8_lossy(&result.stdout).to_string();
+                    println!("[RUST] pdf2txt.py succeeded, extracted {} characters", text.len());
+                    return Ok(text);
+                }
             }
-        }
-        Err(_) => {
-            println!("[RUST] pdf2txt.py not available");
+            Err(_) => {
+                println!("[RUST] pdf2txt.py not available");
+            }
         }
     }
     
@@ -133,7 +159,7 @@ async fn chat_with_ai(request: ChatRequest) -> Result<String, String> {
     println!("[RUST] Messages count: {}", request.messages.len());
 
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
+        .timeout(std::time::Duration::from_secs(300))  // 5 minute timeout for large models
         .build()
         .map_err(|e| e.to_string())?;
         

@@ -20,8 +20,8 @@ export interface AIConfig {
 
 export const DEFAULT_AI_CONFIG: AIConfig = {
   provider: 'llamacpp',
-  endpoint: 'http://localhost:8080',
-  model: 'llama2',
+  endpoint: 'http://192.168.1.67:8033',
+  model: 'Qwen3.5-27B',
 }
 
 export interface ChatMessage {

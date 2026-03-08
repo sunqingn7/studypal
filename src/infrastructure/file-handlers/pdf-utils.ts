@@ -26,34 +26,45 @@ export async function loadPdf(path: string): Promise<pdfjsLib.PDFDocumentProxy> 
   return cachedPdf
 }
 
-export async function getPdfText(path: string, _pageNumbers: number[]): Promise<string> {
+export async function getPdfText(path: string, pageNumbers: number[]): Promise<string> {
   try {
     console.log('[pdf-utils] Extracting PDF text via Rust backend for:', path)
+    console.log('[pdf-utils] Requesting pages:', pageNumbers)
+    
+    // Create cache key based on path and pages
+    const cacheKey = `${path}:${pageNumbers.join(',')}`
     
     // Check cache first
-    if (textCache.has(path)) {
+    if (textCache.has(cacheKey)) {
       console.log('[pdf-utils] Using cached text')
-      return textCache.get(path)!
+      return textCache.get(cacheKey)!
     }
     
-    // Extract text using Rust backend
-    const fullText = await invoke<string>('extract_pdf_text', { path })
-    console.log('[pdf-utils] Extracted', fullText.length, 'characters')
+    // Extract text using Rust backend with page numbers
+    const pageText = await invoke<string>('extract_pdf_text', { path, pageNumbers })
+    console.log('[pdf-utils] Extracted', pageText.length, 'characters')
     
     // Cache the result
-    textCache.set(path, fullText)
+    textCache.set(cacheKey, pageText)
     
-    return fullText
+    return pageText
   } catch (error: any) {
     console.error('[pdf-utils] Error extracting PDF text:', error)
-    return ''  // Return empty on any error
+    return '' // Return empty on any error
   }
 }
 
 export async function getCurrentPageText(path: string, currentPage: number): Promise<string> {
-  // For now, return all text since we extract the whole document
-  // In the future, we could extract per-page if needed
-  return getPdfText(path, [currentPage])
+  // Extract current page and next page (if available) for better context
+  // This provides more context while keeping token usage reasonable
+  const pages = [currentPage];
+  if (currentPage > 1) {
+    pages.unshift(currentPage - 1); // Previous page for context
+  }
+  pages.push(currentPage + 1); // Next page (backend will handle if it doesn't exist)
+  
+  console.log('[pdf-utils] Getting pages for context:', pages)
+  return getPdfText(path, pages)
 }
 
 export async function getAllPagesText(path: string): Promise<string> {
