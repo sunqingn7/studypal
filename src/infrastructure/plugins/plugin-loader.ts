@@ -3,6 +3,7 @@ import { pluginRegistry } from './plugin-registry';
 import { fileBrowserViewPlugin } from '../../plugins/file-browser-view';
 import { epubSupportPlugin } from '../../plugins/epub-support';
 import { mcpToolsPlugin } from '../../plugins/mcp-tools';
+import { markdownViewerPlugin } from '../../plugins/markdown-viewer';
 
 export async function loadAllPlugins(): Promise<void> {
   console.log('[PluginLoader] Starting plugin loading...');
@@ -12,6 +13,7 @@ export async function loadAllPlugins(): Promise<void> {
     { plugin: fileBrowserViewPlugin, enabled: true },
     { plugin: epubSupportPlugin, enabled: true },
     { plugin: mcpToolsPlugin, enabled: true },
+    { plugin: markdownViewerPlugin, enabled: true },
   ];
   
   for (const { plugin, enabled } of plugins) {
