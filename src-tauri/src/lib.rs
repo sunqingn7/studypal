@@ -1,6 +1,7 @@
 use tauri::Manager;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use std::process::Command;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ChatMessage {
@@ -27,44 +28,50 @@ async fn extract_pdf_text(path: String) -> Result<String, String> {
         return Err(msg);
     }
     
-    // Load PDF using lopdf
-    let doc = match lopdf::Document::load(&path) {
-        Ok(d) => d,
+    // Try to use pdftotext command-line tool (commonly available)
+    println!("[RUST] Trying pdftotext...");
+    let output = Command::new("pdftotext")
+        .args(&["-layout", "-enc", "UTF-8", &path, "-"])
+        .output();
+    
+    match output {
+        Ok(result) => {
+            if result.status.success() {
+                let text = String::from_utf8_lossy(&result.stdout).to_string();
+                println!("[RUST] pdftotext succeeded, extracted {} characters", text.len());
+                return Ok(text);
+            } else {
+                let stderr = String::from_utf8_lossy(&result.stderr);
+                println!("[RUST] pdftotext failed: {}", stderr);
+            }
+        }
         Err(e) => {
-            let msg = format!("Failed to load PDF: {}", e);
-            println!("[RUST] {}", msg);
-            return Err(msg);
-        }
-    };
-    
-    println!("[RUST] PDF loaded, extracting text...");
-    
-    // Extract text from all pages
-    let mut text_parts: Vec<String> = Vec::new();
-    let page_numbers: Vec<u32> = doc.get_pages().into_keys().collect();
-    
-    for page_num in page_numbers {
-        match doc.extract_text(&[page_num]) {
-            Ok(page_text) => {
-                let trimmed = page_text.trim();
-                if !trimmed.is_empty() {
-                    text_parts.push(format!("--- Page {} ---\n{}", page_num, trimmed));
-                }
-            }
-            Err(e) => {
-                println!("[RUST] Error extracting text from page {}: {}", page_num, e);
-            }
+            println!("[RUST] pdftotext not available: {}", e);
         }
     }
     
-    let full_text = text_parts.join("\n\n");
-    println!("[RUST] Extracted {} characters from {} pages", full_text.len(), text_parts.len());
+    // Fallback: try pdf2txt.py (from pdfminer)
+    println!("[RUST] Trying pdf2txt.py...");
+    let output = Command::new("pdf2txt.py")
+        .args(&[&path])
+        .output();
     
-    if full_text.len() > 500 {
-        println!("[RUST] Preview: {}...", &full_text[..500.min(full_text.len())]);
+    match output {
+        Ok(result) => {
+            if result.status.success() {
+                let text = String::from_utf8_lossy(&result.stdout).to_string();
+                println!("[RUST] pdf2txt.py succeeded, extracted {} characters", text.len());
+                return Ok(text);
+            }
+        }
+        Err(_) => {
+            println!("[RUST] pdf2txt.py not available");
+        }
     }
     
-    Ok(full_text)
+    // Final fallback: return a helpful message
+    println!("[RUST] No PDF text extraction tools available");
+    Err("PDF text extraction requires 'pdftotext' (poppler) or 'pdf2txt.py' (pdfminer). Please install one of these tools. On macOS: brew install poppler".to_string())
 }
 
 #[tauri::command]
