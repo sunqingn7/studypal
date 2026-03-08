@@ -358,13 +358,21 @@ function AIView() {
 activeMessages.map((msg) => (
             <div key={msg.id} className={`chat-message ${msg.role}`}>
               <div className="message-role">{msg.role === 'user' ? 'You' : 'AI'}</div>
-              <div className="message-content markdown-content">
-                <ReactMarkdown
-                  remarkPlugins={[remarkMath]}
-                  rehypePlugins={[rehypeKatex]}
-                >
-                  {msg.content}
-                </ReactMarkdown>
+              <div className="message-content">
+                {msg.role === 'user' ? (
+                  // User messages are HTML from TipTap editor
+                  <div dangerouslySetInnerHTML={{ __html: msg.content }} />
+                ) : (
+                  // AI messages are Markdown
+                  <div className="markdown-content">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkMath]}
+                      rehypePlugins={[rehypeKatex]}
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
+                  </div>
+                )}
               </div>
             </div>
           ))
