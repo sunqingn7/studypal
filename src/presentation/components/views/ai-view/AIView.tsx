@@ -2,6 +2,10 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
+import ReactMarkdown from 'react-markdown'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
 import { useAIChatStore } from '../../../../application/store/ai-chat-store'
 import { useFileStore } from '../../../../application/store/file-store'
 import { useNoteStore } from '../../../../application/store/note-store'
@@ -351,15 +355,19 @@ function AIView() {
               </p>
             </div>
           ) : (
-            activeMessages.map((msg) => (
-              <div key={msg.id} className={`chat-message ${msg.role}`}>
-                <div className="message-role">{msg.role === 'user' ? 'You' : 'AI'}</div>
-                <div
-                  className="message-content"
-                  dangerouslySetInnerHTML={{ __html: msg.content }}
-                />
+activeMessages.map((msg) => (
+            <div key={msg.id} className={`chat-message ${msg.role}`}>
+              <div className="message-role">{msg.role === 'user' ? 'You' : 'AI'}</div>
+              <div className="message-content markdown-content">
+                <ReactMarkdown
+                  remarkPlugins={[remarkMath]}
+                  rehypePlugins={[rehypeKatex]}
+                >
+                  {msg.content}
+                </ReactMarkdown>
               </div>
-            ))
+            </div>
+          ))
           )}
           {(isStreaming || isProcessing) && (
             <div className="chat-message assistant streaming">
