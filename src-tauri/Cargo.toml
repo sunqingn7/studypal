@@ -27,3 +27,5 @@ tauri-plugin-shell = "2"
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", features = ["json", "stream"] }
 urlencoding = "2.1"
+zip = "0.6"
+roxmltree = "0.20"

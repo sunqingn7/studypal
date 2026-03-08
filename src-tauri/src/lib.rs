@@ -226,18 +226,382 @@ async fn chat_with_ai(request: ChatRequest) -> Result<String, String> {
     Err("No valid response from AI".to_string())
 }
 
+use std::fs;
+use std::path::PathBuf;
+
+#[derive(Debug, Serialize, Deserialize)]
+struct FileItem {
+  name: String,
+  path: String,
+  #[serde(rename = "type")]
+  file_type: String,
+  extension: Option<String>,
+  size: Option<u64>,
+  last_modified: Option<u64>,
+}
+
+#[tauri::command]
+fn list_directory(path: String) -> Result<Vec<FileItem>, String> {
+  let entries = fs::read_dir(&path)
+    .map_err(|e| format!("Failed to read directory: {}", e))?;
+  
+  let mut items = Vec::new();
+  
+  for entry in entries {
+    if let Ok(entry) = entry {
+      let metadata = entry.metadata().ok();
+      let path = entry.path();
+      let name = entry.file_name().to_string_lossy().to_string();
+      let extension = path.extension()
+        .map(|e| e.to_string_lossy().to_string());
+      
+      let file_type = if metadata.as_ref().map(|m| m.is_dir()).unwrap_or(false) {
+        "directory"
+      } else {
+        "file"
+      }.to_string();
+      
+      let size = metadata.as_ref().map(|m| m.len());
+      let last_modified = metadata
+        .as_ref()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs());
+      
+      items.push(FileItem {
+        name,
+        path: path.to_string_lossy().to_string(),
+        file_type,
+        extension,
+        size,
+        last_modified,
+      });
+    }
+  }
+  
+  Ok(items)
+}
+
+#[tauri::command]
+fn get_parent_directory(file_path: String) -> Result<String, String> {
+  let path = PathBuf::from(&file_path);
+  let parent = path.parent()
+    .ok_or_else(|| "Cannot get parent directory".to_string())?;
+  parent.to_str()
+    .map(|s| s.to_string())
+    .ok_or_else(|| "Invalid path encoding".to_string())
+}
+
+#[tauri::command]
+fn get_file_info(file_path: String) -> Result<FileItem, String> {
+  let path = PathBuf::from(&file_path);
+  
+  // Check if file exists
+  if !path.exists() {
+    return Err(format!("File not found: {}", file_path));
+  }
+  
+  let metadata = fs::metadata(&path)
+    .map_err(|e| format!("Failed to get metadata: {}", e))?;
+  
+  let name = path.file_name()
+    .map(|n| n.to_string_lossy().to_string())
+    .unwrap_or_default();
+  
+  let extension = path.extension()
+    .map(|e| e.to_string_lossy().to_string())
+    .filter(|s| !s.is_empty());
+  
+  let file_type = if metadata.is_dir() {
+    "directory"
+  } else {
+    "file"
+  }.to_string();
+  
+  let size = metadata.len();
+  let last_modified = metadata
+    .modified()
+    .ok()
+    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+    .map(|d| d.as_secs());
+  
+  Ok(FileItem {
+    name,
+    path: file_path,
+    file_type,
+    extension,
+    size: Some(size),
+    last_modified,
+  })
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct FileOpenResult {
+  path: String,
+  name: String,
+  extension: Option<String>,
+  size: u64,
+  content: Option<Vec<u8>>,
+}
+
+#[tauri::command]
+async fn open_file_from_browser(file_path: String) -> Result<FileOpenResult, String> {
+  let path = PathBuf::from(&file_path);
+  
+  // Check if file exists
+  if !path.exists() {
+    return Err(format!("File not found: {}", file_path));
+  }
+  
+  // Check if it's a file (not directory)
+  if path.is_dir() {
+    return Err(format!("Path is a directory, not a file: {}", file_path));
+  }
+  
+  // Get metadata
+  let metadata = fs::metadata(&path)
+    .map_err(|e| format!("Failed to get metadata: {}", e))?;
+  
+  let name = path.file_name()
+    .map(|n| n.to_string_lossy().to_string())
+    .unwrap_or_default();
+  
+  let extension = path.extension()
+    .map(|e| e.to_string_lossy().to_string())
+    .filter(|s| !s.is_empty());
+  
+  let size = metadata.len();
+  
+  // Read file content for text files (under 10MB)
+  let content = if size < 10_000_000 {
+    match fs::read(&path) {
+      Ok(data) => Some(data),
+      Err(e) => {
+        println!("[RUST] Warning: Could not read file content: {}", e);
+        None
+      }
+    }
+  } else {
+    println!("[RUST] File too large to read into memory: {} bytes", size);
+    None
+  };
+  
+  println!("[RUST] Opened file from browser: {} ({} bytes)", name, size);
+  
+  Ok(FileOpenResult {
+    path: file_path,
+    name,
+    extension,
+    size,
+    content,
+  })
+}
+
+use std::io::Read;
+
+#[tauri::command]
+async fn extract_epub_text(file_path: String) -> Result<String, String> {
+  use zip::ZipArchive;
+  use std::fs::File;
+
+  println!("[RUST] extract_epub_text called for: {}", file_path);
+
+  // Check if file exists
+  if !Path::new(&file_path).exists() {
+    return Err(format!("File not found: {}", file_path));
+  }
+
+  // Read container.xml to find OPF path
+  let opf_path = {
+    let file = File::open(&file_path)
+      .map_err(|e| format!("Failed to open EPUB: {}", e))?;
+    let mut archive = ZipArchive::new(file)
+      .map_err(|e| format!("Failed to read EPUB: {}", e))?;
+    
+    let mut container_file = archive.by_name("META-INF/container.xml")
+      .map_err(|e| format!("Failed to read container.xml: {}", e))?;
+    let mut container_content = String::new();
+    container_file.read_to_string(&mut container_content)
+      .map_err(|e| format!("Failed to read container content: {}", e))?;
+    
+    parse_container_for_opf(&container_content)?
+  };
+  
+  println!("[RUST] Found OPF at: {}", opf_path);
+
+  // Read OPF file to get content files
+  let content_files = {
+    let file = File::open(&file_path)
+      .map_err(|e| format!("Failed to open EPUB: {}", e))?;
+    let mut archive = ZipArchive::new(file)
+      .map_err(|e| format!("Failed to read EPUB: {}", e))?;
+    
+    let mut opf_file = archive.by_name(&opf_path)
+      .map_err(|e| format!("Failed to read OPF: {}", e))?;
+    let mut opf_content = String::new();
+    opf_file.read_to_string(&mut opf_content)
+      .map_err(|e| format!("Failed to read OPF content: {}", e))?;
+    
+    let base_dir = Path::new(&opf_path)
+      .parent()
+      .map(|p| p.to_str().unwrap_or("")
+      .to_string())
+      .unwrap_or_default();
+    
+    let files = parse_opf_for_content(&opf_content)?;
+    
+    // Build full paths
+    files.into_iter()
+      .map(|f| {
+        if base_dir.is_empty() {
+          f
+        } else {
+          format!("{}/{}", base_dir, f)
+        }
+      })
+      .collect::<Vec<String>>()
+  };
+  
+  println!("[RUST] Found {} content files", content_files.len());
+
+  // Read all content files
+  let mut contents: Vec<String> = Vec::new();
+  {
+    let file = File::open(&file_path)
+      .map_err(|e| format!("Failed to open EPUB: {}", e))?;
+    let mut archive = ZipArchive::new(file)
+      .map_err(|e| format!("Failed to read EPUB: {}", e))?;
+    
+    for full_path in content_files {
+      match archive.by_name(&full_path) {
+        Ok(mut file) => {
+          let mut content = String::new();
+          if file.read_to_string(&mut content).is_ok() {
+            contents.push(content);
+          }
+        }
+        Err(e) => {
+          println!("[RUST] Warning: Could not read {}: {}", full_path, e);
+        }
+      }
+    }
+  }
+
+  // Process and concatenate all content
+  let mut full_text = String::new();
+  for content in contents {
+    let plain_text = strip_html_tags(&content);
+    full_text.push_str(&plain_text);
+    full_text.push('\n');
+  }
+
+  println!("[RUST] Extracted {} characters from EPUB", full_text.len());
+  Ok(full_text)
+}
+
+fn parse_container_for_opf(container: &str) -> Result<String, String> {
+  let doc = roxmltree::Document::parse(container)
+    .map_err(|e| format!("Failed to parse container.xml: {}", e))?;
+  
+  for node in doc.descendants() {
+    if node.tag_name().name() == "rootfile" {
+      if let Some(path) = node.attribute("full-path") {
+        return Ok(path.to_string());
+      }
+    }
+  }
+  
+  Err("Could not find full-path in container.xml".to_string())
+}
+
+fn parse_opf_for_content(opf: &str) -> Result<Vec<String>, String> {
+  let doc = roxmltree::Document::parse(opf)
+    .map_err(|e| format!("Failed to parse OPF: {}", e))?;
+  
+  let mut content_files = Vec::new();
+  
+  for node in doc.descendants() {
+    if node.tag_name().name() == "item" {
+      if let Some(media_type) = node.attribute("media-type") {
+        if media_type == "application/xhtml+xml" || media_type == "text/html" {
+          if let Some(href) = node.attribute("href") {
+            content_files.push(href.to_string());
+          }
+        }
+      }
+    }
+  }
+  
+  // Sort by reading order if possible (idref matching)
+  // For now, return in manifest order
+  Ok(content_files)
+}
+
+fn strip_html_tags(html: &str) -> String {
+  // Simple HTML tag removal
+  // Remove script and style tags with content
+  let mut result = html.to_string();
+  
+  // Remove script tags
+  while let Some(start) = result.find("<script") {
+    if let Some(end) = result[start..].find("</script>") {
+      result.replace_range(start..start + end + 9, "");
+    } else {
+      break;
+    }
+  }
+  
+  // Remove style tags
+  while let Some(start) = result.find("<style") {
+    if let Some(end) = result[start..].find("</style>") {
+      result.replace_range(start..start + end + 8, "");
+    } else {
+      break;
+    }
+  }
+  
+  // Remove all remaining tags
+  let mut output = String::new();
+  let mut in_tag = false;
+  
+  for c in result.chars() {
+    if c == '<' {
+      in_tag = true;
+    } else if c == '>' {
+      in_tag = false;
+      output.push(' ');
+    } else if !in_tag {
+      output.push(c);
+    }
+  }
+  
+  // Normalize whitespace
+  output.split_whitespace().collect::<Vec<&str>>().join(" ")
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_shell::init())
-        .plugin(
-            tauri_plugin_log::Builder::default()
-                .level(log::LevelFilter::Info)
-                .build(),
-        )
-        .invoke_handler(tauri::generate_handler![fetch_web_content, search_web, chat_with_ai, test_invoke, extract_pdf_text])
+  tauri::Builder::default()
+    .plugin(tauri_plugin_dialog::init())
+    .plugin(tauri_plugin_fs::init())
+    .plugin(tauri_plugin_shell::init())
+    .plugin(
+      tauri_plugin_log::Builder::default()
+        .level(log::LevelFilter::Info)
+        .build(),
+    )
+    .invoke_handler(tauri::generate_handler![
+      fetch_web_content, 
+      search_web, 
+      chat_with_ai, 
+      test_invoke, 
+      extract_pdf_text,
+      extract_epub_text,
+      list_directory,
+      get_parent_directory,
+      get_file_info,
+      open_file_from_browser
+    ])
         .setup(|app| {
             let _app_handle = app.handle().clone();
             

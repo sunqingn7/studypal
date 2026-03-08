@@ -6,4 +6,4 @@ target
 *.local
 .env
 .env.*
-*.md
+session*.md

@@ -1,18 +1,77 @@
+import { useState, useEffect } from 'react'
 import { Group, Panel, Separator } from 'react-resizable-panels'
+import { useFileStore } from '../../application/store/file-store'
+import { pluginRegistry } from '../../infrastructure/plugins/plugin-registry'
+import { FileBrowserView } from '../../plugins/file-browser-view/FileBrowserView'
 import FileView from '../components/views/file-view/FileView'
 import NoteView from '../components/views/note-view/NoteView'
 import AIView from '../components/views/ai-view/AIView'
 
 function MainLayout() {
+  const { currentFile } = useFileStore()
+  const [showFileBrowser, setShowFileBrowser] = useState(true)
+  const [hasFileBrowser, setHasFileBrowser] = useState(false)
+
+  const pluginContext = {
+    filePath: currentFile?.path
+  }
+
+  // Check if file browser plugin is available
+  useEffect(() => {
+    const checkPlugins = () => {
+      const viewPlugins = pluginRegistry.getViewPluginsForContext(pluginContext)
+      setHasFileBrowser(viewPlugins.some(v => v.metadata.id === 'file-browser-view'))
+    }
+    
+    checkPlugins()
+    // Check again after a short delay to ensure plugins are loaded
+    const timer = setTimeout(checkPlugins, 500)
+    return () => clearTimeout(timer)
+  }, [pluginContext])
+
   return (
-    <div className="app-container">
-      <Group orientation="horizontal">
-        <Panel id="file" defaultSize={60} minSize={30}>
+    <div className="app-container h-screen w-screen overflow-hidden">
+      <Group orientation="horizontal" className="h-full">
+        {/* Left Sidebar: File Browser */}
+        {showFileBrowser && (
+          <>
+            <Panel 
+              id="sidebar" 
+              defaultSize={25} 
+              minSize={20} 
+              maxSize={50}
+              className="min-w-[250px]"
+            >
+              {hasFileBrowser ? (
+                <FileBrowserView context={pluginContext} />
+              ) : (
+                <div className="flex items-center justify-center h-full text-[var(--sidebar-fg)] opacity-50 p-4">
+                  <p>Loading file browser...</p>
+                </div>
+              )}
+            </Panel>
+            <Separator />
+          </>
+        )}
+        
+        {/* Main Content Area: File View */}
+        <Panel 
+          id="file" 
+          defaultSize={showFileBrowser ? 35 : 60} 
+          minSize={30}
+        >
           <FileView />
         </Panel>
+        
         <Separator />
-        <Panel id="right" defaultSize={40} minSize={20}>
-          <Group orientation="vertical">
+        
+        {/* Right Panel: AI + Notes */}
+        <Panel 
+          id="right" 
+          defaultSize={40} 
+          minSize={25}
+        >
+          <Group orientation="vertical" className="h-full">
             <Panel id="ai" defaultSize={50} minSize={20}>
               <AIView />
             </Panel>
@@ -23,6 +82,15 @@ function MainLayout() {
           </Group>
         </Panel>
       </Group>
+      
+      {/* Toggle button for file browser */}
+      <button
+        onClick={() => setShowFileBrowser(!showFileBrowser)}
+        className="fixed left-2 top-16 z-50 p-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded shadow-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        title={showFileBrowser ? 'Hide File Browser' : 'Show File Browser'}
+      >
+        {showFileBrowser ? '◀' : '▶'}
+      </button>
     </div>
   )
 }

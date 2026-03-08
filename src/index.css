@@ -9,6 +9,16 @@
   --accent-hover: #357abd;
   --resize-handle: #c0c0c0;
   --resize-handle-hover: #4a90d9;
+  
+  /* Sidebar colors (VSCode light) */
+  --sidebar-bg: #f8f8f8;
+  --sidebar-fg: #3c3c3c;
+  --sidebar-border: #e5e5e5;
+  --sidebar-hover-bg: #e8e8e8;
+  --sidebar-active-bg: #e4e6f1;
+  --sidebar-active-fg: #1a1a1a;
+  --folder-color: #dcb67a;
+  --folder-open-color: #dcb67a;
 }
 
 [data-theme="dark"] {
@@ -22,6 +32,16 @@
   --accent-hover: #5aa0e9;
   --resize-handle: #555555;
   --resize-handle-hover: #4a90d9;
+  
+  /* Sidebar colors (VSCode dark) */
+  --sidebar-bg: #252526;
+  --sidebar-fg: #cccccc;
+  --sidebar-border: #3c3c3c;
+  --sidebar-hover-bg: #2a2d2e;
+  --sidebar-active-bg: #37373d;
+  --sidebar-active-fg: #ffffff;
+  --folder-color: #dcb67a;
+  --folder-open-color: #dcb67a;
 }
 
 * {
@@ -48,26 +68,91 @@ body {
   display: flex;
 }
 
-.resize-handle-vertical {
-  width: 4px;
-  background-color: var(--resize-handle);
-  cursor: col-resize;
-  transition: background-color 0.2s;
+/* react-resizable-panels styles - make handles very visible */
+[data-panel-resize-handle-id] {
+  flex: 0 0 4px !important;
+  background-color: #ddd !important;
+  transition: background-color 0.2s ease !important;
+  position: relative !important;
+  z-index: 1000 !important;
+  touch-action: none !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
-.resize-handle-vertical:hover {
-  background-color: var(--resize-handle-hover);
+[data-panel-resize-handle-id]:hover,
+[data-panel-resize-handle-id][data-resize-handle-active="true"] {
+  background-color: #4a90d9 !important;
 }
 
-.resize-handle-horizontal {
-  height: 4px;
-  background-color: var(--resize-handle);
-  cursor: row-resize;
-  transition: background-color 0.2s;
+[data-panel-resize-handle-id][data-orientation="horizontal"] {
+  width: 4px !important;
+  min-width: 4px !important;
+  max-width: 4px !important;
+  cursor: col-resize !important;
 }
 
-.resize-handle-horizontal:hover {
-  background-color: var(--resize-handle-hover);
+[data-panel-resize-handle-id][data-orientation="vertical"] {
+  height: 4px !important;
+  min-height: 4px !important;
+  max-height: 4px !important;
+  cursor: row-resize !important;
+}
+
+/* Visual indicator in the middle of the handle */
+[data-panel-resize-handle-id][data-orientation="horizontal"]::before {
+  content: '';
+  position: absolute;
+  width: 2px;
+  height: 30px;
+  background-color: #999;
+  border-radius: 1px;
+  opacity: 0.6;
+}
+
+[data-panel-resize-handle-id][data-orientation="vertical"]::before {
+  content: '';
+  position: absolute;
+  width: 30px;
+  height: 2px;
+  background-color: #999;
+  border-radius: 1px;
+  opacity: 0.6;
+}
+
+/* Dark theme */
+[data-theme="dark"] [data-panel-resize-handle-id] {
+  background-color: #444 !important;
+}
+
+[data-theme="dark"] [data-panel-resize-handle-id]::before {
+  background-color: #666;
+}
+
+/* Ensure panels have proper minimum sizes */
+[data-panel] {
+  min-width: 200px;
+  min-height: 100px;
+}
+
+/* Panel content wrapper to prevent overflow */
+[data-panel] > div {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Fix for canvas overlap issues */
+canvas {
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+}
+
+/* Ensure file browser panel doesn't get squashed */
+#sidebar,
+[data-panel-id="sidebar"] {
+  min-width: 250px !important;
 }
 
 .panel {

@@ -13,6 +13,7 @@ type PageMode = 'single' | 'double'
 
 interface PDFViewerProps {
   path: string
+  fileData?: Uint8Array | null
 }
 
 interface TextItem {
@@ -30,7 +31,7 @@ interface TextContent {
   styles: Record<string, unknown>
 }
 
-function PDFViewer({ path }: PDFViewerProps) {
+function PDFViewer({ path, fileData }: PDFViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const { setCurrentPage: updateStorePage } = useFileStore()
   const [pdf, setPdf] = useState<pdfjsLib.PDFDocumentProxy | null>(null)
@@ -42,6 +43,7 @@ function PDFViewer({ path }: PDFViewerProps) {
   const [pageMode, setPageMode] = useState<PageMode>('single')
   const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map())
   const textLayerRefs = useRef<Map<number, HTMLDivElement>>(new Map())
+  const renderTasksRef = useRef<Map<number, { cancel: () => void }>>(new Map())
 
   const setCurrentPage = useCallback((page: number | ((prev: number) => number)) => {
     if (typeof page === 'function') {
@@ -66,6 +68,13 @@ function PDFViewer({ path }: PDFViewerProps) {
   const renderPage = useCallback(async (pageNum: number, canvas: HTMLCanvasElement | null) => {
     if (!pdf || !canvas) return
 
+    // Cancel any existing render task for this page
+    const existingTask = renderTasksRef.current.get(pageNum)
+    if (existingTask) {
+      existingTask.cancel()
+      renderTasksRef.current.delete(pageNum)
+    }
+
     try {
       const page = await pdf.getPage(pageNum)
       const viewport = page.getViewport({ scale })
@@ -82,7 +91,17 @@ function PDFViewer({ path }: PDFViewerProps) {
         canvas: canvas,
       }
 
-      await page.render(renderContext).promise
+      const renderTask = page.render(renderContext)
+      
+      // Store the render task so we can cancel it if needed
+      renderTasksRef.current.set(pageNum, {
+        cancel: () => renderTask.cancel()
+      })
+
+      await renderTask.promise
+      
+      // Remove the task after completion
+      renderTasksRef.current.delete(pageNum)
 
       // Extract and render text layer
       const textContent = await page.getTextContent()
@@ -93,6 +112,10 @@ function PDFViewer({ path }: PDFViewerProps) {
         renderTextLayer(textLayerDiv, textContent as TextContent, viewport)
       }
     } catch (err) {
+      // Don't log cancellation errors as they're expected
+      if (err instanceof Error && err.message.includes('Rendering cancelled')) {
+        return
+      }
       console.error(`Error rendering page ${pageNum}:`, err)
     }
   }, [pdf, scale])
@@ -125,8 +148,17 @@ function PDFViewer({ path }: PDFViewerProps) {
       setLoading(true)
       setError(null)
       try {
-        const fileData = await readFile(path)
-        const typedArray = new Uint8Array(fileData)
+        let typedArray: Uint8Array
+        
+        // Use provided fileData from backend if available
+        if (fileData) {
+          typedArray = fileData
+        } else {
+          // Fallback to reading file directly (may fail due to permissions)
+          const data = await readFile(path)
+          typedArray = new Uint8Array(data)
+        }
+        
         const loadingTask = pdfjsLib.getDocument({ data: typedArray })
         const pdfDoc = await loadingTask.promise
         setPdf(pdfDoc)
@@ -134,7 +166,14 @@ function PDFViewer({ path }: PDFViewerProps) {
         setCurrentPage(1)
       } catch (err) {
         console.error('Error loading PDF:', err)
-        setError(`Failed to load PDF: ${err instanceof Error ? err.message : 'Unknown error'}`)
+        const errorMessage = err instanceof Error ? err.message : String(err)
+        
+        // Check for permission errors
+        if (errorMessage.includes('forbidden') || errorMessage.includes('permission') || errorMessage.includes('scope')) {
+          setError(`PERMISSION_DENIED:${path}`)
+        } else {
+          setError(`Failed to load PDF: ${errorMessage}`)
+        }
       } finally {
         setLoading(false)
       }
@@ -145,7 +184,7 @@ function PDFViewer({ path }: PDFViewerProps) {
     return () => {
       pdf?.destroy()
     }
-  }, [path])
+  }, [path, fileData])
 
   useEffect(() => {
     if (!pdf) return
@@ -263,9 +302,29 @@ function PDFViewer({ path }: PDFViewerProps) {
   }
 
   if (error) {
+    const isPermissionError = error.startsWith('PERMISSION_DENIED:')
+    const filePath = isPermissionError ? error.replace('PERMISSION_DENIED:', '') : ''
+    
     return (
       <div className="pdf-viewer-error">
-        <p>{error}</p>
+        {isPermissionError ? (
+          <>
+            <p>Permission denied to access this file.</p>
+            <p className="error-path">{filePath}</p>
+            <p className="error-hint">
+              This file is outside the allowed directory scope. 
+              Please move the file to your Documents folder or grant permission.
+            </p>
+            <button 
+              className="permission-button"
+              onClick={() => window.location.reload()}
+            >
+              Retry Loading
+            </button>
+          </>
+        ) : (
+          <p>{error}</p>
+        )}
       </div>
     )
   }
