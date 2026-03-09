@@ -33,6 +33,11 @@ function AIView() {
     getActiveMessages,
     setConfig,
     setStreaming,
+    addToMessageHistory,
+    getPreviousMessage,
+    getNextMessage,
+    resetHistoryIndex,
+    abortChat,
   } = useAIChatStore()
 
   const { currentFile, currentPage } = useFileStore()
@@ -43,8 +48,12 @@ function AIView() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [fontSize, setFontSize] = useState(14)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   const activeMessages = getActiveMessages()
+
+  // Track current draft message when navigating history
+  const [draftMessage, setDraftMessage] = useState('')
 
   // Rich text editor for input
   const editor = useEditor({
@@ -65,6 +74,49 @@ function AIView() {
           handleSend()
           return true
         }
+
+        // Up/Down arrow for message history
+        if (event.key === 'ArrowUp' && !event.shiftKey) {
+          const currentText = editor?.getText() || ''
+          // If at start of line or empty, try to get previous message
+          const selection = window.getSelection()
+          const isAtStart = !selection || selection.anchorOffset === 0
+
+          if (isAtStart || !currentText.trim()) {
+            event.preventDefault()
+            if (currentText && !draftMessage) {
+              setDraftMessage(currentText)
+            }
+            const prevMessage = activeTabId ? getPreviousMessage(activeTabId) : null
+            if (prevMessage !== null && editor) {
+              editor.commands.clearContent()
+              editor.commands.insertContent(prevMessage)
+            }
+            return true
+          }
+        }
+
+        if (event.key === 'ArrowDown' && !event.shiftKey) {
+          const currentText = editor?.getText() || ''
+          const selection = window.getSelection()
+          const isAtEnd = !selection || selection.anchorOffset >= (currentText?.length || 0)
+
+          if (isAtEnd || !currentText.trim()) {
+            event.preventDefault()
+            const nextMessage = activeTabId ? getNextMessage(activeTabId) : null
+            if (nextMessage !== null && editor) {
+              editor.commands.clearContent()
+              editor.commands.insertContent(nextMessage)
+            } else if (draftMessage && editor) {
+              // Restore draft when at end of history
+              editor.commands.clearContent()
+              editor.commands.insertContent(draftMessage)
+              setDraftMessage('')
+            }
+            return true
+          }
+        }
+
         return false
       },
     },
@@ -80,9 +132,12 @@ function AIView() {
     scrollToBottom()
   }, [activeMessages])
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+const scrollToBottom = () => {
+  const chatMessages = document.querySelector('.chat-messages')
+  if (chatMessages) {
+    chatMessages.scrollTop = chatMessages.scrollHeight
   }
+}
 
   const handleAddTab = useCallback(() => {
     addTab()
@@ -214,7 +269,7 @@ function AIView() {
     }
   }
 
-  const handleSend = async () => {
+const handleSend = async () => {
     if (!activeTabId || !editor || isStreaming || isProcessing) return
 
     const htmlContent = editor.getHTML()
@@ -227,8 +282,13 @@ function AIView() {
 
     if (!activeTabId) return
     addMessage(activeTabId, 'user', htmlContent)
+    addToMessageHistory(activeTabId, textContent)
     setStreaming(true)
     setIsProcessing(true)
+
+    // Create abort controller for this request
+    abortControllerRef.current = new AbortController()
+    let fullResponse = ''
 
     try {
       const context = await buildContext(userMessage)
@@ -249,8 +309,8 @@ function AIView() {
       const fullMessage = context
         ? `[Context]\n${context}${additionalContext ? '\n\n' + additionalContext : ''}\n\n[User Question]\n${userMessage}`
         : additionalContext
-        ? `${additionalContext}\n\n[User Question]\n${userMessage}`
-        : userMessage
+          ? `${additionalContext}\n\n[User Question]\n${userMessage}`
+          : userMessage
 
       const previousMessages = activeMessages.slice(0, -1)
       const currentMessage: ChatMessage = {
@@ -261,33 +321,52 @@ function AIView() {
       }
       const messages: ChatMessage[] = [...previousMessages, currentMessage]
 
-      let fullResponse = ''
-
       await llamaCppProvider.streamChat(
         messages,
         config,
         (chunk) => {
           fullResponse += chunk
-        }
+        },
+        abortControllerRef.current.signal
       )
 
       if (activeTabId) {
         addMessage(activeTabId, 'assistant', fullResponse)
       }
-    } catch (error) {
-      console.error('AI Error:', error)
-      if (activeTabId) {
-        addMessage(activeTabId, 'assistant', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } catch (error: any) {
+      if (error.message === 'Chat aborted' || error.name === 'AbortError') {
+        if (activeTabId) {
+          addMessage(activeTabId, 'assistant', fullResponse ? `${fullResponse}\n\n[Aborted]` : '[Aborted]')
+        }
+      } else {
+        console.error('AI Error:', error)
+        if (activeTabId) {
+          addMessage(activeTabId, 'assistant', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        }
       }
     } finally {
+      abortControllerRef.current = null
       setStreaming(false)
       setIsProcessing(false)
     }
   }
 
+  const handleAbort = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+    abortChat()
+  }
+
   const handleNewChat = () => {
     if (activeTabId) {
       clearChat(activeTabId)
+      resetHistoryIndex(activeTabId)
+      setDraftMessage('')
+      if (editor) {
+        editor.commands.clearContent()
+      }
     }
   }
 
@@ -420,21 +499,30 @@ activeMessages.map((msg) => (
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="chat-input-container">
-          {editor && (
-            <EditorContent
-              editor={editor}
-              className="chat-input"
-            />
-          )}
-          <button
-            className="send-button"
-            onClick={handleSend}
-            disabled={!editor?.getText().trim() || isStreaming || isProcessing}
-          >
-            Send
-          </button>
-        </div>
+<div className="chat-input-container">
+      {editor && (
+        <EditorContent
+          editor={editor}
+          className="chat-input"
+        />
+      )}
+      {(isStreaming || isProcessing) ? (
+        <button
+          className="send-button abort-button"
+          onClick={handleAbort}
+        >
+          Abort
+        </button>
+      ) : (
+        <button
+          className="send-button"
+          onClick={handleSend}
+          disabled={!editor?.getText().trim()}
+        >
+          Send
+        </button>
+      )}
+    </div>
       </div>
     </div>
   )

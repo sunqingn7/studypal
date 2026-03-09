@@ -6,6 +6,8 @@ interface ChatTab {
   title: string
   messages: ChatMessage[]
   isActive: boolean
+  userMessageHistory: string[]
+  historyIndex: number
 }
 
 interface AIChatStore {
@@ -26,9 +28,19 @@ interface AIChatStore {
   getActiveTab: () => ChatTab | undefined
   getActiveMessages: () => ChatMessage[]
 
+  // Message history for up/down navigation
+  addToMessageHistory: (tabId: string, content: string) => void
+  getPreviousMessage: (tabId: string) => string | null
+  getNextMessage: (tabId: string) => string | null
+  resetHistoryIndex: (tabId: string) => void
+
   // Config
   setConfig: (config: Partial<AIConfig>) => void
   setStreaming: (isStreaming: boolean) => void
+
+  // Abort functionality
+  abortController: AbortController | null
+  abortChat: () => void
 }
 
 export const useAIChatStore = create<AIChatStore>((set, get) => ({
@@ -43,6 +55,8 @@ export const useAIChatStore = create<AIChatStore>((set, get) => ({
       title: title || `Chat ${get().tabs.length + 1}`,
       messages: [],
       isActive: true,
+      userMessageHistory: [],
+      historyIndex: -1,
     }
 
     set((state) => ({
@@ -126,5 +140,67 @@ export const useAIChatStore = create<AIChatStore>((set, get) => ({
 
   setStreaming: (isStreaming) => {
     set({ isStreaming })
+  },
+
+  // Message history methods
+  addToMessageHistory: (tabId, content) => {
+    if (!content.trim()) return
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === tabId
+          ? { ...t, userMessageHistory: [...t.userMessageHistory, content], historyIndex: -1 }
+          : t
+      ),
+    }))
+  },
+
+  getPreviousMessage: (tabId) => {
+    const tab = get().tabs.find((t) => t.id === tabId)
+    if (!tab || tab.userMessageHistory.length === 0) return null
+    const newIndex = Math.min(tab.historyIndex + 1, tab.userMessageHistory.length - 1)
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === tabId ? { ...t, historyIndex: newIndex } : t
+      ),
+    }))
+    return tab.userMessageHistory[tab.userMessageHistory.length - 1 - newIndex] || null
+  },
+
+  getNextMessage: (tabId) => {
+    const tab = get().tabs.find((t) => t.id === tabId)
+    if (!tab || tab.historyIndex <= 0) {
+      set((state) => ({
+        tabs: state.tabs.map((t) =>
+          t.id === tabId ? { ...t, historyIndex: -1 } : t
+        ),
+      }))
+      return null
+    }
+    const newIndex = tab.historyIndex - 1
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === tabId ? { ...t, historyIndex: newIndex } : t
+      ),
+    }))
+    return tab.userMessageHistory[tab.userMessageHistory.length - 1 - newIndex] || null
+  },
+
+  resetHistoryIndex: (tabId) => {
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === tabId ? { ...t, historyIndex: -1 } : t
+      ),
+    }))
+  },
+
+  // Abort functionality
+  abortController: null,
+
+  abortChat: () => {
+    const { abortController } = get()
+    if (abortController) {
+      abortController.abort()
+      set({ abortController: null, isStreaming: false })
+    }
   },
 }))

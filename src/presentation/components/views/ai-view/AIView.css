@@ -460,3 +460,11 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.send-button.abort-button {
+  background-color: #dc2626;
+}
+
+.send-button.abort-button:hover {
+  background-color: #b91c1c;
+}
