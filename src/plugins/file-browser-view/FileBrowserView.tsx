@@ -66,6 +66,7 @@ export const FileBrowserView: React.FC<FileBrowserViewProps> = ({ context }) => 
   const [rootPath, setRootPath] = useState<string>('');
   const [treeData, setTreeData] = useState<TreeNode[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
   const loadDirectory = useCallback(async (path: string): Promise<FileItem[]> => {
     try {
@@ -127,6 +128,13 @@ export const FileBrowserView: React.FC<FileBrowserViewProps> = ({ context }) => 
 
     initialize();
   }, [context.filePath, loadDirectory]);
+
+  // Sync selected path with opened file
+  useEffect(() => {
+    if (context.filePath) {
+      setSelectedPath(context.filePath);
+    }
+  }, [context.filePath]);
 
   const toggleNode = async (node: TreeNode, index: number, parentPath: number[] = []) => {
     if (node.item.type !== 'directory') return;
@@ -208,32 +216,38 @@ const handleFileClick = async (filePath: string) => {
     }
   };
 
-  const renderTreeNode = (node: TreeNode, index: number, depth: number = 0, parentPath: number[] = []) => {
-    const isSelected = node.item.path === context.filePath;
+const renderTreeNode = (node: TreeNode, index: number, depth: number = 0, parentPath: number[] = []) => {
+    const isSelected = node.item.path === selectedPath;
+    const isOpened = node.item.path === context.filePath;
     const isRoot = depth === 0;
     const indentWidth = depth * 16;
 
-return (
-    <div key={node.item.path} className="mb-0.5">
-      <div
-        className={`
+    return (
+      <div key={node.item.path} className="mb-0.5">
+        <div
+          className={`
           group flex items-baseline px-2 cursor-pointer py-1
           hover:bg-[var(--sidebar-hover-bg)]
           ${isSelected ? 'bg-[var(--sidebar-active-bg)]' : ''}
+          ${isOpened ? 'font-semibold text-[var(--accent-color)]' : ''}
           ${isRoot ? 'font-semibold' : ''}
         `}
-        style={{
-          paddingLeft: `${indentWidth + 4}px`,
-          color: isSelected ? 'var(--sidebar-active-fg)' : 'var(--sidebar-fg)'
-        }}
-        onClick={() => {
-          if (node.item.type === 'directory') {
-            toggleNode(node, index, parentPath);
-          } else {
-            handleFileClick(node.item.path);
-          }
-        }}
-      >
+          style={{
+            paddingLeft: `${indentWidth + 4}px`,
+            color: isSelected ? 'var(--sidebar-active-fg)' : (isOpened ? 'var(--accent-color)' : 'var(--sidebar-fg)')
+          }}
+          onClick={() => {
+            setSelectedPath(node.item.path);
+            if (node.item.type === 'directory') {
+              toggleNode(node, index, parentPath);
+            }
+          }}
+          onDoubleClick={() => {
+            if (node.item.type === 'file') {
+              handleFileClick(node.item.path);
+            }
+          }}
+        >
         {/* Chevron for folders (except root) */}
         {!isRoot && node.item.type === 'directory' && (
           <span className="w-4 h-4 flex items-center justify-center flex-shrink-0 mr-0.5 opacity-60">
