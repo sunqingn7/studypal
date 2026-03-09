@@ -1,0 +1,258 @@
+.latex-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: var(--bg-primary);
+}
+
+.latex-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.latex-navigation {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.latex-navigation button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.latex-navigation button:hover:not(:disabled) {
+  background-color: var(--bg-tertiary);
+}
+
+.latex-navigation button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.page-indicator {
+  font-size: 14px;
+  color: var(--text-secondary);
+  min-width: 60px;
+  text-align: center;
+}
+
+.latex-zoom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.latex-zoom button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.latex-zoom button:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.latex-zoom span {
+  font-size: 14px;
+  color: var(--text-secondary);
+  min-width: 48px;
+  text-align: center;
+}
+
+.latex-container {
+  flex: 1;
+  overflow: auto;
+  padding: 24px;
+  background-color: var(--bg-primary);
+}
+
+.latex-content-wrapper {
+  max-width: 900px;
+  margin: 0 auto;
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.latex-content {
+  padding: 32px;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.latex-line {
+  min-height: 1.6em;
+}
+
+.latex-comment {
+  color: #6a9955;
+  font-style: italic;
+  min-height: 1.6em;
+}
+
+.latex-section {
+  color: #569cd6;
+  font-weight: bold;
+  min-height: 1.6em;
+}
+
+.latex-environment {
+  color: #c586c0;
+  min-height: 1.6em;
+}
+
+.latex-command {
+  color: #dcdcaa;
+  min-height: 1.6em;
+}
+
+.latex-content .latex-command::before {
+  content: '';
+}
+
+/* Line numbers */
+.latex-content {
+  counter-reset: line;
+}
+
+.latex-line,
+.latex-comment,
+.latex-section,
+.latex-environment,
+.latex-command {
+  counter-increment: line;
+  position: relative;
+  padding-left: 3em;
+}
+
+.latex-line::before,
+.latex-comment::before,
+.latex-section::before,
+.latex-environment::before,
+.latex-command::before {
+  content: counter(line);
+  position: absolute;
+  left: 0;
+  width: 2em;
+  text-align: right;
+  color: var(--text-secondary);
+  opacity: 0.5;
+  font-size: 12px;
+  user-select: none;
+}
+
+.latex-footer {
+  padding: 8px 16px;
+  background-color: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+}
+
+.latex-progress {
+  height: 3px;
+  background-color: var(--bg-tertiary);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.latex-progress-bar {
+  height: 100%;
+  background-color: var(--accent-color);
+  transition: width 0.3s ease;
+}
+
+.latex-viewer-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary);
+}
+
+.latex-viewer-loading .spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--accent-color);
+  border-radius: 50%;
+  animation: latex-spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes latex-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.latex-viewer-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--error-color);
+  padding: 24px;
+  text-align: center;
+}
+
+/* Dark mode specific syntax colors */
+@media (prefers-color-scheme: dark) {
+  .latex-comment {
+    color: #6a9955;
+  }
+
+  .latex-section {
+    color: #569cd6;
+  }
+
+  .latex-environment {
+    color: #c586c0;
+  }
+
+  .latex-command {
+    color: #dcdcaa;
+  }
+}
+
+/* Light mode specific syntax colors */
+@media (prefers-color-scheme: light) {
+  .latex-comment {
+    color: #008000;
+  }
+
+  .latex-section {
+    color: #0000ff;
+  }
+
+  .latex-environment {
+    color: #800080;
+  }
+
+  .latex-command {
+    color: #795e26;
+  }
+}

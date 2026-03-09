@@ -27,34 +27,40 @@ interface TreeNode {
 
 // File icon based on extension
 const getFileIcon = (filename: string) => {
-    const ext = filename.split('.').pop()?.toLowerCase() || '';
-    
-    switch (ext) {
-      case 'pdf':
-        return <FileText className="w-3.5 h-3.5 text-red-500 dark:text-red-400" />;
-      case 'epub':
-        return <FileText className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />;
-      case 'txt':
-        return <FileText className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />;
-      case 'md':
-        return <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />;
-      case 'js':
-      case 'jsx':
-        return <FileCode className="w-3.5 h-3.5 text-yellow-500 dark:text-yellow-400" />;
-      case 'ts':
-      case 'tsx':
-        return <FileCode className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />;
-      case 'json':
-        return <FileJson className="w-3.5 h-3.5 text-yellow-500 dark:text-yellow-400" />;
-      case 'png':
-      case 'jpg':
-      case 'jpeg':
-      case 'gif':
-        return <FileImage className="w-3.5 h-3.5 text-purple-500 dark:text-purple-400" />;
-      default:
-        return <FileType2 className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />;
-    }
-  };
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+
+  switch (ext) {
+    case 'pdf':
+      return <FileText className="w-4 h-4 text-red-500 dark:text-red-400" />;
+    case 'epub':
+      return <FileText className="w-4 h-4 text-blue-500 dark:text-blue-400" />;
+    case 'txt':
+      return <FileText className="w-4 h-4 text-gray-500 dark:text-gray-400" />;
+    case 'md':
+      return <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400" />;
+    case 'js':
+    case 'jsx':
+      return <FileCode className="w-4 h-4 text-yellow-500 dark:text-yellow-400" />;
+    case 'ts':
+    case 'tsx':
+      return <FileCode className="w-4 h-4 text-blue-600 dark:text-blue-400" />;
+    case 'json':
+      return <FileJson className="w-4 h-4 text-yellow-500 dark:text-yellow-400" />;
+    case 'html':
+    case 'htm':
+      return <FileCode className="w-4 h-4 text-orange-500 dark:text-orange-400" />;
+    case 'tex':
+    case 'latex':
+      return <FileText className="w-4 h-4 text-teal-500 dark:text-teal-400" />;
+    case 'png':
+    case 'jpg':
+    case 'jpeg':
+    case 'gif':
+      return <FileImage className="w-4 h-4 text-purple-500 dark:text-purple-400" />;
+    default:
+      return <FileType2 className="w-4 h-4 text-gray-500 dark:text-gray-400" />;
+  }
+};
 
 export const FileBrowserView: React.FC<FileBrowserViewProps> = ({ context }) => {
   const [rootPath, setRootPath] = useState<string>('');
@@ -155,21 +161,36 @@ export const FileBrowserView: React.FC<FileBrowserViewProps> = ({ context }) => 
     setTreeData(newTreeData);
   };
 
-  const handleFileClick = async (filePath: string) => {
-    try {
-      const fileInfo = await invoke('open_file_from_browser', { filePath });
+// Track pending file opens to prevent duplicates
+const pendingFileOpens = new Set<string>();
 
-      if (fileInfo) {
-        const event = new CustomEvent('open-file', {
-          detail: fileInfo
-        });
-        window.dispatchEvent(event);
-      }
-    } catch (err) {
-      console.error('Error opening file from browser:', err);
-      setError(`Failed to open file: ${err instanceof Error ? err.message : String(err)}`);
+const handleFileClick = async (filePath: string) => {
+  // Prevent duplicate clicks on the same file
+  if (pendingFileOpens.has(filePath)) {
+    return;
+  }
+
+  pendingFileOpens.add(filePath);
+
+  try {
+    const fileInfo = await invoke('open_file_from_browser', { filePath });
+
+    if (fileInfo) {
+      const event = new CustomEvent('open-file', {
+        detail: fileInfo
+      });
+      window.dispatchEvent(event);
     }
-  };
+  } catch (err) {
+    console.error('Error opening file from browser:', err);
+    setError(`Failed to open file: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    // Remove from pending after a delay to prevent rapid re-clicks
+    setTimeout(() => {
+      pendingFileOpens.delete(filePath);
+    }, 500);
+  }
+};
 
   const refresh = async () => {
     if (!rootPath) return;
@@ -192,62 +213,61 @@ export const FileBrowserView: React.FC<FileBrowserViewProps> = ({ context }) => 
     const isRoot = depth === 0;
     const indentWidth = depth * 16;
 
-    return (
-      <div key={node.item.path}>
-       <div
-          className={`
-            group flex items-center px-2 cursor-pointer
-            hover:bg-[var(--sidebar-hover-bg)]
-            ${isSelected ? 'bg-[var(--sidebar-active-bg)]' : ''}
-            ${isRoot ? 'font-semibold' : ''}
-          `}
-          style={{ 
-            paddingLeft: `${indentWidth + 4}px`,
-            height: '24px',
-            color: isSelected ? 'var(--sidebar-active-fg)' : 'var(--sidebar-fg)'
-          }}
-          onClick={() => {
-            if (node.item.type === 'directory') {
-              toggleNode(node, index, parentPath);
-            } else {
-              handleFileClick(node.item.path);
-            }
-          }}
-        >
-          {/* Chevron for folders (except root) */}
-          {!isRoot && node.item.type === 'directory' && (
-            <span className="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0 mr-0.5 opacity-60">
-              {node.isLoading ? (
-                <RefreshCw className="w-3 h-3 animate-spin" />
-              ) : node.isExpanded ? (
-                <ChevronDown className="w-3 h-3" />
-              ) : (
-                <ChevronRight className="w-3 h-3" />
-              )}
-            </span>
-          )}
-
-          {/* Icon */}
-          <span className="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0 mr-1.5">
-            {node.item.type === 'directory' ? (
-              node.isExpanded ? (
-                <FolderOpen className="w-3.5 h-3.5 text-[var(--folder-open-color)]" />
-              ) : (
-                <Folder className="w-3.5 h-3.5 text-[var(--folder-color)]" />
-              )
+return (
+    <div key={node.item.path} className="mb-0.5">
+      <div
+        className={`
+          group flex items-baseline px-2 cursor-pointer py-1
+          hover:bg-[var(--sidebar-hover-bg)]
+          ${isSelected ? 'bg-[var(--sidebar-active-bg)]' : ''}
+          ${isRoot ? 'font-semibold' : ''}
+        `}
+        style={{
+          paddingLeft: `${indentWidth + 4}px`,
+          color: isSelected ? 'var(--sidebar-active-fg)' : 'var(--sidebar-fg)'
+        }}
+        onClick={() => {
+          if (node.item.type === 'directory') {
+            toggleNode(node, index, parentPath);
+          } else {
+            handleFileClick(node.item.path);
+          }
+        }}
+      >
+        {/* Chevron for folders (except root) */}
+        {!isRoot && node.item.type === 'directory' && (
+          <span className="w-4 h-4 flex items-center justify-center flex-shrink-0 mr-0.5 opacity-60">
+            {node.isLoading ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            ) : node.isExpanded ? (
+              <ChevronDown className="w-3.5 h-3.5" />
             ) : (
-              getFileIcon(node.item.name)
+              <ChevronRight className="w-3.5 h-3.5" />
             )}
           </span>
+        )}
 
-          {/* Filename */}
-          <span 
-            className="truncate flex-1 select-none"
-            style={{ fontSize: '13px' }}
-          >
-            {node.item.name}
-          </span>
-        </div>
+        {/* Icon */}
+        <span className="w-4 h-4 flex items-center justify-center flex-shrink-0 mr-1.5">
+          {node.item.type === 'directory' ? (
+            node.isExpanded ? (
+              <FolderOpen className="w-4 h-4 text-[var(--folder-open-color)]" />
+            ) : (
+              <Folder className="w-4 h-4 text-[var(--folder-color)]" />
+            )
+          ) : (
+            getFileIcon(node.item.name)
+          )}
+        </span>
+
+        {/* Filename */}
+        <span
+          className="truncate flex-1 select-none"
+          style={{ fontSize: '14px', lineHeight: '1' }}
+        >
+          {node.item.name}
+        </span>
+      </div>
 
         {/* Children */}
         {node.isExpanded && node.children.length > 0 && (
@@ -265,7 +285,7 @@ export const FileBrowserView: React.FC<FileBrowserViewProps> = ({ context }) => 
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-full text-[var(--sidebar-fg)] p-4 bg-[var(--sidebar-bg)]" style={{ fontSize: '13px' }}>
+      <div className="flex items-center justify-center h-full text-[var(--sidebar-fg)] p-4 bg-[var(--sidebar-bg)]" style={{ fontSize: '14px' }}>
         <p>{error}</p>
       </div>
     );

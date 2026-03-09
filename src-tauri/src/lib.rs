@@ -345,6 +345,59 @@ struct FileOpenResult {
 }
 
 #[tauri::command]
+async fn read_file(file_path: String) -> Result<FileOpenResult, String> {
+    let path = PathBuf::from(&file_path);
+
+    // Check if file exists
+    if !path.exists() {
+        return Err(format!("File not found: {}", file_path));
+    }
+
+    // Check if it's a file (not directory)
+    if path.is_dir() {
+        return Err(format!("Path is a directory, not a file: {}", file_path));
+    }
+
+    // Get metadata
+    let metadata = fs::metadata(&path)
+        .map_err(|e| format!("Failed to get metadata: {}", e))?;
+
+    let name = path.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let extension = path.extension()
+        .map(|e| e.to_string_lossy().to_string())
+        .filter(|s| !s.is_empty());
+
+    let size = metadata.len();
+
+    // Read file content for files under 10MB
+    let content = if size < 10_000_000 {
+        match fs::read(&path) {
+            Ok(data) => Some(data),
+            Err(e) => {
+                println!("[RUST] Warning: Could not read file content: {}", e);
+                None
+            }
+        }
+    } else {
+        println!("[RUST] File too large to read into memory: {} bytes", size);
+        None
+    };
+
+    println!("[RUST] Read file: {} ({} bytes)", name, size);
+
+    Ok(FileOpenResult {
+        path: file_path,
+        name,
+        extension,
+        size,
+        content,
+    })
+}
+
+#[tauri::command]
 async fn open_file_from_browser(file_path: String) -> Result<FileOpenResult, String> {
   let path = PathBuf::from(&file_path);
   
@@ -590,17 +643,18 @@ pub fn run() {
         .level(log::LevelFilter::Info)
         .build(),
     )
-    .invoke_handler(tauri::generate_handler![
-      fetch_web_content, 
-      search_web, 
-      chat_with_ai, 
-      test_invoke, 
+.invoke_handler(tauri::generate_handler![
+      fetch_web_content,
+      search_web,
+      chat_with_ai,
+      test_invoke,
       extract_pdf_text,
       extract_epub_text,
       list_directory,
       get_parent_directory,
       get_file_info,
-      open_file_from_browser
+      open_file_from_browser,
+      read_file
     ])
         .setup(|app| {
             let _app_handle = app.handle().clone();

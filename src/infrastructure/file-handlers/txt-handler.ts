@@ -1,5 +1,5 @@
-import { readTextFile } from '@tauri-apps/plugin-fs'
 import { FileHandler } from './base-handler'
+import { FileReadingService } from './file-reading-service'
 
 export const textFileHandler: FileHandler = {
   type: 'txt',
@@ -10,7 +10,6 @@ export const textFileHandler: FileHandler = {
   },
 
   async getContent(path: string): Promise<string> {
-    const content = await readTextFile(path)
-    return content
+    return FileReadingService.readTextFile(path)
   },
 }

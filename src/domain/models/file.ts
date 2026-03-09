@@ -1,4 +1,4 @@
-export type FileType = 'pdf' | 'txt' | 'epub' | 'web' | 'unknown'
+export type FileType = 'pdf' | 'txt' | 'md' | 'epub' | 'html' | 'latex' | 'web' | 'unknown'
 
 export interface FileMetadata {
   id: string
@@ -20,11 +20,18 @@ export function getFileType(filename: string): FileType {
     case 'pdf':
       return 'pdf'
     case 'txt':
+      return 'txt'
     case 'md':
     case 'markdown':
-      return 'txt'
+      return 'md'
     case 'epub':
       return 'epub'
+    case 'html':
+    case 'htm':
+      return 'html'
+    case 'tex':
+    case 'latex':
+      return 'latex'
     default:
       return 'unknown'
   }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
-import { readFile } from '@tauri-apps/plugin-fs'
+import { FileReadingService } from '../../../../infrastructure/file-handlers/file-reading-service'
 import { useFileStore } from '../../../../application/store/file-store'
 import './PDFViewer.css'
 
@@ -143,22 +143,34 @@ function PDFViewer({ path, fileData }: PDFViewerProps) {
     })
   }
 
-  useEffect(() => {
+useEffect(() => {
     const loadPdf = async () => {
+      // Clean up existing PDF before loading new one
+      if (pdf) {
+        pdf.destroy()
+        setPdf(null)
+      }
+
+      // Cancel any pending render tasks
+      renderTasksRef.current.forEach((task) => {
+        task.cancel()
+      })
+      renderTasksRef.current.clear()
+
       setLoading(true)
       setError(null)
+
       try {
         let typedArray: Uint8Array
-        
+
         // Use provided fileData from backend if available
         if (fileData) {
           typedArray = fileData
         } else {
-          // Fallback to reading file directly (may fail due to permissions)
-          const data = await readFile(path)
-          typedArray = new Uint8Array(data)
+          // Use FileReadingService to avoid permission issues
+          typedArray = await FileReadingService.readBinaryFile(path)
         }
-        
+
         const loadingTask = pdfjsLib.getDocument({ data: typedArray })
         const pdfDoc = await loadingTask.promise
         setPdf(pdfDoc)
@@ -167,7 +179,7 @@ function PDFViewer({ path, fileData }: PDFViewerProps) {
       } catch (err) {
         console.error('Error loading PDF:', err)
         const errorMessage = err instanceof Error ? err.message : String(err)
-        
+
         // Check for permission errors
         if (errorMessage.includes('forbidden') || errorMessage.includes('permission') || errorMessage.includes('scope')) {
           setError(`PERMISSION_DENIED:${path}`)

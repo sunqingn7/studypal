@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import * as pdfjsLib from 'pdfjs-dist'
-import { readFile } from '@tauri-apps/plugin-fs'
+import { FileReadingService } from './file-reading-service'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -18,9 +18,9 @@ export async function loadPdf(path: string): Promise<pdfjsLib.PDFDocumentProxy> 
     return cachedPdf
   }
 
-  const fileData = await readFile(path)
-  const typedArray = new Uint8Array(fileData)
-  const loadingTask = pdfjsLib.getDocument({ data: typedArray })
+  // Use FileReadingService to avoid permission issues
+  const fileData = await FileReadingService.readBinaryFile(path)
+  const loadingTask = pdfjsLib.getDocument({ data: fileData })
   cachedPdf = await loadingTask.promise
   cachedPath = path
   return cachedPdf

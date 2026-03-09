@@ -4,16 +4,20 @@ import { fileBrowserViewPlugin } from '../../plugins/file-browser-view';
 import { epubSupportPlugin } from '../../plugins/epub-support';
 import { mcpToolsPlugin } from '../../plugins/mcp-tools';
 import { markdownViewerPlugin } from '../../plugins/markdown-viewer';
+import { htmlViewerPlugin } from '../../plugins/html-viewer';
+import { latexViewerPlugin } from '../../plugins/latex-viewer';
 
 export async function loadAllPlugins(): Promise<void> {
   console.log('[PluginLoader] Starting plugin loading...');
-  
+
   // Load built-in plugins
   const plugins = [
     { plugin: fileBrowserViewPlugin, enabled: true },
     { plugin: epubSupportPlugin, enabled: true },
     { plugin: mcpToolsPlugin, enabled: true },
     { plugin: markdownViewerPlugin, enabled: true },
+    { plugin: htmlViewerPlugin, enabled: true },
+    { plugin: latexViewerPlugin, enabled: true },
   ];
   
   for (const { plugin, enabled } of plugins) {

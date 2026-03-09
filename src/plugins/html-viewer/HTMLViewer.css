@@ -1,0 +1,234 @@
+.html-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: var(--bg-primary);
+}
+
+.html-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.html-navigation {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.html-navigation button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.html-navigation button:hover:not(:disabled) {
+  background-color: var(--bg-tertiary);
+}
+
+.html-navigation button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.page-indicator {
+  font-size: 14px;
+  color: var(--text-secondary);
+  min-width: 60px;
+  text-align: center;
+}
+
+.html-zoom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.html-zoom button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.html-zoom button:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.html-zoom span {
+  font-size: 14px;
+  color: var(--text-secondary);
+  min-width: 48px;
+  text-align: center;
+}
+
+.html-container {
+  flex: 1;
+  overflow: auto;
+  padding: 24px;
+  background-color: var(--bg-primary);
+}
+
+.html-content-wrapper {
+  max-width: 800px;
+  margin: 0 auto;
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.html-content {
+  padding: 32px;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+.html-content h1,
+.html-content h2,
+.html-content h3,
+.html-content h4,
+.html-content h5,
+.html-content h6 {
+  margin-top: 0;
+  margin-bottom: 16px;
+  color: var(--text-primary);
+}
+
+.html-content p {
+  margin-bottom: 16px;
+}
+
+.html-content img {
+  max-width: 100%;
+  height: auto;
+}
+
+.html-content a {
+  color: var(--accent-color);
+  text-decoration: none;
+}
+
+.html-content a:hover {
+  text-decoration: underline;
+}
+
+.html-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+}
+
+.html-content th,
+.html-content td {
+  border: 1px solid var(--border-color);
+  padding: 8px;
+  text-align: left;
+}
+
+.html-content th {
+  background-color: var(--bg-tertiary);
+}
+
+.html-content ul,
+.html-content ol {
+  margin-bottom: 16px;
+  padding-left: 24px;
+}
+
+.html-content blockquote {
+  border-left: 4px solid var(--accent-color);
+  padding-left: 16px;
+  margin-left: 0;
+  color: var(--text-secondary);
+}
+
+.html-content code {
+  background-color: var(--bg-tertiary);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: monospace;
+}
+
+.html-content pre {
+  background-color: var(--bg-tertiary);
+  padding: 16px;
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+.html-content pre code {
+  background-color: transparent;
+  padding: 0;
+}
+
+.html-footer {
+  padding: 8px 16px;
+  background-color: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+}
+
+.html-progress {
+  height: 3px;
+  background-color: var(--bg-tertiary);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.html-progress-bar {
+  height: 100%;
+  background-color: var(--accent-color);
+  transition: width 0.3s ease;
+}
+
+.html-viewer-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary);
+}
+
+.html-viewer-loading .spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--accent-color);
+  border-radius: 50%;
+  animation: html-spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes html-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.html-viewer-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--error-color);
+  padding: 24px;
+  text-align: center;
+}

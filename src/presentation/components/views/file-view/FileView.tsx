@@ -1,18 +1,17 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useFileStore, createFileMetadata } from '../../../../application/store/file-store'
 import { useTopicStore } from '../../../../application/store/topic-store'
 import { pluginRegistry } from '../../../../infrastructure/plugins/plugin-registry'
 import { FileHandlerPlugin, PluginContext } from '../../../../domain/models/plugin'
 import PDFViewer from './PDFViewer'
-import TextViewer from './TextViewer'
+import PagedDocumentViewer from '../paged-viewer/PagedDocumentViewer'
 import './FileView.css'
 import type { FileType } from '../../../../domain/models/file'
 
 function FileView() {
   const { currentFile, setCurrentFile } = useFileStore()
   const { activeTopicId, addFileToTopic } = useTopicStore()
-  const [fileContent, setFileContent] = useState<string | null>(null)
   const [fileData, setFileData] = useState<Uint8Array | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -29,28 +28,10 @@ function FileView() {
     return pluginRegistry.getViewPluginsForContext(context)
   }, [])
 
-  const loadTextFile = useCallback(async (path: string) => {
-    setLoading(true)
-    setError(null)
-    setPluginComponent(null)
-    try {
-      const { readTextFile } = await import('@tauri-apps/plugin-fs')
-      const content = await readTextFile(path)
-      setFileContent(content)
-    } catch (err) {
-      console.error('Error reading file:', err)
-      setError('Failed to load file')
-      setFileContent(null)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
   const loadFileWithPlugin = useCallback(async (path: string) => {
     setLoading(true)
     setError(null)
-    setFileContent(null)
-    
+
     const handler = getPluginHandler(path)
     if (handler) {
       try {
@@ -60,9 +41,6 @@ function FileView() {
           setLoading(false)
           return
         }
-        // Fallback to text extraction
-        const content = await handler.getFileContent(path)
-        setFileContent(content)
       } catch (err) {
         console.error('Error loading file with plugin:', err)
         setError('Failed to load file with plugin')
@@ -73,59 +51,80 @@ function FileView() {
     setLoading(false)
   }, [getPluginHandler])
 
-  useEffect(() => {
+useEffect(() => {
     if (currentFile) {
-      if (currentFile.type === 'pdf') {
-        setFileContent(null)
-        setPluginComponent(null)
-        setLoading(false)
-      } else if (currentFile.type === 'epub') {
+      setPluginComponent(null)
+      setLoading(false)
+
+      // Load files with dedicated plugins (EPUB, HTML, LaTeX)
+      if (currentFile.type === 'epub' || currentFile.type === 'html' || currentFile.type === 'latex') {
         loadFileWithPlugin(currentFile.path)
-      } else {
-        loadTextFile(currentFile.path)
       }
     } else {
-      setFileContent(null)
       setPluginComponent(null)
     }
-  }, [currentFile, loadTextFile, loadFileWithPlugin])
+  }, [currentFile, loadFileWithPlugin])
+
+  // Track currently opening file to prevent duplicates
+  const openingFileRef = useRef<string | null>(null)
 
   // Listen for file-open events from plugins
   useEffect(() => {
     const handleOpenFile = async (e: Event) => {
       const customEvent = e as CustomEvent
       const fileInfo = customEvent.detail
-      
+
       if (fileInfo && fileInfo.path) {
+        // Prevent duplicate file opens
+        if (openingFileRef.current === fileInfo.path) {
+          return
+        }
+        openingFileRef.current = fileInfo.path
+
         try {
+          // Clear file data first to force clean reload if same file
+          setFileData(null)
+
+          // Small delay to ensure PDFViewer cleans up
+          await new Promise(resolve => setTimeout(resolve, 50))
+
           // File info already contains everything from backend
           const metadata = createFileMetadata(fileInfo.path, fileInfo.name, fileInfo.size || 0)
-          
+
           // Determine file type based on extension
           const ext = fileInfo.extension?.toLowerCase() || ''
           if (ext === 'pdf') {
             metadata.type = 'pdf'
           } else if (ext === 'epub') {
             metadata.type = 'epub'
+          } else if (ext === 'md' || ext === 'markdown') {
+            metadata.type = 'md'
+          } else if (ext === 'html' || ext === 'htm') {
+            metadata.type = 'html'
+          } else if (ext === 'tex' || ext === 'latex') {
+            metadata.type = 'latex'
           } else {
             metadata.type = 'txt'
           }
-          
+
           // Store file data if available from backend
           if (fileInfo.content && Array.isArray(fileInfo.content)) {
             setFileData(new Uint8Array(fileInfo.content))
-          } else {
-            setFileData(null)
           }
-          
+
           setCurrentFile(metadata)
-          
+
           if (activeTopicId) {
             addFileToTopic(metadata.id, activeTopicId)
           }
         } catch (err) {
           console.error('Error opening file from plugin:', err)
           setError('Failed to open file')
+        } finally {
+          // Clear opening ref after a delay
+          setTimeout(() => {
+            openingFileRef.current = null
+          }, 500)
         }
       }
     }
@@ -139,17 +138,19 @@ function FileView() {
       // Build file filters from registered plugins
       const fileHandlers = pluginRegistry.getFileHandlers()
       const pluginExtensions = fileHandlers.flatMap(h => h.supportedExtensions)
-      
+
       const selected = await open({
         multiple: false,
         filters: [
-          {
-            name: 'All Supported Files',
-            extensions: ['pdf', 'txt', 'md', 'markdown', 'json', 'js', 'ts', 'html', 'css', 'epub', ...pluginExtensions.map(e => e.replace('.', ''))],
-          },
-          { name: 'PDF', extensions: ['pdf'] },
-          { name: 'EPUB', extensions: ['epub'] },
-          { name: 'Text', extensions: ['txt', 'md', 'markdown', 'json', 'js', 'ts', 'html', 'css'] },
+{
+        name: 'All Supported Files',
+        extensions: ['pdf', 'txt', 'md', 'markdown', 'json', 'js', 'ts', 'html', 'htm', 'tex', 'css', 'epub', ...pluginExtensions.map(e => e.replace('.', ''))],
+      },
+      { name: 'PDF', extensions: ['pdf'] },
+      { name: 'EPUB', extensions: ['epub'] },
+      { name: 'HTML', extensions: ['html', 'htm'] },
+      { name: 'LaTeX', extensions: ['tex'] },
+      { name: 'Text', extensions: ['txt', 'md', 'markdown', 'json', 'js', 'ts', 'css'] },
           ...fileHandlers.map(h => ({
             name: `${h.metadata.name}`,
             extensions: h.supportedExtensions.map(e => e.replace('.', '')),
@@ -160,16 +161,19 @@ function FileView() {
       if (selected && typeof selected === 'string') {
         const path = selected
         const name = path.split(/[/\\]/).pop() || 'unknown'
-      const ext = name.split('.').pop()?.toLowerCase() || ''
+        const ext = name.split('.').pop()?.toLowerCase() || ''
 
-      let fileType: FileType
+let fileType: FileType
       if (ext === 'pdf') fileType = 'pdf'
       else if (ext === 'epub') fileType = 'epub'
+      else if (ext === 'md' || ext === 'markdown') fileType = 'md'
+      else if (ext === 'html' || ext === 'htm') fileType = 'html'
+      else if (ext === 'tex' || ext === 'latex') fileType = 'latex'
       else fileType = 'txt'
 
         const metadata = createFileMetadata(path, name, 0)
         metadata.type = fileType
-        
+
         setCurrentFile(metadata)
 
         if (activeTopicId) {
@@ -221,21 +225,24 @@ function FileView() {
       )
     }
 
-    // Render plugin component if available
-    if (PluginComponent) {
-      return <PluginComponent filePath={currentFile.path} />
-    }
+      // Render plugin component if available (for EPUB)
+      if (PluginComponent) {
+        return <PluginComponent filePath={currentFile.path} />
+      }
 
-    // Default viewers
-    if (currentFile.type === 'pdf') {
-      return <PDFViewer path={currentFile.path} fileData={fileData} />
-    }
+      // Default viewers - all using paged view
+      if (currentFile.type === 'pdf') {
+        return <PDFViewer path={currentFile.path} fileData={fileData} />
+      }
 
-    if (fileContent !== null) {
-      return <TextViewer content={fileContent} />
-    }
-
-    return null
+      // Use paged view for all other file types (TXT, EPUB fallback)
+      // Check if it's a markdown file by extension
+      const isMarkdown = currentFile.name.toLowerCase().endsWith('.md') || 
+                        currentFile.name.toLowerCase().endsWith('.markdown')
+      return <PagedDocumentViewer 
+        filePath={currentFile.path} 
+        fileType={isMarkdown ? 'md' : 'txt'} 
+      />
   }
 
   return (
