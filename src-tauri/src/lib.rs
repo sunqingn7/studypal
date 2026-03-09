@@ -632,6 +632,68 @@ fn strip_html_tags(html: &str) -> String {
   output.split_whitespace().collect::<Vec<&str>>().join(" ")
 }
 
+// File system commands for persistence
+#[tauri::command]
+async fn write_file(path: String, content: String) -> Result<(), String> {
+  println!("[RUST] write_file called for: {}", path);
+  
+  // Create parent directory if it doesn't exist
+  if let Some(parent) = Path::new(&path).parent() {
+    if let Err(e) = fs::create_dir_all(parent) {
+      return Err(format!("Failed to create directory: {}", e));
+    }
+  }
+  
+  fs::write(&path, content)
+    .map_err(|e| format!("Failed to write file: {}", e))
+}
+
+#[tauri::command]
+async fn read_text_file(path: String) -> Result<String, String> {
+  println!("[RUST] read_text_file called for: {}", path);
+  
+  fs::read_to_string(&path)
+    .map_err(|e| format!("Failed to read file: {}", e))
+}
+
+#[tauri::command]
+async fn file_exists(path: String) -> Result<bool, String> {
+  Ok(Path::new(&path).exists() && Path::new(&path).is_file())
+}
+
+#[tauri::command]
+async fn directory_exists(path: String) -> Result<bool, String> {
+  Ok(Path::new(&path).exists() && Path::new(&path).is_dir())
+}
+
+#[tauri::command]
+async fn ensure_directory_exists(path: String) -> Result<(), String> {
+  println!("[RUST] ensure_directory_exists called for: {}", path);
+  
+  fs::create_dir_all(&path)
+    .map_err(|e| format!("Failed to create directory: {}", e))
+}
+
+#[tauri::command]
+async fn list_files(path: String) -> Result<Vec<String>, String> {
+  println!("[RUST] list_files called for: {}", path);
+  
+  let entries = fs::read_dir(&path)
+    .map_err(|e| format!("Failed to read directory: {}", e))?;
+  
+  let mut files = Vec::new();
+  for entry in entries {
+    if let Ok(entry) = entry {
+      let path = entry.path();
+      if path.is_file() {
+        files.push(path.to_string_lossy().to_string());
+      }
+    }
+  }
+  
+  Ok(files)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -643,7 +705,7 @@ pub fn run() {
         .level(log::LevelFilter::Info)
         .build(),
     )
-.invoke_handler(tauri::generate_handler![
+    .invoke_handler(tauri::generate_handler![
       fetch_web_content,
       search_web,
       chat_with_ai,
@@ -654,7 +716,13 @@ pub fn run() {
       get_parent_directory,
       get_file_info,
       open_file_from_browser,
-      read_file
+      read_file,
+      write_file,
+      read_text_file,
+      file_exists,
+      directory_exists,
+      ensure_directory_exists,
+      list_files
     ])
         .setup(|app| {
             let _app_handle = app.handle().clone();

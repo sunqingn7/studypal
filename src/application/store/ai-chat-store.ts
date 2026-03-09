@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { ChatMessage, AIConfig, DEFAULT_AI_CONFIG } from '../../domain/models/ai-context'
 
-interface ChatTab {
+export interface ChatTab {
   id: string
   title: string
   messages: ChatMessage[]

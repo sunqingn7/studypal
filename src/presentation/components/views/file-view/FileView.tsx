@@ -112,7 +112,7 @@ useEffect(() => {
             setFileData(new Uint8Array(fileInfo.content))
           }
 
-          setCurrentFile(metadata)
+await setCurrentFile(metadata)
 
           if (activeTopicId) {
             addFileToTopic(metadata.id, activeTopicId)

@@ -1,9 +1,10 @@
 import { create } from 'zustand'
 import { FileMetadata, FileState, getFileType } from '../../domain/models/file'
+import { fileSessionManager } from '../services/file-session-manager'
 
 interface FileStore extends FileState {
   currentPage: number
-  setCurrentFile: (file: FileMetadata | null) => void
+  setCurrentFile: (file: FileMetadata | null) => Promise<void>
   setCurrentPage: (page: number) => void
   addToHistory: (file: FileMetadata) => void
   removeFromHistory: (fileId: string) => void
@@ -16,7 +17,10 @@ export const useFileStore = create<FileStore>((set, get) => ({
   currentPage: 1,
   fileHistory: [],
 
-  setCurrentFile: (file) => {
+  setCurrentFile: async (file) => {
+    // Save current session and load new session via session manager
+    await fileSessionManager.switchToFile(file)
+    
     if (file) {
       get().addToHistory(file)
     }
