@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import { FileReadingService } from '../../../../infrastructure/file-handlers/file-reading-service'
 import { useFileStore } from '../../../../application/store/file-store'
+import { SelectableContent } from '../../common/selectable-text'
 import './PDFViewer.css'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -379,19 +380,20 @@ useEffect(() => {
           </button>
         </div>
       </div>
-      <div
-        className={`pdf-canvas-container ${pageMode}`}
-        ref={containerRef}
-        onWheel={handleWheel}
-      >
-        <div className={`pdf-pages ${pageMode}`}>
-          <div className="pdf-page-wrapper">
-            <canvas
-              ref={(el) => {
-                if (el) canvasRefs.current.set(1, el)
-                else canvasRefs.current.delete(1)
-              }}
-            />
+    <div
+      className={`pdf-canvas-container ${pageMode}`}
+      ref={containerRef}
+      onWheel={handleWheel}
+    >
+      <div className={`pdf-pages ${pageMode}`}>
+        <div className="pdf-page-wrapper">
+          <canvas
+            ref={(el) => {
+              if (el) canvasRefs.current.set(1, el)
+              else canvasRefs.current.delete(1)
+            }}
+          />
+          <SelectableContent className="pdf-text-layer-wrapper">
             <div
               className="pdf-text-layer"
               ref={(el) => {
@@ -399,15 +401,17 @@ useEffect(() => {
                 else textLayerRefs.current.delete(currentPage)
               }}
             />
-          </div>
-          {pageMode === 'double' && currentPage < totalPages && (
-            <div className="pdf-page-wrapper">
-              <canvas
-                ref={(el) => {
-                  if (el) canvasRefs.current.set(2, el)
-                  else canvasRefs.current.delete(2)
-                }}
-              />
+          </SelectableContent>
+        </div>
+        {pageMode === 'double' && currentPage < totalPages && (
+          <div className="pdf-page-wrapper">
+            <canvas
+              ref={(el) => {
+                if (el) canvasRefs.current.set(2, el)
+                else canvasRefs.current.delete(2)
+              }}
+            />
+            <SelectableContent className="pdf-text-layer-wrapper">
               <div
                 className="pdf-text-layer"
                 ref={(el) => {
@@ -416,10 +420,11 @@ useEffect(() => {
                   else textLayerRefs.current.delete(secondPage)
                 }}
               />
-            </div>
-          )}
-        </div>
+            </SelectableContent>
+          </div>
+        )}
       </div>
+    </div>
     </div>
   )
 }

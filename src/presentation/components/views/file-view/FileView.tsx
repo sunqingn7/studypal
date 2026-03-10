@@ -4,6 +4,7 @@ import { useFileStore, createFileMetadata } from '../../../../application/store/
 import { useTopicStore } from '../../../../application/store/topic-store'
 import { pluginRegistry } from '../../../../infrastructure/plugins/plugin-registry'
 import { FileHandlerPlugin, PluginContext } from '../../../../domain/models/plugin'
+import { SelectableTextProvider } from '../../common/selectable-text'
 import PDFViewer from './PDFViewer'
 import PagedDocumentViewer from '../paged-viewer/PagedDocumentViewer'
 import './FileView.css'
@@ -246,31 +247,33 @@ let fileType: FileType
   }
 
   return (
-    <div className="view-container file-view">
-      <div className="view-header">
-        <span className="file-title">
-          {currentFile ? currentFile.name : 'File View'}
-        </span>
-        <div className="header-actions">
-          {viewPlugins.length > 0 && (
-            <select className="view-selector">
-              <option value="default">Default View</option>
-              {viewPlugins.map(plugin => (
-                <option key={plugin.metadata.id} value={plugin.metadata.id}>
-                  {plugin.getViewName()}
-                </option>
-              ))}
-            </select>
-          )}
-          <button className="header-button" onClick={handleOpenFile} title="Open File">
-            📂
-          </button>
+    <SelectableTextProvider>
+      <div className="view-container file-view">
+        <div className="view-header">
+          <span className="file-title">
+            {currentFile ? currentFile.name : 'File View'}
+          </span>
+          <div className="header-actions">
+            {viewPlugins.length > 0 && (
+              <select className="view-selector">
+                <option value="default">Default View</option>
+                {viewPlugins.map(plugin => (
+                  <option key={plugin.metadata.id} value={plugin.metadata.id}>
+                    {plugin.getViewName()}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button className="header-button" onClick={handleOpenFile} title="Open File">
+              📂
+            </button>
+          </div>
+        </div>
+        <div className="view-content file-view-content">
+          {renderContent()}
         </div>
       </div>
-      <div className="view-content file-view-content">
-        {renderContent()}
-      </div>
-    </div>
+    </SelectableTextProvider>
   )
 }
 

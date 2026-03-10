@@ -6,6 +6,7 @@ import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
 import 'katex/dist/katex.min.css';
 import { FileReadingService } from '../../../../infrastructure/file-handlers/file-reading-service';
+import { SelectableContent } from '../../common/selectable-text';
 import './PagedDocumentViewer.css';
 
 interface PagedDocumentViewerProps {
@@ -185,33 +186,35 @@ export const PagedDocumentViewer: React.FC<PagedDocumentViewerProps> = ({
         </div>
       </div>
 
-      <div className="paged-container" ref={containerRef}>
-        <div 
+  <div className="paged-container" ref={containerRef}>
+      <SelectableContent className="paged-content-selectable" style={{ flex: 1 }}>
+        <div
           className="paged-content-wrapper"
           style={{
             transform: `scale(${scale})`,
             transformOrigin: 'top center',
           }}
         >
-          <div 
+          <div
             className="paged-content"
             ref={contentRef}
           >
             {fileType === 'md' ? (
               <div className="markdown-content">
-<ReactMarkdown
-                remarkPlugins={[remarkMath]}
-                rehypePlugins={[rehypeRaw, rehypeKatex]}
-              >
-                {content}
-              </ReactMarkdown>
+                <ReactMarkdown
+                  remarkPlugins={[remarkMath]}
+                  rehypePlugins={[rehypeRaw, rehypeKatex]}
+                >
+                  {content}
+                </ReactMarkdown>
               </div>
             ) : (
               <TextContent content={content} />
             )}
           </div>
         </div>
-      </div>
+      </SelectableContent>
+    </div>
 
       {/* Page indicator at bottom */}
       <div className="paged-footer">

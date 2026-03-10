@@ -1,0 +1,29 @@
+.selectable-content {
+  user-select: text;
+  cursor: text;
+}
+
+.selectable-content ::selection {
+  background-color: var(--accent-color, #007acc);
+  color: white;
+}
+
+/* Ensure text is selectable in all child elements */
+.selectable-content * {
+  user-select: text;
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+}
+
+/* Prevent text selection in interactive elements */
+.selectable-content button,
+.selectable-content input,
+.selectable-content textarea,
+.selectable-content select,
+.selectable-content [contenteditable="true"] {
+  user-select: auto;
+  -webkit-user-select: auto;
+  -moz-user-select: auto;
+  -ms-user-select: auto;
+}
