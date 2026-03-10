@@ -186,7 +186,7 @@ export const PagedDocumentViewer: React.FC<PagedDocumentViewerProps> = ({
         </div>
       </div>
 
-  <div className="paged-container" ref={containerRef}>
+<div className="paged-container" ref={containerRef}>
       <SelectableContent className="paged-content-selectable" style={{ flex: 1 }}>
         <div
           className="paged-content-wrapper"

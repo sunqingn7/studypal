@@ -63,8 +63,6 @@ export const SelectableTextProvider: React.FC<SelectableTextProviderProps> = ({ 
       range: null,
       rect: null,
     });
-    // Also clear the browser selection
-    window.getSelection()?.removeAllRanges();
   }, []);
 
   const openContextMenu = useCallback((position: ContextMenuPosition) => {

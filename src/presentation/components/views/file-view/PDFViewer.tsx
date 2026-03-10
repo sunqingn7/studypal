@@ -93,14 +93,14 @@ function PDFViewer({ path, fileData }: PDFViewerProps) {
       }
 
       const renderTask = page.render(renderContext)
-      
+
       // Store the render task so we can cancel it if needed
       renderTasksRef.current.set(pageNum, {
         cancel: () => renderTask.cancel()
       })
 
       await renderTask.promise
-      
+
       // Remove the task after completion
       renderTasksRef.current.delete(pageNum)
 
@@ -144,7 +144,7 @@ function PDFViewer({ path, fileData }: PDFViewerProps) {
     })
   }
 
-useEffect(() => {
+  useEffect(() => {
     const loadPdf = async () => {
       // Clean up existing PDF before loading new one
       if (pdf) {
@@ -317,7 +317,7 @@ useEffect(() => {
   if (error) {
     const isPermissionError = error.startsWith('PERMISSION_DENIED:')
     const filePath = isPermissionError ? error.replace('PERMISSION_DENIED:', '') : ''
-    
+
     return (
       <div className="pdf-viewer-error">
         {isPermissionError ? (
@@ -325,10 +325,10 @@ useEffect(() => {
             <p>Permission denied to access this file.</p>
             <p className="error-path">{filePath}</p>
             <p className="error-hint">
-              This file is outside the allowed directory scope. 
+              This file is outside the allowed directory scope.
               Please move the file to your Documents folder or grant permission.
             </p>
-            <button 
+            <button
               className="permission-button"
               onClick={() => window.location.reload()}
             >
