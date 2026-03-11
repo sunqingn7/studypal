@@ -1,25 +1,47 @@
 import { useState, useEffect } from 'react'
-import { Group, Panel, Separator } from 'react-resizable-panels'
+import { Group, Panel, Separator, useGroupRef } from 'react-resizable-panels'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useFileStore } from '../../application/store/file-store'
 import { useThemeStore } from '../../application/store/theme-store'
+import { useSessionStore } from '../../application/store/session-store'
+import { useAIStore } from '../../application/store/ai-store'
 import { pluginRegistry } from '../../infrastructure/plugins/plugin-registry'
 import { FileBrowserView } from '../../plugins/file-browser-view/FileBrowserView'
 import FileView from '../components/views/file-view/FileView'
 import NoteView from '../components/views/note-view/NoteView'
 import AIView from '../components/views/ai-view/AIView'
 import { Sun, Moon } from 'lucide-react'
+import { FileMetadata } from '../../domain/models/file'
 
 function MainLayout() {
   const { currentFile } = useFileStore()
   const { theme, toggleTheme } = useThemeStore()
-  const [showFileBrowser, setShowFileBrowser] = useState(true)
+  const { session, setPanelSize, setShowFileBrowser: setSessionShowBrowser, setTheme: setSessionTheme } = useSessionStore()
+  const [showFileBrowser, setShowFileBrowser] = useState(session.showFileBrowser)
   const [hasFileBrowser, setHasFileBrowser] = useState(false)
+  const [isHydrated, setIsHydrated] = useState(false)
+  const [panelSizesRestored, setPanelSizesRestored] = useState(false)
+
+  const mainGroupRef = useGroupRef()
+  const rightGroupRef = useGroupRef()
 
   const pluginContext = {
     filePath: currentFile?.path
   }
 
   useEffect(() => {
+    // Save session before window closes
+    const handleBeforeUnload = () => {
+      const session = useSessionStore.getState().getSession()
+      localStorage.setItem('studypal-session', JSON.stringify(session))
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [])
+
+  useEffect(() => {
+    // Check for file browser plugin
     const checkPlugins = () => {
       const viewPlugins = pluginRegistry.getViewPluginsForContext(pluginContext)
       setHasFileBrowser(viewPlugins.some(v => v.metadata.id === 'file-browser-view'))
@@ -30,13 +52,245 @@ function MainLayout() {
     return () => clearTimeout(timer)
   }, [pluginContext])
 
- return (
+  useEffect(() => {
+    // Check if store already hydrated
+    console.log('[MainLayout] Checking hydration, hasHydrated:', useSessionStore.persist.hasHydrated())
+    const { setCurrentFile, setCurrentPage } = useFileStore.getState()
+    const { setConfig: setAIConfig, setChatHistory: setAIChatHistory } = useAIStore.getState()
+    const appWindow = getCurrentWindow()
+    
+    if (useSessionStore.persist.hasHydrated()) {
+      const state = useSessionStore.getState()
+      console.log('[MainLayout] Store already hydrated, session:', state.session)
+      setIsHydrated(true)
+      setShowFileBrowser(state.session.showFileBrowser)
+      
+      // Restore last opened file
+      if (state.session.currentFile && state.session.currentFilePath) {
+        const fileData: FileMetadata = {
+          id: state.session.currentFile,
+          path: state.session.currentFilePath,
+          name: state.session.currentFile.split('/').pop() || 'Unknown',
+          type: 'pdf',
+          size: 0,
+        }
+        console.log('[MainLayout] Restoring file:', fileData)
+        setCurrentFile(fileData)
+        setCurrentPage(state.session.currentPage)
+      }
+      
+      // Restore AI config and chat history
+      if (state.session.aiConfig) {
+        console.log('[MainLayout] Restoring AI config')
+        setAIConfig(state.session.aiConfig)
+      }
+      if (state.session.chatHistory && state.session.chatHistory.length > 0) {
+        console.log('[MainLayout] Restoring chat history, length:', state.session.chatHistory.length)
+        setAIChatHistory(state.session.chatHistory)
+      }
+
+      // Restore window size
+      const { width, height, x, y } = state.session.window
+      console.log('[MainLayout] Attempting to restore window:', { width, height, x, y })
+      if (width && height && width > 0 && height > 0) {
+        import('@tauri-apps/api/dpi').then(({ PhysicalSize }) => {
+          appWindow.setSize(new PhysicalSize(Math.round(width), Math.round(height)))
+          console.log('[MainLayout] Window size restored to:', width, height)
+        })
+      }
+      if (x && y && x > 0 && y > 0) {
+        import('@tauri-apps/api/dpi').then(({ PhysicalPosition }) => {
+          appWindow.setPosition(new PhysicalPosition(Math.round(x), Math.round(y)))
+          console.log('[MainLayout] Window position restored to:', x, y)
+        })
+      }
+    } else {
+      console.log('[MainLayout] Store not yet hydrated, waiting...')
+      // Wait for store to hydrate from localStorage
+      const unsub = useSessionStore.persist.onFinishHydration(() => {
+        const state = useSessionStore.getState()
+        console.log('[MainLayout] Store hydrated, session:', state.session)
+        setIsHydrated(true)
+        setShowFileBrowser(state.session.showFileBrowser)
+        
+        // Restore last opened file
+        if (state.session.currentFile && state.session.currentFilePath) {
+          const fileData: FileMetadata = {
+            id: state.session.currentFile,
+            path: state.session.currentFilePath,
+            name: state.session.currentFile.split('/').pop() || 'Unknown',
+            type: 'pdf',
+            size: 0,
+          }
+          console.log('[MainLayout] Restoring file:', fileData)
+          setCurrentFile(fileData)
+          setCurrentPage(state.session.currentPage)
+        }
+        
+        // Restore AI config and chat history
+        if (state.session.aiConfig) {
+          console.log('[MainLayout] Restoring AI config')
+          setAIConfig(state.session.aiConfig)
+        }
+        if (state.session.chatHistory && state.session.chatHistory.length > 0) {
+          console.log('[MainLayout] Restoring chat history, length:', state.session.chatHistory.length)
+          setAIChatHistory(state.session.chatHistory)
+        }
+
+        // Restore window size
+        const { width, height, x, y } = state.session.window
+        console.log('[MainLayout] Attempting to restore window:', { width, height, x, y })
+        if (width && height && width > 0 && height > 0) {
+          import('@tauri-apps/api/dpi').then(({ PhysicalSize }) => {
+            appWindow.setSize(new PhysicalSize(Math.round(width), Math.round(height)))
+            console.log('[MainLayout] Window size restored to:', width, height)
+          })
+        }
+        if (x && y && x > 0 && y > 0) {
+          import('@tauri-apps/api/dpi').then(({ PhysicalPosition }) => {
+            appWindow.setPosition(new PhysicalPosition(Math.round(x), Math.round(y)))
+            console.log('[MainLayout] Window position restored to:', x, y)
+          })
+        }
+      })
+      return unsub
+    }
+  }, [])
+
+  useEffect(() => {
+    // Track window resize and save to session
+    let resizeTimeout: number
+    const handleResize = async () => {
+      clearTimeout(resizeTimeout)
+      resizeTimeout = window.setTimeout(async () => {
+        try {
+          const appWindow = getCurrentWindow()
+          const size = await appWindow.innerSize()
+          const position = await appWindow.innerPosition()
+          useSessionStore.getState().setWindowState({
+            width: size.width,
+            height: size.height,
+            x: position.x,
+            y: position.y,
+          })
+        } catch (e) {
+          // Not in Tauri environment
+        }
+      }, 500)
+    }
+
+    window.addEventListener('resize', handleResize)
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      clearTimeout(resizeTimeout)
+    }
+  }, [])
+
+  // Save file to session when it changes
+  const currentPage = useFileStore((state) => state.currentPage)
+  
+  // Restore panel sizes after hydration using refs
+  useEffect(() => {
+    if (isHydrated && !panelSizesRestored) {
+      const timer = setTimeout(() => {
+        const state = useSessionStore.getState()
+        console.log('[MainLayout] Restoring panel sizes from session:', state.session.panels)
+        console.log('[MainLayout] Refs available:', {
+          mainGroup: !!mainGroupRef.current,
+          rightGroup: !!rightGroupRef.current,
+        })
+        
+        const sidebarSize = state.session.panels.sidebar
+        const fileSize = state.session.panels.file
+        const aiSize = state.session.panels.ai
+        const noteSize = state.session.panels.note
+        
+        // Use setLayout to set all panel sizes at once within each group
+        // The layout is an object with panel IDs as keys
+        if (mainGroupRef.current) {
+          const rightSize = 100 - sidebarSize - fileSize
+          console.log('[MainLayout] Setting main group layout:', { sidebar: sidebarSize, file: fileSize, right: rightSize })
+          mainGroupRef.current.setLayout({ sidebar: sidebarSize, file: fileSize, right: rightSize })
+        }
+        if (rightGroupRef.current) {
+          console.log('[MainLayout] Setting right group layout:', { ai: aiSize, note: noteSize })
+          rightGroupRef.current.setLayout({ ai: aiSize, note: noteSize })
+        }
+        
+        setPanelSizesRestored(true)
+        console.log('[MainLayout] Panel sizes restored')
+      }, 500)
+      return () => clearTimeout(timer)
+    }
+  }, [isHydrated, panelSizesRestored])
+  
+  useEffect(() => {
+    if (currentFile && isHydrated) {
+      console.log('[MainLayout] Saving file to session:', currentFile.path)
+      useSessionStore.getState().setCurrentFile(currentFile.id, currentFile.path, currentPage, 0)
+    }
+  }, [currentFile, currentPage, isHydrated])
+
+  // Save AI config to session when it changes
+  const aiConfig = useAIStore((state) => state.config)
+  useEffect(() => {
+    if (isHydrated && aiConfig) {
+      console.log('[MainLayout] Saving AI config to session')
+      useSessionStore.getState().setAIConfig(aiConfig)
+    }
+  }, [aiConfig, isHydrated])
+
+  // Save AI chat history when it changes
+  const chatHistory = useAIStore((state) => state.chatHistory)
+  useEffect(() => {
+    if (isHydrated && chatHistory.length > 0) {
+      console.log('[MainLayout] Saving chat history to session, length:', chatHistory.length)
+      useSessionStore.getState().setChatHistory(chatHistory)
+    }
+  }, [chatHistory, isHydrated])
+
+  const handleShowFileBrowser = (show: boolean) => {
+    setShowFileBrowser(show)
+    setSessionShowBrowser(show)
+  }
+
+  const handleThemeToggle = () => {
+    toggleTheme()
+    setSessionTheme(theme === 'light' ? 'dark' : 'light')
+  }
+
+  // Handle layout changes from the Group - only fires after user releases drag
+  const handleMainGroupLayoutChange = (layout: { [panelId: string]: number }) => {
+    if (panelSizesRestored && layout) {
+      console.log('[MainLayout] Main group layout changed:', layout)
+      if (layout.sidebar !== undefined) {
+        setPanelSize('sidebar', layout.sidebar)
+      }
+      if (layout.file !== undefined) {
+        setPanelSize('file', layout.file)
+      }
+    }
+  }
+
+  const handleRightGroupLayoutChange = (layout: { [panelId: string]: number }) => {
+    if (panelSizesRestored && layout) {
+      console.log('[MainLayout] Right group layout changed:', layout)
+      if (layout.ai !== undefined) {
+        setPanelSize('ai', layout.ai)
+      }
+      if (layout.note !== undefined) {
+        setPanelSize('note', layout.note)
+      }
+    }
+  }
+
+  return (
     <div className="app-container h-screen w-screen overflow-hidden">
-      <Group orientation="horizontal" className="h-full" id="main-group">
+      <Group orientation="horizontal" className="h-full" id="main-group" groupRef={mainGroupRef} onLayoutChanged={handleMainGroupLayoutChange}>
         {/* Left Sidebar: File Browser */}
         <Panel 
           id="sidebar" 
-          defaultSize={25} 
+          defaultSize={session.panels.sidebar} 
           minSize={5}
           className="sidebar-panel"
         >
@@ -52,7 +306,7 @@ function MainLayout() {
         {/* Main Content Area: File View */}
         <Panel 
           id="file" 
-          defaultSize={35} 
+          defaultSize={session.panels.file} 
           minSize={20}
         >
           <FileView />
@@ -63,15 +317,15 @@ function MainLayout() {
         {/* Right Panel: AI + Notes (vertical) */}
         <Panel 
           id="right" 
-          defaultSize={40} 
+          defaultSize={session.panels.ai + session.panels.note} 
           minSize={20}
         >
-          <Group orientation="vertical" className="h-full">
-            <Panel id="ai" defaultSize={50} minSize={20}>
+          <Group orientation="vertical" className="h-full" groupRef={rightGroupRef} onLayoutChanged={handleRightGroupLayoutChange}>
+            <Panel id="ai" defaultSize={session.panels.ai} minSize={20}>
               <AIView />
             </Panel>
             <Separator className="panel-resize-handle-vertical" />
-            <Panel id="note" defaultSize={50} minSize={20}>
+            <Panel id="note" defaultSize={session.panels.note} minSize={20}>
               <NoteView />
             </Panel>
           </Group>
@@ -80,7 +334,7 @@ function MainLayout() {
        
        {/* Toggle button for file browser */}
        <button
-         onClick={() => setShowFileBrowser(!showFileBrowser)}
+         onClick={() => handleShowFileBrowser(!showFileBrowser)}
          className="fixed left-2 top-20 z-50 p-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded shadow-md hover:bg-[var(--bg-tertiary)] transition-colors"
          title={showFileBrowser ? 'Hide File Browser' : 'Show File Browser'}
        >
@@ -89,13 +343,13 @@ function MainLayout() {
 
        {/* Theme toggle button */}
        <button
-         onClick={toggleTheme}
+         onClick={handleThemeToggle}
          className="fixed left-2 top-6 z-50 p-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded shadow-md hover:bg-[var(--bg-tertiary)] transition-colors"
          title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
        >
          {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
        </button>
-     </div>
+    </div>
   )
 }
 

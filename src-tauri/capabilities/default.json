@@ -7,6 +7,10 @@
   ],
   "permissions": [
     "core:default",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "core:window:allow-inner-size",
+    "core:window:allow-inner-position",
     "dialog:default",
     "dialog:allow-open",
     "dialog:allow-save",

@@ -16,6 +16,7 @@ interface AIStore extends AIState {
   addContext: (source: ContextSource, content: string, metadata?: Record<string, unknown>) => void
   clearContext: () => void
   detectContextTriggers: (message: string) => ContextSource[]
+  setChatHistory: (history: ChatMessage[]) => void
 }
 
 export const useAIStore = create<AIStore>((set) => ({
@@ -40,6 +41,10 @@ export const useAIStore = create<AIStore>((set) => ({
 
   clearHistory: () => {
     set({ chatHistory: [] })
+  },
+
+  setChatHistory: (history) => {
+    set({ chatHistory: history })
   },
 
   setStreaming: (isStreaming) => {

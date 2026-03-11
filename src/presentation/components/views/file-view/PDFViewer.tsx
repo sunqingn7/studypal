@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
+import { TextLayer } from 'pdfjs-dist'
 import { FileReadingService } from '../../../../infrastructure/file-handlers/file-reading-service'
 import { useFileStore } from '../../../../application/store/file-store'
 import './PDFViewer.css'
@@ -14,21 +15,6 @@ type PageMode = 'single' | 'double'
 interface PDFViewerProps {
   path: string
   fileData?: Uint8Array | null
-}
-
-interface TextItem {
-  str: string
-  dir: string
-  width: number
-  height: number
-  transform: number[]
-  fontName: string
-  hasEOL: boolean
-}
-
-interface TextContent {
-  items: TextItem[]
-  styles: Record<string, unknown>
 }
 
 function PDFViewer({ path, fileData }: PDFViewerProps) {
@@ -103,13 +89,10 @@ function PDFViewer({ path, fileData }: PDFViewerProps) {
       // Remove the task after completion
       renderTasksRef.current.delete(pageNum)
 
-      // Extract and render text layer
-      const textContent = await page.getTextContent()
-
       // Render text layer
       const textLayerDiv = textLayerRefs.current.get(pageNum)
       if (textLayerDiv) {
-        renderTextLayer(textLayerDiv, textContent as TextContent, viewport)
+        renderTextLayer(textLayerDiv, page)
       }
     } catch (err) {
       // Don't log cancellation errors as they're expected
@@ -120,27 +103,25 @@ function PDFViewer({ path, fileData }: PDFViewerProps) {
     }
   }, [pdf, scale])
 
-  const renderTextLayer = (container: HTMLDivElement, textContent: TextContent, viewport: pdfjsLib.PageViewport) => {
+  const renderTextLayer = async (container: HTMLDivElement, page: pdfjsLib.PDFPageProxy) => {
     container.innerHTML = ''
+    
+    const viewport = page.getViewport({ scale })
     container.style.width = `${viewport.width}px`
     container.style.height = `${viewport.height}px`
+    container.style.setProperty('--scale-factor', scale.toString())
 
-    textContent.items.forEach((item: TextItem) => {
-      const tx = pdfjsLib.Util.transform(viewport.transform, item.transform)
-      const textDiv = document.createElement('div')
-      textDiv.textContent = item.str
-      textDiv.style.position = 'absolute'
-      textDiv.style.left = `${tx[4]}px`
-      textDiv.style.top = `${tx[5]}px`
-      textDiv.style.fontSize = `${item.height}px`
-      textDiv.style.fontFamily = item.fontName
-      textDiv.style.whiteSpace = 'pre'
-      textDiv.style.transform = `scaleX(${tx[0] / item.width})`
-      textDiv.style.transformOrigin = 'left bottom'
-      textDiv.style.userSelect = 'text'
-      textDiv.style.cursor = 'text'
-      container.appendChild(textDiv)
+    const textContent = await page.getTextContent()
+    console.log('[PDFViewer] Text content items:', textContent.items.length)
+    
+    const textLayer = new TextLayer({
+      container,
+      textContentSource: textContent,
+      viewport: viewport,
     })
+    
+    await textLayer.render()
+    console.log('[PDFViewer] Text layer rendered, children:', container.children.length)
   }
 
 useEffect(() => {

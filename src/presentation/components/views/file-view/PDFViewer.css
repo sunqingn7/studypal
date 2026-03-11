@@ -117,20 +117,21 @@
   position: absolute;
   top: 0;
   left: 0;
-  pointer-events: none;
+  right: 0;
+  bottom: 0;
   z-index: 1;
+  --scale-factor: 1.2;
 }
 
-.pdf-text-layer div {
+.pdf-text-layer span {
   color: transparent;
   cursor: text;
-  user-select: text;
-  -webkit-user-select: text;
-  -moz-user-select: text;
-  -ms-user-select: text;
+  position: absolute;
+  white-space: pre;
+  pointer-events: auto;
 }
 
-.pdf-text-layer div::selection {
+.pdf-text-layer ::selection {
   background-color: rgba(74, 144, 217, 0.3);
 }
 
