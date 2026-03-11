@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import { FileReadingService } from '../../../../infrastructure/file-handlers/file-reading-service'
 import { useFileStore } from '../../../../application/store/file-store'
-import { SelectableContent } from '../../common/selectable-text'
 import './PDFViewer.css'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -93,24 +92,28 @@ function PDFViewer({ path, fileData }: PDFViewerProps) {
       }
 
       const renderTask = page.render(renderContext)
-
+      
       // Store the render task so we can cancel it if needed
       renderTasksRef.current.set(pageNum, {
         cancel: () => renderTask.cancel()
       })
 
       await renderTask.promise
-
+      
       // Remove the task after completion
       renderTasksRef.current.delete(pageNum)
 
       // Extract and render text layer
-      const textContent = await page.getTextContent()
-
-      // Render text layer
-      const textLayerDiv = textLayerRefs.current.get(pageNum)
-      if (textLayerDiv) {
-        renderTextLayer(textLayerDiv, textContent as TextContent, viewport)
+      try {
+        const textContent = await page.getTextContent()
+        
+        // Render text layer
+        const textLayerDiv = textLayerRefs.current.get(pageNum)
+        if (textLayerDiv) {
+          renderTextLayer(textLayerDiv, textContent as TextContent, viewport)
+        }
+      } catch (textErr) {
+        console.error('[PDF] Error getting text content:', textErr)
       }
     } catch (err) {
       // Don't log cancellation errors as they're expected
@@ -127,24 +130,27 @@ function PDFViewer({ path, fileData }: PDFViewerProps) {
     container.style.height = `${viewport.height}px`
 
     textContent.items.forEach((item: TextItem) => {
-      const tx = pdfjsLib.Util.transform(viewport.transform, item.transform)
+      if (!item.str) return
+      
+      // Use viewport to properly convert PDF coordinates to canvas coordinates
+      const [x, y] = viewport.convertToViewportPoint(item.transform[4], item.transform[5])
       const textDiv = document.createElement('div')
       textDiv.textContent = item.str
       textDiv.style.position = 'absolute'
-      textDiv.style.left = `${tx[4]}px`
-      textDiv.style.top = `${tx[5]}px`
-      textDiv.style.fontSize = `${item.height}px`
-      textDiv.style.fontFamily = item.fontName
+      textDiv.style.left = `${x}px`
+      // Small adjustment to align with text baseline
+      textDiv.style.top = `${y - item.height}px`
+      textDiv.style.fontSize = `${item.height * viewport.scale}px`
+      textDiv.style.fontFamily = item.fontName || 'sans-serif'
       textDiv.style.whiteSpace = 'pre'
-      textDiv.style.transform = `scaleX(${tx[0] / item.width})`
-      textDiv.style.transformOrigin = 'left bottom'
       textDiv.style.userSelect = 'text'
+      textDiv.style.pointerEvents = 'auto'
       textDiv.style.cursor = 'text'
       container.appendChild(textDiv)
     })
   }
 
-  useEffect(() => {
+useEffect(() => {
     const loadPdf = async () => {
       // Clean up existing PDF before loading new one
       if (pdf) {
@@ -317,7 +323,7 @@ function PDFViewer({ path, fileData }: PDFViewerProps) {
   if (error) {
     const isPermissionError = error.startsWith('PERMISSION_DENIED:')
     const filePath = isPermissionError ? error.replace('PERMISSION_DENIED:', '') : ''
-
+    
     return (
       <div className="pdf-viewer-error">
         {isPermissionError ? (
@@ -325,10 +331,10 @@ function PDFViewer({ path, fileData }: PDFViewerProps) {
             <p>Permission denied to access this file.</p>
             <p className="error-path">{filePath}</p>
             <p className="error-hint">
-              This file is outside the allowed directory scope.
+              This file is outside the allowed directory scope. 
               Please move the file to your Documents folder or grant permission.
             </p>
-            <button
+            <button 
               className="permission-button"
               onClick={() => window.location.reload()}
             >
@@ -380,20 +386,19 @@ function PDFViewer({ path, fileData }: PDFViewerProps) {
           </button>
         </div>
       </div>
-    <div
-      className={`pdf-canvas-container ${pageMode}`}
-      ref={containerRef}
-      onWheel={handleWheel}
-    >
-      <div className={`pdf-pages ${pageMode}`}>
-        <div className="pdf-page-wrapper">
-          <canvas
-            ref={(el) => {
-              if (el) canvasRefs.current.set(1, el)
-              else canvasRefs.current.delete(1)
-            }}
-          />
-          <SelectableContent className="pdf-text-layer-wrapper">
+      <div
+        className={`pdf-canvas-container ${pageMode}`}
+        ref={containerRef}
+        onWheel={handleWheel}
+      >
+        <div className={`pdf-pages ${pageMode}`}>
+          <div className="pdf-page-wrapper">
+            <canvas
+              ref={(el) => {
+                if (el) canvasRefs.current.set(1, el)
+                else canvasRefs.current.delete(1)
+              }}
+            />
             <div
               className="pdf-text-layer"
               ref={(el) => {
@@ -401,17 +406,15 @@ function PDFViewer({ path, fileData }: PDFViewerProps) {
                 else textLayerRefs.current.delete(currentPage)
               }}
             />
-          </SelectableContent>
-        </div>
-        {pageMode === 'double' && currentPage < totalPages && (
-          <div className="pdf-page-wrapper">
-            <canvas
-              ref={(el) => {
-                if (el) canvasRefs.current.set(2, el)
-                else canvasRefs.current.delete(2)
-              }}
-            />
-            <SelectableContent className="pdf-text-layer-wrapper">
+          </div>
+          {pageMode === 'double' && currentPage < totalPages && (
+            <div className="pdf-page-wrapper">
+              <canvas
+                ref={(el) => {
+                  if (el) canvasRefs.current.set(2, el)
+                  else canvasRefs.current.delete(2)
+                }}
+              />
               <div
                 className="pdf-text-layer"
                 ref={(el) => {
@@ -420,11 +423,10 @@ function PDFViewer({ path, fileData }: PDFViewerProps) {
                   else textLayerRefs.current.delete(secondPage)
                 }}
               />
-            </SelectableContent>
-          </div>
-        )}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
     </div>
   )
 }
