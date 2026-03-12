@@ -31,10 +31,17 @@ export class FileReadingService {
    * Uses Rust backend to bypass Tauri permission issues
    */
   static async readFile(filePath: string, useCache: boolean = true): Promise<FileReadResult> {
-    // Check cache first
+    // Check cache first, but validate the cached data
     if (useCache && fileCache.has(filePath)) {
-      console.log('[FileReadingService] Using cached file:', filePath)
-      return fileCache.get(filePath)!
+      const cached = fileCache.get(filePath)!
+      // Validate cached content is a proper Uint8Array
+      if (cached.content instanceof Uint8Array && cached.content.length > 0) {
+        console.log('[FileReadingService] Using cached file:', filePath)
+        return cached
+      } else {
+        console.log('[FileReadingService] Cache invalid for:', filePath, 're-reading from disk')
+        fileCache.delete(filePath)
+      }
     }
 
     try {

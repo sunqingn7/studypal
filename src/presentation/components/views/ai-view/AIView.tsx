@@ -48,6 +48,7 @@ function AIView() {
   const [fontSize, setFontSize] = useState(14)
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([])
   const [isDetectingModels, setIsDetectingModels] = useState(false)
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const activeMessages = getActiveMessages()
@@ -75,6 +76,25 @@ function AIView() {
       },
     },
   })
+
+  // Copy message to clipboard and optionally to editor
+  const handleCopyMessage = useCallback((message: ChatMessage, insertToEditor: boolean = false) => {
+    // Strip HTML tags if present
+    const text = message.content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+    
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedMessageId(message.id)
+      setTimeout(() => setCopiedMessageId(null), 2000)
+      
+      // Optionally insert into editor
+      if (insertToEditor && editor) {
+        editor.commands.setContent(text)
+        editor.commands.focus()
+      }
+    }).catch(err => {
+      console.error('Failed to copy:', err)
+    })
+  }, [editor])
 
   useEffect(() => {
     if (tabs.length === 0) {
@@ -526,7 +546,27 @@ function AIView() {
           ) : (
 activeMessages.map((msg) => (
             <div key={msg.id} className={`chat-message ${msg.role}`}>
-              <div className="message-role">{msg.role === 'user' ? 'You' : 'AI'}</div>
+              <div className="message-header">
+                <div className="message-role">{msg.role === 'user' ? 'You' : 'AI'}</div>
+                {msg.role === 'user' && (
+                  <div className="message-actions">
+                    <button 
+                      className="message-action-btn"
+                      onClick={() => handleCopyMessage(msg, false)}
+                      title="Copy to clipboard"
+                    >
+                      {copiedMessageId === msg.id ? '✓ Copied' : '📋 Copy'}
+                    </button>
+                    <button 
+                      className="message-action-btn"
+                      onClick={() => handleCopyMessage(msg, true)}
+                      title="Copy and edit"
+                    >
+                      ✏️ Edit
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className="message-content" style={{ fontSize: `${fontSize}px` }}>
                 {msg.role === 'user' ? (
                   // User messages are HTML from TipTap editor

@@ -184,12 +184,25 @@ useEffect(() => {
         setCurrentPage(1)
       } catch (err) {
         console.error('Error loading PDF:', err)
+        
+        // Check for DataCloneError specifically
+        if (err instanceof Error && err.name === 'DataCloneError') {
+          console.error('DataCloneError details:', {
+            message: err.message,
+            stack: err.stack,
+            path,
+            hasFileData: !!fileData,
+            fileDataType: fileData ? fileData.constructor.name : null,
+          })
+          setError(`Failed to load PDF: DataCloneError - the file data may be corrupted. Try reopening the file.`)
+        }
+        
         const errorMessage = err instanceof Error ? err.message : String(err)
 
         // Check for permission errors
         if (errorMessage.includes('forbidden') || errorMessage.includes('permission') || errorMessage.includes('scope')) {
           setError(`PERMISSION_DENIED:${path}`)
-        } else {
+        } else if (!errorMessage.includes('DataCloneError')) {
           setError(`Failed to load PDF: ${errorMessage}`)
         }
       } finally {

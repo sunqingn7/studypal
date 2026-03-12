@@ -302,6 +302,34 @@
   margin-right: auto;
 }
 
+.message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.message-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.message-action-btn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.message-action-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+}
+
 .message-role {
   font-size: 10px;
   font-weight: 600;

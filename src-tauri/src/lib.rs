@@ -462,9 +462,11 @@ async fn chat_with_openai_compatible(
             resp
         }
         Err(e) => {
+            let error_type = e.to_string();
             println!("[RUST] Request failed: {}", e);
+            println!("[RUST] Error type: {}", error_type);
             log::error!("Request failed: {}", e);
-            return Err(format!("Request failed: {}", e));
+            return Err(format!("Request failed: {} - {}", error_type, e));
         }
     };
 
