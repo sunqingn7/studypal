@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Group, Panel, Separator, useGroupRef } from 'react-resizable-panels'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useFileStore } from '../../application/store/file-store'
+import { useNoteStore } from '../../application/store/note-store'
+import { useAIChatStore } from '../../application/store/ai-chat-store'
 import { useThemeStore } from '../../application/store/theme-store'
 import { useSessionStore } from '../../application/store/session-store'
 import { useAIStore } from '../../application/store/ai-store'
@@ -32,6 +34,12 @@ function MainLayout() {
   useEffect(() => {
     // Save session before window closes
     const handleBeforeUnload = () => {
+      // Save current document's notes and chat
+      const { currentFile, saveCurrentDocumentState } = useFileStore.getState()
+      if (currentFile) {
+        saveCurrentDocumentState(useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState())
+      }
+
       const session = useSessionStore.getState().getSession()
       localStorage.setItem('studypal-session', JSON.stringify(session))
     }
@@ -70,13 +78,17 @@ function MainLayout() {
         const fileData: FileMetadata = {
           id: state.session.currentFile,
           path: state.session.currentFilePath,
-          name: state.session.currentFile.split('/').pop() || 'Unknown',
+          name: state.session.currentFilePath.split('/').pop() || 'Unknown',
           type: 'pdf',
           size: 0,
         }
         console.log('[MainLayout] Restoring file:', fileData)
         setCurrentFile(fileData)
         setCurrentPage(state.session.currentPage)
+        
+        // Load document-bound notes and chat
+        const { loadDocumentState } = useFileStore.getState()
+        loadDocumentState(fileData.path, useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState())
       }
       
       // Restore AI config and chat history
@@ -118,13 +130,17 @@ function MainLayout() {
           const fileData: FileMetadata = {
             id: state.session.currentFile,
             path: state.session.currentFilePath,
-            name: state.session.currentFile.split('/').pop() || 'Unknown',
+            name: state.session.currentFilePath.split('/').pop() || 'Unknown',
             type: 'pdf',
             size: 0,
           }
           console.log('[MainLayout] Restoring file:', fileData)
           setCurrentFile(fileData)
           setCurrentPage(state.session.currentPage)
+          
+          // Load document-bound notes and chat
+          const { loadDocumentState } = useFileStore.getState()
+          loadDocumentState(fileData.path, useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState())
         }
         
         // Restore AI config and chat history
@@ -224,10 +240,22 @@ function MainLayout() {
     }
   }, [isHydrated, panelSizesRestored])
   
+  const previousFileRef = useRef<FileMetadata | null>(null)
+
   useEffect(() => {
     if (currentFile && isHydrated) {
       console.log('[MainLayout] Saving file to session:', currentFile.path)
       useSessionStore.getState().setCurrentFile(currentFile.id, currentFile.path, currentPage, 0)
+      
+      // Save previous file's notes/chat and load new file's notes/chat
+      if (previousFileRef.current && previousFileRef.current.id !== currentFile.id) {
+        console.log('[MainLayout] Switching from', previousFileRef.current.name, 'to', currentFile.name)
+        const { saveCurrentDocumentState, loadDocumentState } = useFileStore.getState()
+        // Save the PREVIOUS file's notes, not the new one
+        saveCurrentDocumentState(useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState(), previousFileRef.current)
+        loadDocumentState(currentFile.path, useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState())
+      }
+      previousFileRef.current = currentFile
     }
   }, [currentFile, currentPage, isHydrated])
 

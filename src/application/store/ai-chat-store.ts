@@ -33,6 +33,11 @@ interface AIChatStore {
   setStreaming: (isStreaming: boolean) => void
   // For loading saved state
   initializeProviderConfigs: (configs: Partial<ProviderConfigs>) => void
+
+  // Serialize/deserialize for document persistence
+  serialize: () => { tabs: ChatTab[] }
+  deserialize: (data: { tabs: ChatTab[] }) => void
+  clear: () => void
 }
 
 // Create default configs for all providers
@@ -190,6 +195,32 @@ export const useAIChatStore = create<AIChatStore>((set, get) => ({
         }
       }
       return { providerConfigs: mergedConfigs }
+    })
+  },
+
+  serialize: () => {
+    const { tabs } = get()
+    return { tabs }
+  },
+
+  deserialize: (data) => {
+    if (!data || !data.tabs) {
+      set({
+        tabs: [],
+        activeTabId: null,
+      })
+      return
+    }
+    set({
+      tabs: data.tabs || [],
+      activeTabId: data.tabs?.find((t) => t.isActive)?.id || null,
+    })
+  },
+
+  clear: () => {
+    set({
+      tabs: [],
+      activeTabId: null,
     })
   },
 }))

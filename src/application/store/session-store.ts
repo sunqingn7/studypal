@@ -1,8 +1,24 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { AIConfig, ChatMessage } from '../../domain/models/ai-context'
+import { NoteTab, GlobalNote, TopicNote } from '../../domain/models/note'
 
 console.log('[SessionStore] Module loaded')
+
+export interface SerializedNoteState {
+  tabs: NoteTab[]
+  globalNotes: GlobalNote[]
+  topicNotes: [string, TopicNote[]][]
+}
+
+export interface SerializedChatState {
+  tabs: {
+    id: string
+    title: string
+    messages: ChatMessage[]
+    isActive: boolean
+  }[]
+}
 
 export interface PanelSizes {
   sidebar: number
@@ -29,6 +45,8 @@ export interface SessionData {
   theme: 'light' | 'dark'
   aiConfig: AIConfig | null
   chatHistory: ChatMessage[]
+  documentNotes: Record<string, SerializedNoteState>
+  documentChat: Record<string, SerializedChatState>
   lastUpdated: number
 }
 
@@ -43,6 +61,8 @@ export const DEFAULT_SESSION: SessionData = {
   theme: 'light',
   aiConfig: null,
   chatHistory: [],
+  documentNotes: {},
+  documentChat: {},
   lastUpdated: Date.now(),
 }
 
@@ -55,6 +75,10 @@ interface SessionStore {
   setTheme: (theme: 'light' | 'dark') => void
   setAIConfig: (config: AIConfig) => void
   setChatHistory: (history: ChatMessage[]) => void
+  setDocumentNotes: (documentId: string, notes: SerializedNoteState) => void
+  getDocumentNotes: (documentId: string) => SerializedNoteState | undefined
+  setDocumentChat: (documentId: string, chat: SerializedChatState) => void
+  getDocumentChat: (documentId: string) => SerializedChatState | undefined
   getSession: () => SessionData
   loadSession: (session: SessionData) => void
 }
@@ -162,6 +186,42 @@ export const useSessionStore = create<SessionStore>()(
             lastUpdated: Date.now(),
           },
         })
+      },
+
+      setDocumentNotes: (documentId, notes) => {
+        logAction('setDocumentNotes ' + documentId)
+        set({
+          session: {
+            ...get().session,
+            documentNotes: {
+              ...(get().session.documentNotes || {}),
+              [documentId]: notes,
+            },
+            lastUpdated: Date.now(),
+          },
+        })
+      },
+
+      getDocumentNotes: (documentId) => {
+        return get().session.documentNotes?.[documentId]
+      },
+
+      setDocumentChat: (documentId, chat) => {
+        logAction('setDocumentChat ' + documentId)
+        set({
+          session: {
+            ...get().session,
+            documentChat: {
+              ...(get().session.documentChat || {}),
+              [documentId]: chat,
+            },
+            lastUpdated: Date.now(),
+          },
+        })
+      },
+
+      getDocumentChat: (documentId) => {
+        return get().session.documentChat?.[documentId]
       },
 
       getSession: () => get().session,

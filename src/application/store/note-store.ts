@@ -21,6 +21,10 @@ interface NoteStore {
   getActiveNote: () => Note | undefined
   getNotesForTopic: (topicId: string) => TopicNote[]
   getGlobalNotes: () => GlobalNote[]
+
+  serialize: () => { tabs: NoteTab[]; globalNotes: GlobalNote[]; topicNotes: [string, TopicNote[]][] }
+  deserialize: (data: { tabs: NoteTab[]; globalNotes: GlobalNote[]; topicNotes: [string, TopicNote[]][] }) => void
+  clear: () => void
 }
 
 function generateDefaultTitle(notes: Note[], type: 'note' | 'ai-note'): string {
@@ -177,5 +181,41 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
 
   getGlobalNotes: () => {
     return get().globalNotes
+  },
+
+  serialize: () => {
+    const { tabs, globalNotes, topicNotes } = get()
+    return {
+      tabs,
+      globalNotes,
+      topicNotes: Array.from(topicNotes.entries()),
+    }
+  },
+
+  deserialize: (data) => {
+    if (!data) {
+      set({
+        tabs: [],
+        activeTabId: null,
+        globalNotes: [],
+        topicNotes: new Map(),
+      })
+      return
+    }
+    set({
+      tabs: data.tabs || [],
+      activeTabId: data.tabs?.find((t) => t.isActive)?.id || null,
+      globalNotes: data.globalNotes || [],
+      topicNotes: new Map(data.topicNotes || []),
+    })
+  },
+
+  clear: () => {
+    set({
+      tabs: [],
+      activeTabId: null,
+      globalNotes: [],
+      topicNotes: new Map(),
+    })
   },
 }))

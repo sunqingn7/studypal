@@ -56,12 +56,10 @@ function NoteView() {
 
   useEffect(() => {
     if (editor && activeNote) {
-      const currentContent = editor.getHTML()
-      if (currentContent !== activeNote.content) {
-        editor.commands.setContent(activeNote.content || '')
-      }
+      console.log('[NoteView] Syncing editor, activeNote:', activeNote.id, 'content length:', activeNote.content?.length)
+      editor.commands.setContent(activeNote.content || '')
     }
-  }, [editor, activeNote?.id])
+  }, [editor, activeNote?.id, activeNote?.content])
 
   useEffect(() => {
     if (tabs.length === 0) {

@@ -12,7 +12,6 @@ import type { FileType } from '../../../../domain/models/file'
 function FileView() {
   const { currentFile, setCurrentFile } = useFileStore()
   const { activeTopicId, addFileToTopic } = useTopicStore()
-  const [fileData, setFileData] = useState<Uint8Array | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [PluginComponent, setPluginComponent] = useState<React.ComponentType<{ filePath: string }> | null>(null)
@@ -82,10 +81,7 @@ useEffect(() => {
         openingFileRef.current = fileInfo.path
 
         try {
-          // Clear file data first to force clean reload if same file
-          setFileData(null)
-
-          // Small delay to ensure PDFViewer cleans up
+          // Small delay to ensure cleanup
           await new Promise(resolve => setTimeout(resolve, 50))
 
           // File info already contains everything from backend
@@ -105,11 +101,6 @@ useEffect(() => {
             metadata.type = 'latex'
           } else {
             metadata.type = 'txt'
-          }
-
-          // Store file data if available from backend
-          if (fileInfo.content && Array.isArray(fileInfo.content)) {
-            setFileData(new Uint8Array(fileInfo.content))
           }
 
           setCurrentFile(metadata)
@@ -230,9 +221,9 @@ let fileType: FileType
         return <PluginComponent filePath={currentFile.path} />
       }
 
-      // Default viewers - all using paged view
+      // Default viewers - always read fresh from disk
       if (currentFile.type === 'pdf') {
-        return <PDFViewer path={currentFile.path} fileData={fileData} />
+        return <PDFViewer path={currentFile.path} />
       }
 
       // Use paged view for all other file types (TXT, EPUB fallback)
