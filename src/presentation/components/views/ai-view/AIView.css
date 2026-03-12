@@ -171,6 +171,8 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 .config-field {
@@ -181,17 +183,76 @@
 
 .config-field label {
   font-size: 12px;
-  min-width: 60px;
+  min-width: 80px;
+  color: var(--text-secondary);
 }
 
-.config-field input {
+.config-field input,
+.config-field select {
   flex: 1;
-  padding: 4px 8px;
+  padding: 6px 10px;
   border: 1px solid var(--border-color);
   border-radius: 4px;
   font-size: 12px;
   background-color: var(--bg-primary);
   color: var(--text-primary);
+  min-width: 0;
+}
+
+.config-field input:focus,
+.config-field select:focus {
+  outline: none;
+  border-color: var(--accent-color);
+}
+
+.config-field input[type="password"] {
+  font-family: monospace;
+}
+
+.config-field input[type="number"] {
+  max-width: 100px;
+}
+
+.config-field select {
+  cursor: pointer;
+}
+
+.model-select {
+  max-width: 250px;
+}
+
+.model-detecting-indicator {
+  font-size: 11px;
+  color: var(--text-secondary);
+  animation: pulse 1s infinite;
+}
+
+.model-auto-detected {
+  font-size: 11px;
+  color: #4caf50;
+}
+
+.config-field input.detecting {
+  border-color: var(--accent-color);
+  animation: pulse-border 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes pulse-border {
+  0%, 100% {
+    border-color: var(--border-color);
+  }
+  50% {
+    border-color: var(--accent-color);
+  }
 }
 
 .ai-view-content {

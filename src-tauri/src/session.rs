@@ -7,6 +7,11 @@ pub struct AIConfig {
     pub provider: String,
     pub endpoint: String,
     pub model: String,
+    pub api_key: Option<String>,
+    pub system_prompt: Option<String>,
+    pub temperature: Option<f32>,
+    pub max_tokens: Option<u32>,
+    pub top_p: Option<f32>,
 }
 
 impl Default for AIConfig {
@@ -15,6 +20,11 @@ impl Default for AIConfig {
             provider: "llamacpp".to_string(),
             endpoint: "http://192.168.1.67:8033".to_string(),
             model: "Qwen3.5-27B".to_string(),
+            api_key: None,
+            system_prompt: None,
+            temperature: None,
+            max_tokens: None,
+            top_p: None,
         }
     }
 }
@@ -29,6 +39,7 @@ pub struct FilePosition {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionState {
     pub ai_config: AIConfig,
+    pub provider_configs: Option<serde_json::Map<String, serde_json::Value>>,
     pub open_files: Vec<FilePosition>,
     pub active_file: Option<String>,
 }
@@ -37,6 +48,7 @@ impl Default for SessionState {
     fn default() -> Self {
         SessionState {
             ai_config: AIConfig::default(),
+            provider_configs: None,
             open_files: Vec::new(),
             active_file: None,
         }

@@ -10,10 +10,12 @@ import { useAIChatStore } from '../../../../application/store/ai-chat-store'
 import { useFileStore } from '../../../../application/store/file-store'
 import { useNoteStore } from '../../../../application/store/note-store'
 import { useTopicStore } from '../../../../application/store/topic-store'
-import { llamaCppProvider } from '../../../../infrastructure/ai-providers/llamacpp-provider'
+import { getProvider, AVAILABLE_PROVIDERS } from '../../../../infrastructure/ai-providers/provider-factory'
+import { fetchAvailableModels, ModelInfo, getModelMaxTokens } from '../../../../infrastructure/ai-providers/model-detector'
 import { getCurrentPageText, getAllPagesText } from '../../../../infrastructure/file-handlers/pdf-utils'
 import { searchWeb, fetchWebContent } from '../../../../infrastructure/web-service'
-import { ChatMessage } from '../../../../domain/models/ai-context'
+import { ChatMessage, AIProviderType } from '../../../../domain/models/ai-context'
+import { updateAIConfig, updateProviderConfigs } from '../../../../application/services/session-manager'
 import './AIView.css'
 
 const FONT_SIZES = [12, 14, 16, 18, 20, 22, 24, 28, 32]
@@ -23,6 +25,7 @@ function AIView() {
     tabs,
     activeTabId,
     config,
+    providerConfigs,
     isStreaming,
     addTab,
     removeTab,
@@ -32,6 +35,7 @@ function AIView() {
     clearChat,
     getActiveMessages,
     setConfig,
+    switchProvider,
     setStreaming,
   } = useAIChatStore()
 
@@ -42,6 +46,8 @@ function AIView() {
   const [showConfig, setShowConfig] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [fontSize, setFontSize] = useState(14)
+  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([])
+  const [isDetectingModels, setIsDetectingModels] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const activeMessages = getActiveMessages()
@@ -79,6 +85,16 @@ function AIView() {
   useEffect(() => {
     scrollToBottom()
   }, [activeMessages])
+
+  // Save config changes to session
+  useEffect(() => {
+    updateAIConfig(config)
+  }, [config])
+
+  // Save provider configs changes to session
+  useEffect(() => {
+    updateProviderConfigs(providerConfigs)
+  }, [providerConfigs])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -263,13 +279,14 @@ function AIView() {
 
       let fullResponse = ''
 
-      await llamaCppProvider.streamChat(
-        messages,
-        config,
-        (chunk) => {
-          fullResponse += chunk
-        }
-      )
+    const provider = getProvider(config.provider)
+    await provider.streamChat(
+      messages,
+      config,
+      (chunk: string) => {
+        fullResponse += chunk
+      }
+    )
 
       if (activeTabId) {
         addMessage(activeTabId, 'assistant', fullResponse)
@@ -357,21 +374,141 @@ function AIView() {
       {showConfig && (
         <div className="ai-config">
           <div className="config-field">
+            <label>Provider:</label>
+            <select
+              value={config.provider}
+              onChange={(e) => {
+                const provider = e.target.value as AIProviderType
+                switchProvider(provider)
+                // Clear available models when switching providers
+                setAvailableModels([])
+              }}
+            >
+              {AVAILABLE_PROVIDERS.map((p) => (
+                <option key={p.type} value={p.type}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="config-field">
             <label>Endpoint:</label>
             <input
               type="text"
               value={config.endpoint}
               onChange={(e) => setConfig({ endpoint: e.target.value })}
+              onBlur={async () => {
+                // Query models when endpoint input loses focus
+                if (!config.endpoint || !['llamacpp', 'ollama', 'vllm', 'custom', 'openai'].includes(config.provider)) {
+                  return
+                }
+
+                setIsDetectingModels(true)
+                try {
+                  const models = await fetchAvailableModels(config.endpoint, config.apiKey)
+                  setAvailableModels(models)
+
+                  // Auto-select if only one model found
+                  if (models.length === 1) {
+                    console.log('[AIView] Auto-selected model:', models[0].id)
+                    const maxTokens = models[0].maxTokens || models[0].contextWindow
+                    setConfig({ 
+                      model: models[0].id,
+                      ...(maxTokens ? { maxTokens } : {})
+                    })
+                  } else if (models.length > 1 && !config.model) {
+                    // Keep dropdown open for user to select
+                    console.log('[AIView] Found', models.length, 'models, waiting for user selection')
+                  }
+                } catch (error) {
+                  console.log('[AIView] Could not detect models:', error)
+                  setAvailableModels([])
+                } finally {
+                  setIsDetectingModels(false)
+                }
+              }}
               placeholder="http://localhost:8080"
             />
           </div>
           <div className="config-field">
             <label>Model:</label>
+            {availableModels.length > 1 ? (
+              <select
+                value={config.model}
+                onChange={(e) => {
+                  const selectedModel = e.target.value
+                  const maxTokens = getModelMaxTokens(availableModels, selectedModel)
+                  setConfig({ 
+                    model: selectedModel,
+                    ...(maxTokens ? { maxTokens } : {})
+                  })
+                }}
+                className="model-select"
+              >
+                <option value="">Select a model...</option>
+                {availableModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name || m.id}
+                    {m.maxTokens ? ` (${m.maxTokens} tokens)` : ''}
+                    {m.description && !m.maxTokens ? ` - ${m.description}` : ''}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={config.model}
+                onChange={(e) => setConfig({ model: e.target.value })}
+                placeholder="llama2"
+                className={isDetectingModels ? 'detecting' : ''}
+              />
+            )}
+            {isDetectingModels && (
+              <span className="model-detecting-indicator">Detecting...</span>
+            )}
+            {availableModels.length === 1 && (
+              <span className="model-auto-detected">✓ Auto-detected</span>
+            )}
+          </div>
+      {/* Show API key field if:
+          - Provider requires API key AND no key is configured (for OpenAI/Anthropic)
+          - Or it's Custom provider (always allow API key configuration) */}
+      {(() => {
+        const providerInfo = AVAILABLE_PROVIDERS.find((p) => p.type === config.provider)
+        const shouldShowApiKey = providerInfo?.requiresApiKey && (
+          config.provider === 'custom' || !config.apiKey
+        )
+        return shouldShowApiKey ? (
+          <div className="config-field">
+            <label>API Key:</label>
             <input
-              type="text"
-              value={config.model}
-              onChange={(e) => setConfig({ model: e.target.value })}
-              placeholder="llama2"
+              type="password"
+              value={config.apiKey || ''}
+              onChange={(e) => setConfig({ apiKey: e.target.value })}
+              placeholder="Enter your API key"
+            />
+          </div>
+        ) : null
+      })()}
+          <div className="config-field">
+            <label>Temperature:</label>
+            <input
+              type="number"
+              min="0"
+              max="2"
+              step="0.1"
+              value={config.temperature ?? 0.7}
+              onChange={(e) => setConfig({ temperature: parseFloat(e.target.value) })}
+            />
+          </div>
+          <div className="config-field">
+            <label>Max Tokens:</label>
+            <input
+              type="number"
+              min="1"
+              max="8192"
+              value={config.maxTokens ?? 4096}
+              onChange={(e) => setConfig({ maxTokens: parseInt(e.target.value) })}
             />
           </div>
         </div>

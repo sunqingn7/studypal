@@ -1,3 +1,5 @@
+export type AIProviderType = 'llamacpp' | 'ollama' | 'openai' | 'anthropic' | 'vllm' | 'custom'
+
 export type ContextSource = 'file' | 'note' | 'ai-note' | 'global-note' | 'topic'
 
 export interface ContextItem {
@@ -12,16 +14,54 @@ export interface AIContext {
 }
 
 export interface AIConfig {
-  provider: 'llamacpp' | 'ollama' | 'openai' | 'anthropic'
+  provider: AIProviderType
   endpoint: string
   model: string
+  apiKey?: string
   systemPrompt?: string
+  // Provider-specific options
+  temperature?: number
+  maxTokens?: number
+  topP?: number
+  // For custom headers or additional config
+  extraHeaders?: Record<string, string>
+  extraBody?: Record<string, unknown>
 }
+
+// Store configs per provider for persistence
+export type ProviderConfigs = Record<AIProviderType, AIConfig>
 
 export const DEFAULT_AI_CONFIG: AIConfig = {
   provider: 'llamacpp',
   endpoint: 'http://192.168.1.67:8033',
   model: 'Qwen3.5-27B',
+}
+
+export const PROVIDER_DEFAULTS: Record<AIProviderType, Partial<AIConfig>> = {
+  llamacpp: {
+    endpoint: 'http://localhost:8080',
+    model: 'llama-3.2-1b-instruct',
+  },
+  ollama: {
+    endpoint: 'http://localhost:11434',
+    model: 'llama3.2',
+  },
+  openai: {
+    endpoint: 'https://api.openai.com/v1',
+    model: 'gpt-4o-mini',
+  },
+  anthropic: {
+    endpoint: 'https://api.anthropic.com/v1',
+    model: 'claude-3-5-sonnet-20241022',
+  },
+  vllm: {
+    endpoint: 'http://localhost:8000/v1',
+    model: 'meta-llama/Llama-3.2-1B-Instruct',
+  },
+  custom: {
+    endpoint: 'http://localhost:8080/v1',
+    model: 'default-model',
+  },
 }
 
 export interface ChatMessage {

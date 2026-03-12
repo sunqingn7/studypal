@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { ChatMessage, AIConfig, DEFAULT_AI_CONFIG } from '../../domain/models/ai-context'
+import { ChatMessage, AIConfig, DEFAULT_AI_CONFIG, AIProviderType, PROVIDER_DEFAULTS, ProviderConfigs } from '../../domain/models/ai-context'
 
 interface ChatTab {
   id: string
@@ -12,6 +12,7 @@ interface AIChatStore {
   tabs: ChatTab[]
   activeTabId: string | null
   config: AIConfig
+  providerConfigs: ProviderConfigs
   isStreaming: boolean
 
   // Tab management
@@ -28,13 +29,27 @@ interface AIChatStore {
 
   // Config
   setConfig: (config: Partial<AIConfig>) => void
+  switchProvider: (provider: AIProviderType) => void
   setStreaming: (isStreaming: boolean) => void
+  // For loading saved state
+  initializeProviderConfigs: (configs: Partial<ProviderConfigs>) => void
 }
+
+// Create default configs for all providers
+const createDefaultProviderConfigs = (): ProviderConfigs => ({
+  llamacpp: { ...DEFAULT_AI_CONFIG, provider: 'llamacpp', ...PROVIDER_DEFAULTS.llamacpp },
+  ollama: { ...DEFAULT_AI_CONFIG, provider: 'ollama', ...PROVIDER_DEFAULTS.ollama },
+  openai: { ...DEFAULT_AI_CONFIG, provider: 'openai', ...PROVIDER_DEFAULTS.openai },
+  anthropic: { ...DEFAULT_AI_CONFIG, provider: 'anthropic', ...PROVIDER_DEFAULTS.anthropic },
+  vllm: { ...DEFAULT_AI_CONFIG, provider: 'vllm', ...PROVIDER_DEFAULTS.vllm },
+  custom: { ...DEFAULT_AI_CONFIG, provider: 'custom', ...PROVIDER_DEFAULTS.custom },
+})
 
 export const useAIChatStore = create<AIChatStore>((set, get) => ({
   tabs: [],
   activeTabId: null,
   config: DEFAULT_AI_CONFIG,
+  providerConfigs: createDefaultProviderConfigs(),
   isStreaming: false,
 
   addTab: (title) => {
@@ -95,8 +110,8 @@ export const useAIChatStore = create<AIChatStore>((set, get) => ({
     set((state) => ({
       tabs: state.tabs.map((t) =>
         t.id === tabId
-          ? { ...t, messages: [...t.messages, message] }
-          : t
+        ? { ...t, messages: [...t.messages, message] }
+        : t
       ),
     }))
   },
@@ -121,10 +136,60 @@ export const useAIChatStore = create<AIChatStore>((set, get) => ({
   },
 
   setConfig: (config) => {
-    set((state) => ({ config: { ...state.config, ...config } }))
+    set((state) => {
+      const newConfig = { ...state.config, ...config }
+      // Also update the provider-specific config
+      const newProviderConfigs = {
+        ...state.providerConfigs,
+        [newConfig.provider]: newConfig,
+      }
+      return { config: newConfig, providerConfigs: newProviderConfigs }
+    })
+  },
+
+  switchProvider: (provider) => {
+    set((state) => {
+      // Save current config before switching
+      const currentProvider = state.config.provider
+      const savedConfigs = {
+        ...state.providerConfigs,
+        [currentProvider]: state.config,
+      }
+
+      // Load config for new provider, or create default
+      const newConfig = savedConfigs[provider] || {
+        ...DEFAULT_AI_CONFIG,
+        provider,
+        ...PROVIDER_DEFAULTS[provider],
+      }
+
+      console.log(`[AIChatStore] Switched from ${currentProvider} to ${provider}`)
+      console.log('[AIChatStore] New config:', newConfig)
+
+      return {
+        config: newConfig,
+        providerConfigs: savedConfigs,
+      }
+    })
   },
 
   setStreaming: (isStreaming) => {
     set({ isStreaming })
+  },
+
+  initializeProviderConfigs: (configs) => {
+    set((state) => {
+      const mergedConfigs = { ...createDefaultProviderConfigs(), ...configs }
+      // Set current config based on the provider in configs
+      const currentProvider = state.config.provider
+      const savedConfig = mergedConfigs[currentProvider]
+      if (savedConfig) {
+        return {
+          providerConfigs: mergedConfigs,
+          config: savedConfig,
+        }
+      }
+      return { providerConfigs: mergedConfigs }
+    })
   },
 }))

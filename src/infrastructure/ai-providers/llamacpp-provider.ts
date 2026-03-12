@@ -14,6 +14,12 @@ interface ChatRequestPayload {
   endpoint: string
   model: string
   messages: LlamaCppMessage[]
+  apiKey?: string
+  temperature?: number
+  maxTokens?: number
+  topP?: number
+  extraHeaders?: Record<string, string>
+  extraBody?: Record<string, unknown>
 }
 
 export class LlamaCppProvider implements AIProvider {
@@ -33,17 +39,23 @@ export class LlamaCppProvider implements AIProvider {
         role: m.role,
         content: m.content,
       })),
+      apiKey: config.apiKey,
+      temperature: config.temperature,
+      maxTokens: config.maxTokens,
+      topP: config.topP,
+      extraHeaders: config.extraHeaders,
+      extraBody: config.extraBody,
     }
 
     console.log('[llamacpp-provider] Calling invoke with payload:', JSON.stringify(payload, null, 2))
 
     try {
       console.log('[llamacpp-provider] About to call invoke...')
-      const result = await invoke<string>('chat_with_ai', { request: payload })
+      const result = await invoke<string>('chat_with_provider', { request: payload, provider: 'llamacpp' })
       console.log('[llamacpp-provider] invoke returned!')
       console.log('[llamacpp-provider] result type:', typeof result)
       console.log('[llamacpp-provider] result:', result)
-      
+
       // Force convert to string if needed
       const resultStr = String(result)
       console.log('[llamacpp-provider] converted to string, length:', resultStr.length)
@@ -70,7 +82,7 @@ export class LlamaCppProvider implements AIProvider {
       const response = await this.chat(messages, config)
       console.log('[llamacpp-provider] Got response from chat(), type:', typeof response)
       console.log('[llamacpp-provider] Response string:', response)
-      
+
       if (!response || typeof response !== 'string') {
         console.error('[llamacpp-provider] Invalid response:', response)
         throw new Error('Invalid response from chat()')
@@ -81,7 +93,7 @@ export class LlamaCppProvider implements AIProvider {
       // Simulate streaming by chunking the response
       const chunks = response.split(/(?=\s+)/)
       console.log('[llamacpp-provider] Split into', chunks.length, 'chunks')
-      
+
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i]
         if (chunk.trim()) {

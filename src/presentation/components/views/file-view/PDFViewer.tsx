@@ -103,26 +103,51 @@ function PDFViewer({ path, fileData }: PDFViewerProps) {
     }
   }, [pdf, scale])
 
-  const renderTextLayer = async (container: HTMLDivElement, page: pdfjsLib.PDFPageProxy) => {
-    container.innerHTML = ''
-    
-    const viewport = page.getViewport({ scale })
-    container.style.width = `${viewport.width}px`
-    container.style.height = `${viewport.height}px`
-    container.style.setProperty('--scale-factor', scale.toString())
+const renderTextLayer = async (container: HTMLDivElement, page: pdfjsLib.PDFPageProxy) => {
+  container.innerHTML = ''
 
+  const viewport = page.getViewport({ scale })
+  container.style.width = `${viewport.width}px`
+  container.style.height = `${viewport.height}px`
+  container.style.setProperty('--scale-factor', scale.toString())
+
+  try {
     const textContent = await page.getTextContent()
     console.log('[PDFViewer] Text content items:', textContent.items.length)
-    
+
+    // Sanitize text content to avoid DataCloneError
+    // PDF.js TextItem objects may contain non-serializable properties
+    const sanitizedItems = textContent.items.map((item: any) => ({
+      str: item.str || '',
+      dir: item.dir || 'ltr',
+      width: item.width || 0,
+      height: item.height || 0,
+      transform: Array.isArray(item.transform) 
+        ? item.transform.map((v: any) => typeof v === 'number' ? v : 0)
+        : [1, 0, 0, 1, 0, 0],
+      fontName: item.fontName || null,
+      hasEOL: item.hasEOL || false,
+    }))
+
+    const sanitizedTextContent = {
+      items: sanitizedItems,
+      styles: textContent.styles || {},
+      lang: (textContent as any).lang || null,
+    }
+
     const textLayer = new TextLayer({
       container,
-      textContentSource: textContent,
+      textContentSource: sanitizedTextContent,
       viewport: viewport,
     })
-    
+
     await textLayer.render()
     console.log('[PDFViewer] Text layer rendered, children:', container.children.length)
+  } catch (err) {
+    console.warn('[PDFViewer] Failed to render text layer:', err)
+    // Text layer is optional, continue without it
   }
+}
 
 useEffect(() => {
     const loadPdf = async () => {

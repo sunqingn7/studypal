@@ -16,6 +16,24 @@ struct ChatRequest {
     messages: Vec<ChatMessage>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct ProviderChatRequest {
+    endpoint: String,
+    model: String,
+    messages: Vec<ChatMessage>,
+    #[serde(rename = "apiKey")]
+    api_key: Option<String>,
+    temperature: Option<f32>,
+    #[serde(rename = "maxTokens")]
+    max_tokens: Option<u32>,
+    #[serde(rename = "topP")]
+    top_p: Option<f32>,
+    #[serde(rename = "extraHeaders")]
+    extra_headers: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(rename = "extraBody")]
+    extra_body: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
 #[tauri::command]
 async fn extract_pdf_text(path: String, page_numbers: Option<Vec<u32>>) -> Result<String, String> {
     println!("[RUST] extract_pdf_text called for: {}", path);
@@ -220,6 +238,272 @@ async fn chat_with_ai(request: ChatRequest) -> Result<String, String> {
             }
             println!("[RUST] No content found in choice");
         }
+    }
+
+    println!("[RUST] Returning error: no valid response");
+    Err("No valid response from AI".to_string())
+}
+
+#[tauri::command]
+async fn chat_with_provider(
+    request: ProviderChatRequest,
+    provider: String,
+) -> Result<String, String> {
+    println!("[RUST] chat_with_provider called for provider: {}", provider);
+    log::info!("Chat request to provider: {}", provider);
+    log::info!("Endpoint: {}", request.endpoint);
+    log::info!("Model: {}", request.model);
+    println!("[RUST] Messages count: {}", request.messages.len());
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    match provider.as_str() {
+        "anthropic" => chat_with_anthropic(&client, &request).await,
+        "openai" | "vllm" | "llamacpp" | "ollama" => {
+            // These providers use OpenAI-compatible format
+            chat_with_openai_compatible(&client, &request).await
+        }
+        _ => Err(format!("Unknown provider: {}", provider)),
+    }
+}
+
+async fn chat_with_anthropic(
+    client: &reqwest::Client,
+    request: &ProviderChatRequest,
+) -> Result<String, String> {
+    println!("[RUST] Using Anthropic API");
+
+    let url = format!("{}/messages", request.endpoint);
+    println!("[RUST] URL: {}", url);
+
+    // Convert messages to Anthropic format
+    let mut system_message: Option<String> = None;
+    let mut anthropic_messages: Vec<serde_json::Value> = vec![];
+
+    for msg in &request.messages {
+        if msg.role == "system" {
+            system_message = Some(msg.content.clone());
+        } else {
+            anthropic_messages.push(serde_json::json!({
+                "role": msg.role,
+                "content": msg.content
+            }));
+        }
+    }
+
+    let mut payload = serde_json::Map::new();
+    payload.insert("model".to_string(), serde_json::json!(request.model));
+    payload.insert("messages".to_string(), serde_json::json!(anthropic_messages));
+    payload.insert("max_tokens".to_string(), serde_json::json!(request.max_tokens.unwrap_or(4096)));
+
+    if let Some(system) = system_message {
+        payload.insert("system".to_string(), serde_json::json!(system));
+    }
+
+    if let Some(temp) = request.temperature {
+        payload.insert("temperature".to_string(), serde_json::json!(temp));
+    }
+
+    if let Some(top_p) = request.top_p {
+        payload.insert("top_p".to_string(), serde_json::json!(top_p));
+    }
+
+    // Add extra body parameters
+    if let Some(extra) = &request.extra_body {
+        for (key, value) in extra {
+            payload.insert(key.clone(), value.clone());
+        }
+    }
+
+    println!("[RUST] Sending request to Anthropic...");
+
+    let mut request_builder = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .header("anthropic-version", "2023-06-01");
+
+    // Add API key if provided
+    if let Some(api_key) = &request.api_key {
+        request_builder = request_builder.header("x-api-key", api_key);
+        println!("[RUST] Using provided API key");
+    }
+
+    // Add extra headers
+    if let Some(headers) = &request.extra_headers {
+        for (key, value) in headers {
+            if let Some(val_str) = value.as_str() {
+                request_builder = request_builder.header(key, val_str);
+            }
+        }
+    }
+
+    let response = match request_builder.json(&payload).send().await {
+        Ok(resp) => {
+            println!("[RUST] Got response with status: {}", resp.status());
+            resp
+        }
+        Err(e) => {
+            println!("[RUST] Request failed: {}", e);
+            log::error!("Request failed: {}", e);
+            return Err(format!("Request failed: {}", e));
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_default();
+        println!("[RUST] HTTP error: {} - {}", status, error_text);
+        return Err(format!("HTTP error: {} - {}", status, error_text));
+    }
+
+    println!("[RUST] Parsing JSON response...");
+    let data: serde_json::Value = match response.json().await {
+        Ok(json) => json,
+        Err(e) => {
+            println!("[RUST] JSON parse error: {}", e);
+            return Err(format!("JSON parse error: {}", e));
+        }
+    };
+
+    // Parse Anthropic response format
+    if let Some(content) = data.get("content") {
+        if let Some(content_array) = content.as_array() {
+            let mut full_text = String::new();
+            for item in content_array {
+                if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
+                    full_text.push_str(text);
+                }
+            }
+            if !full_text.is_empty() {
+                println!("[RUST] Returning content, length: {}", full_text.len());
+                return Ok(full_text);
+            }
+        }
+    }
+
+    if let Some(error) = data.get("error") {
+        let error_msg = error.to_string();
+        println!("[RUST] API error: {}", error_msg);
+        return Err(format!("Anthropic API error: {}", error_msg));
+    }
+
+    println!("[RUST] Returning error: no valid response");
+    Err("No valid response from Anthropic".to_string())
+}
+
+async fn chat_with_openai_compatible(
+    client: &reqwest::Client,
+    request: &ProviderChatRequest,
+) -> Result<String, String> {
+    println!("[RUST] Using OpenAI-compatible API");
+
+    // Determine the URL based on endpoint format
+    let url = if request.endpoint.ends_with("/v1/chat/completions") {
+        request.endpoint.clone()
+    } else if request.endpoint.ends_with("/v1") {
+        format!("{}/chat/completions", request.endpoint)
+    } else {
+        format!("{}/v1/chat/completions", request.endpoint)
+    };
+
+    println!("[RUST] URL: {}", url);
+
+    let mut payload = serde_json::Map::new();
+    payload.insert("model".to_string(), serde_json::json!(request.model));
+    payload.insert("messages".to_string(), serde_json::json!(request.messages));
+    payload.insert("stream".to_string(), serde_json::json!(false));
+
+    if let Some(temp) = request.temperature {
+        payload.insert("temperature".to_string(), serde_json::json!(temp));
+    }
+
+    if let Some(max_tokens) = request.max_tokens {
+        payload.insert("max_tokens".to_string(), serde_json::json!(max_tokens));
+    }
+
+    if let Some(top_p) = request.top_p {
+        payload.insert("top_p".to_string(), serde_json::json!(top_p));
+    }
+
+    // Add extra body parameters
+    if let Some(extra) = &request.extra_body {
+        for (key, value) in extra {
+            payload.insert(key.clone(), value.clone());
+        }
+    }
+
+    println!("[RUST] Sending request...");
+
+    let mut request_builder = client
+        .post(&url)
+        .header("Content-Type", "application/json");
+
+    // Add authorization header if API key is provided
+    if let Some(api_key) = &request.api_key {
+        request_builder = request_builder.header("Authorization", format!("Bearer {}", api_key));
+        println!("[RUST] Using provided API key");
+    }
+
+    // Add extra headers
+    if let Some(headers) = &request.extra_headers {
+        for (key, value) in headers {
+            if let Some(val_str) = value.as_str() {
+                request_builder = request_builder.header(key, val_str);
+            }
+        }
+    }
+
+    let response = match request_builder.json(&payload).send().await {
+        Ok(resp) => {
+            println!("[RUST] Got response with status: {}", resp.status());
+            resp
+        }
+        Err(e) => {
+            println!("[RUST] Request failed: {}", e);
+            log::error!("Request failed: {}", e);
+            return Err(format!("Request failed: {}", e));
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_default();
+        println!("[RUST] HTTP error: {} - {}", status, error_text);
+        return Err(format!("HTTP error: {} - {}", status, error_text));
+    }
+
+    println!("[RUST] Parsing JSON response...");
+    let data: serde_json::Value = match response.json().await {
+        Ok(json) => json,
+        Err(e) => {
+            println!("[RUST] JSON parse error: {}", e);
+            return Err(format!("JSON parse error: {}", e));
+        }
+    };
+
+    if let Some(choices) = data.get("choices") {
+        println!("[RUST] Found choices");
+        if let Some(first) = choices.as_array().and_then(|c| c.first()) {
+            println!("[RUST] Found first choice");
+            if let Some(content) = first.get("message").and_then(|m| m.get("content")).and_then(|c| c.as_str()) {
+                println!("[RUST] Returning message content, length: {}", content.len());
+                return Ok(content.to_string());
+            }
+            if let Some(content) = first.get("delta").and_then(|d| d.get("content")).and_then(|c| c.as_str()) {
+                println!("[RUST] Returning delta content, length: {}", content.len());
+                return Ok(content.to_string());
+            }
+            println!("[RUST] No content found in choice");
+        }
+    }
+
+    if let Some(error) = data.get("error") {
+        let error_msg = error.to_string();
+        println!("[RUST] API error: {}", error_msg);
+        return Err(format!("API error: {}", error_msg));
     }
 
     println!("[RUST] Returning error: no valid response");
@@ -628,8 +912,150 @@ fn strip_html_tags(html: &str) -> String {
     }
   }
   
-  // Normalize whitespace
-  output.split_whitespace().collect::<Vec<&str>>().join(" ")
+// Normalize whitespace
+output.split_whitespace().collect::<Vec<&str>>().join(" ")
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct FetchModelsRequest {
+    endpoint: String,
+    api_key: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ModelInfo {
+    id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    context_window: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
+}
+
+#[tauri::command]
+async fn fetch_models(request: FetchModelsRequest) -> Result<Vec<ModelInfo>, String> {
+    println!("[RUST] fetch_models called!");
+    println!("[RUST] Endpoint: {}", request.endpoint);
+    log::info!("Fetching models from: {}", request.endpoint);
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    // Determine the URL based on endpoint format
+    let url = if request.endpoint.ends_with("/v1/models") {
+        request.endpoint.clone()
+    } else if request.endpoint.ends_with("/v1") {
+        format!("{}/models", request.endpoint)
+    } else {
+        format!("{}/v1/models", request.endpoint)
+    };
+
+    println!("[RUST] URL: {}", url);
+
+    let mut request_builder = client.get(&url);
+
+    // Add authorization header if API key is provided
+    if let Some(api_key) = &request.api_key {
+        request_builder = request_builder.header("Authorization", format!("Bearer {}", api_key));
+        println!("[RUST] Using provided API key");
+    }
+
+    let response = match request_builder.send().await {
+        Ok(resp) => {
+            println!("[RUST] Got response with status: {}", resp.status());
+            resp
+        }
+        Err(e) => {
+            println!("[RUST] Request failed: {}", e);
+            log::error!("Request failed: {}", e);
+            return Err(format!("Request failed: {}", e));
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_default();
+        println!("[RUST] HTTP error: {} - {}", status, error_text);
+        return Err(format!("HTTP error: {} - {}", status, error_text));
+    }
+
+    println!("[RUST] Parsing JSON response...");
+    let data: serde_json::Value = match response.json().await {
+        Ok(json) => json,
+        Err(e) => {
+            println!("[RUST] JSON parse error: {}", e);
+            return Err(format!("JSON parse error: {}", e));
+        }
+    };
+
+  // Parse models from response
+  let mut models: Vec<ModelInfo> = vec![];
+
+  // Helper function to extract numeric value from various formats
+  let extract_number = |v: &serde_json::Value| -> Option<u32> {
+    v.as_u64().map(|n| n as u32)
+      .or_else(|| v.as_f64().map(|n| n as u32))
+      .or_else(|| v.as_str().and_then(|s| s.parse::<u32>().ok()))
+  };
+
+  // Try different response formats
+  if let Some(models_array) = data.get("data").and_then(|d| d.as_array()) {
+    // OpenAI format: { data: [{ id: "...", ... }] }
+    for model in models_array {
+      if let Some(id) = model.get("id").and_then(|i| i.as_str()) {
+        // Try various field names for context window / max tokens
+        let context_window = model.get("context_window").and_then(extract_number)
+          .or_else(|| model.get("context_length").and_then(extract_number))
+          .or_else(|| model.get("max_context_length").and_then(extract_number));
+        
+        let max_tokens = model.get("max_tokens").and_then(extract_number)
+          .or_else(|| model.get("max_model_len").and_then(extract_number))
+          .or_else(|| model.get("max_position_embeddings").and_then(extract_number));
+
+        models.push(ModelInfo {
+          id: id.to_string(),
+          name: model.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()),
+          description: model.get("description").and_then(|d| d.as_str()).map(|s| s.to_string()),
+          context_window,
+          max_tokens,
+        });
+      }
+    }
+  } else if let Some(models_array) = data.get("models").and_then(|m| m.as_array()) {
+    // Some providers use { models: [...] }
+    for model in models_array {
+      if let Some(id) = model.get("id").and_then(|i| i.as_str()) {
+        let context_window = model.get("context_window").and_then(extract_number)
+          .or_else(|| model.get("context_length").and_then(extract_number))
+          .or_else(|| model.get("max_context_length").and_then(extract_number));
+        
+        let max_tokens = model.get("max_tokens").and_then(extract_number)
+          .or_else(|| model.get("max_model_len").and_then(extract_number))
+          .or_else(|| model.get("max_position_embeddings").and_then(extract_number));
+
+        models.push(ModelInfo {
+          id: id.to_string(),
+          name: model.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()),
+          description: model.get("description").and_then(|d| d.as_str()).map(|s| s.to_string()),
+          context_window,
+          max_tokens,
+        });
+      }
+    }
+  }
+
+    if models.is_empty() {
+        println!("[RUST] No models found in response");
+        return Err("No models found".to_string());
+    }
+
+    println!("[RUST] Found {} models", models.len());
+    Ok(models)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -643,10 +1069,12 @@ pub fn run() {
         .level(log::LevelFilter::Info)
         .build(),
     )
-.invoke_handler(tauri::generate_handler![
+    .invoke_handler(tauri::generate_handler![
       fetch_web_content,
       search_web,
       chat_with_ai,
+      chat_with_provider,
+      fetch_models,
       test_invoke,
       extract_pdf_text,
       extract_epub_text,
