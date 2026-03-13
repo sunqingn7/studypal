@@ -116,6 +116,44 @@ function AIView() {
     updateProviderConfigs(providerConfigs)
   }, [providerConfigs])
 
+  // Detect models on initial load or when provider changes
+  useEffect(() => {
+    const detectModels = async () => {
+      if (!['llamacpp', 'ollama', 'vllm', 'custom'].includes(config.provider)) return
+      if (!config.endpoint) return
+      
+      setIsDetectingModels(true)
+      try {
+        const models = await fetchAvailableModels(config.endpoint, config.apiKey)
+        setAvailableModels(models)
+        
+        // Verify saved model still exists
+        if (config.model && models.some((m) => m.id === config.model)) {
+          const maxTokens = getModelMaxTokens(models, config.model)
+          console.log('[AIView] Verified saved model exists:', config.model)
+          setConfig({
+            model: config.model,
+            ...(maxTokens ? { maxTokens } : {})
+          })
+        } else if (models.length === 1) {
+          // Auto-select if only one model
+          const maxTokens = models[0].maxTokens || models[0].contextWindow
+          setConfig({
+            model: models[0].id,
+            ...(maxTokens ? { maxTokens } : {})
+          })
+        }
+      } catch (error) {
+        console.log('[AIView] Model detection failed:', error)
+      } finally {
+        setIsDetectingModels(false)
+      }
+    }
+    
+    // Only run on mount or when provider changes
+    detectModels()
+  }, [config.provider])
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
@@ -397,11 +435,45 @@ function AIView() {
             <label>Provider:</label>
             <select
               value={config.provider}
-              onChange={(e) => {
+              onChange={async (e) => {
                 const provider = e.target.value as AIProviderType
                 switchProvider(provider)
                 // Clear available models when switching providers
                 setAvailableModels([])
+                
+                // For providers that use endpoint, try to fetch models
+                if (['llamacpp', 'ollama', 'vllm', 'custom'].includes(provider)) {
+                  // Get the new config after switch (since switchProvider updates the store)
+                  const newConfig = useAIChatStore.getState().config
+                  if (!newConfig.endpoint) return
+                  
+                  setIsDetectingModels(true)
+                  try {
+                    const models = await fetchAvailableModels(newConfig.endpoint, newConfig.apiKey)
+                    setAvailableModels(models)
+                    
+                    // Auto-select if saved model exists in the list
+                    if (newConfig.model && models.some((m) => m.id === newConfig.model)) {
+                      const maxTokens = getModelMaxTokens(models, newConfig.model)
+                      console.log('[AIView] Restored saved model:', newConfig.model)
+                      setConfig({ 
+                        model: newConfig.model,
+                        ...(maxTokens ? { maxTokens } : {})
+                      })
+                    } else if (models.length === 1) {
+                      // Auto-select if only one model found
+                      const maxTokens = models[0].maxTokens || models[0].contextWindow
+                      setConfig({ 
+                        model: models[0].id,
+                        ...(maxTokens ? { maxTokens } : {})
+                      })
+                    }
+                  } catch (error) {
+                    console.log('[AIView] Could not detect models:', error)
+                  } finally {
+                    setIsDetectingModels(false)
+                  }
+                }
               }}
             >
               {AVAILABLE_PROVIDERS.map((p) => (

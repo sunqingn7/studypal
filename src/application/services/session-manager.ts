@@ -13,33 +13,40 @@ let fileRestorationCallback: ((files: FilePosition[], activeFile: string | null)
 export async function initializeSession(): Promise<void> {
   try {
     const session = await loadSession();
-    console.log('[Session] Loaded session from config:', {
-      aiProvider: session.aiConfig?.provider,
-      aiEndpoint: session.aiConfig?.endpoint,
-      openFiles: session.openFiles?.length || 0,
-      activeFile: session.activeFile,
-    });
 
-    // Validate session structure
     if (!session || typeof session !== 'object') {
-      console.warn('[Session] Invalid session structure, using defaults');
       currentSession = null;
       return;
     }
 
     currentSession = session;
 
-    // Restore AI config and provider configs
+    if (!currentSession.providerConfigs) {
+      currentSession.providerConfigs = {
+        llamacpp: { provider: 'llamacpp', endpoint: 'http://localhost:8080', model: 'llama-3.2-1b-instruct' },
+        ollama: { provider: 'ollama', endpoint: 'http://localhost:11434', model: 'llama3.2' },
+        openai: { provider: 'openai', endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+        anthropic: { provider: 'anthropic', endpoint: 'https://api.anthropic.com/v1', model: 'claude-3-5-sonnet-20241022' },
+        vllm: { provider: 'vllm', endpoint: 'http://localhost:8000/v1', model: 'meta-llama/Llama-3.2-1B-Instruct' },
+        custom: { provider: 'custom', endpoint: 'http://localhost:8080/v1', model: 'default-model' },
+      } as ProviderConfigs;
+    }
+
     if (session.aiConfig) {
       useAIChatStore.getState().setConfig(session.aiConfig);
     }
     
-    // Restore provider-specific configs if they exist
-    if (session.providerConfigs) {
-      useAIChatStore.getState().initializeProviderConfigs(session.providerConfigs);
+    if (session.providerConfigs && Object.keys(session.providerConfigs).length > 0) {
+      useAIChatStore.getState().initializeProviderConfigs(
+        session.providerConfigs,
+        session.aiConfig?.provider
+      );
+    } else {
+      if (session.aiConfig?.provider) {
+        useAIChatStore.getState().switchProvider(session.aiConfig.provider as any);
+      }
     }
 
-    // Restore files if callback is registered
     if (fileRestorationCallback && session.openFiles && session.openFiles.length > 0) {
       fileRestorationCallback(session.openFiles, session.activeFile);
     }
@@ -60,13 +67,11 @@ export function updateAIConfig(config: Partial<AIConfig>): void {
   const store = useAIChatStore.getState();
   const currentProvider = store.config.provider;
 
-  // Update the current config
   currentSession.aiConfig = {
     ...currentSession.aiConfig,
     ...config,
   };
 
-  // Update provider-specific configs
   if (!currentSession.providerConfigs) {
     currentSession.providerConfigs = {} as ProviderConfigs;
   }
@@ -76,7 +81,6 @@ export function updateAIConfig(config: Partial<AIConfig>): void {
     ...currentSession.aiConfig,
   };
 
-  // Auto-save session
   saveSessionThrottled();
 }
 
@@ -112,7 +116,6 @@ function saveSessionThrottled(): void {
   saveTimeout = window.setTimeout(async () => {
     if (currentSession) {
       await saveSession(currentSession);
-      console.log('[Session] Saved session');
     }
     saveTimeout = null;
   }, 1000);
@@ -121,6 +124,5 @@ function saveSessionThrottled(): void {
 export async function forceSaveSession(): Promise<void> {
   if (currentSession) {
     await saveSession(currentSession);
-    console.log('[Session] Force saved session');
   }
 }

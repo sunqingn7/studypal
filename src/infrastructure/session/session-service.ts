@@ -40,29 +40,58 @@ export const DEFAULT_SESSION: SessionState = {
   activeFile: null,
 };
 
+function toCamelCase(obj: any): any {
+  if (Array.isArray(obj)) {
+    return obj.map(toCamelCase);
+  }
+  if (obj !== null && typeof obj === 'object') {
+    return Object.fromEntries(
+      Object.entries(obj).map(([key, value]) => [
+        key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase()),
+        toCamelCase(value)
+      ])
+    );
+  }
+  return obj;
+}
+
 export async function loadSession(): Promise<SessionState> {
   try {
-    const result = await invoke<SessionState>('load_session');
-    // Validate the result has required properties
-    if (!result || typeof result !== 'object') {
-      console.warn('Invalid session result from backend, using defaults');
+    const result = await invoke<any>('load_session');
+    const converted = toCamelCase(result);
+    
+    if (!converted || typeof converted !== 'object') {
       return DEFAULT_SESSION;
     }
-    // Ensure required fields exist
-    if (!result.aiConfig || !result.openFiles) {
-      console.warn('Session missing required fields, using defaults');
-      return { ...DEFAULT_SESSION, ...result } as SessionState;
+    if (!converted.aiConfig || !converted.openFiles) {
+      return { ...DEFAULT_SESSION, ...converted } as SessionState;
     }
-    return result;
+    return { ...DEFAULT_SESSION, ...converted };
   } catch (error) {
     console.error('Failed to load session:', error);
     return DEFAULT_SESSION;
   }
 }
 
+function toSnakeCase(obj: any): any {
+  if (Array.isArray(obj)) {
+    return obj.map(toSnakeCase);
+  }
+  if (obj !== null && typeof obj === 'object') {
+    return Object.fromEntries(
+      Object.entries(obj).map(([key, value]) => [
+        key.replace(/([A-Z])/g, '_$1').toLowerCase(),
+        toSnakeCase(value)
+      ])
+    );
+  }
+  return obj;
+}
+
 export async function saveSession(session: SessionState): Promise<void> {
+  const snakeSession = toSnakeCase(session);
   try {
-    await invoke('save_session', { session });
+    await invoke('save_session', { session: snakeSession });
   } catch (error) {
     console.error('Failed to save session:', error);
   }

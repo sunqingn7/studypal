@@ -32,7 +32,7 @@ interface AIChatStore {
   switchProvider: (provider: AIProviderType) => void
   setStreaming: (isStreaming: boolean) => void
   // For loading saved state
-  initializeProviderConfigs: (configs: Partial<ProviderConfigs>) => void
+  initializeProviderConfigs: (configs: Partial<ProviderConfigs>, savedProvider?: AIProviderType) => void
 
   // Serialize/deserialize for document persistence
   serialize: () => { tabs: ChatTab[] }
@@ -168,9 +168,6 @@ export const useAIChatStore = create<AIChatStore>((set, get) => ({
         ...PROVIDER_DEFAULTS[provider],
       }
 
-      console.log(`[AIChatStore] Switched from ${currentProvider} to ${provider}`)
-      console.log('[AIChatStore] New config:', newConfig)
-
       return {
         config: newConfig,
         providerConfigs: savedConfigs,
@@ -182,19 +179,24 @@ export const useAIChatStore = create<AIChatStore>((set, get) => ({
     set({ isStreaming })
   },
 
-  initializeProviderConfigs: (configs) => {
+  initializeProviderConfigs: (configs, savedProvider?: AIProviderType) => {
     set((state) => {
       const mergedConfigs = { ...createDefaultProviderConfigs(), ...configs }
-      // Set current config based on the provider in configs
-      const currentProvider = state.config.provider
+      const currentProvider = savedProvider || state.config.provider
       const savedConfig = mergedConfigs[currentProvider]
+      
       if (savedConfig) {
         return {
           providerConfigs: mergedConfigs,
-          config: savedConfig,
+          config: { ...savedConfig, provider: currentProvider },
         }
       }
-      return { providerConfigs: mergedConfigs }
+      
+      return { 
+        providerConfigs: mergedConfigs,
+        // If no specific config for this provider, ensure the config has the right provider
+        config: { ...state.config, provider: currentProvider }
+      }
     })
   },
 
