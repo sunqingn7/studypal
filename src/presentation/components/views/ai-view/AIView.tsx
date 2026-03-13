@@ -49,7 +49,6 @@ function AIView() {
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([])
   const [isDetectingModels, setIsDetectingModels] = useState(false)
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const activeMessages = getActiveMessages()
 
@@ -154,9 +153,18 @@ function AIView() {
     detectModels()
   }, [config.provider])
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+
+  const scrollToBottom = useCallback(() => {
+    const container = messagesContainerRef.current
+    if (container) {
+      container.scrollTop = container.scrollHeight
+    }
+  }, [])
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [activeMessages, scrollToBottom])
 
   const handleAddTab = useCallback(() => {
     addTab()
@@ -607,7 +615,7 @@ function AIView() {
       )}
 
       <div className="view-content ai-view-content">
-        <div className="chat-messages">
+        <div className="chat-messages" ref={messagesContainerRef}>
           {activeMessages.length === 0 ? (
             <div className="chat-empty">
               <p>Ask me anything about your study materials!</p>
@@ -666,7 +674,6 @@ activeMessages.map((msg) => (
               </div>
             </div>
           )}
-          <div ref={messagesEndRef} />
         </div>
 
         <div className="chat-input-container">
