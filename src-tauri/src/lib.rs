@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::process::Command;
 
+mod session;
+
 #[derive(Debug, Serialize, Deserialize)]
 struct ChatMessage {
     role: String,
@@ -1084,7 +1086,9 @@ pub fn run() {
       get_parent_directory,
       get_file_info,
       open_file_from_browser,
-      read_file
+      read_file,
+      session::load_session,
+      session::save_session
     ])
         .setup(|app| {
             let _app_handle = app.handle().clone();

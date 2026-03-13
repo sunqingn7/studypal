@@ -7,6 +7,7 @@ import { useAIChatStore } from '../../application/store/ai-chat-store'
 import { useThemeStore } from '../../application/store/theme-store'
 import { useSessionStore } from '../../application/store/session-store'
 import { useAIStore } from '../../application/store/ai-store'
+import { initializeSession, updateAIConfig } from '../../application/services/session-manager'
 import { pluginRegistry } from '../../infrastructure/plugins/plugin-registry'
 import { FileBrowserView } from '../../plugins/file-browser-view/FileBrowserView'
 import FileView from '../components/views/file-view/FileView'
@@ -60,11 +61,16 @@ function MainLayout() {
     return () => clearTimeout(timer)
   }, [pluginContext])
 
+  // Initialize session from Rust backend (AI config, provider configs)
+  useEffect(() => {
+    console.log('[MainLayout] Initializing session from backend')
+    initializeSession()
+  }, [])
+
   useEffect(() => {
     // Check if store already hydrated
     console.log('[MainLayout] Checking hydration, hasHydrated:', useSessionStore.persist.hasHydrated())
     const { setCurrentFile, setCurrentPage } = useFileStore.getState()
-    const { setConfig: setAIConfig, setChatHistory: setAIChatHistory } = useAIStore.getState()
     const appWindow = getCurrentWindow()
     
     if (useSessionStore.persist.hasHydrated()) {
@@ -91,15 +97,8 @@ function MainLayout() {
         loadDocumentState(fileData.path, useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState())
       }
       
-      // Restore AI config and chat history
-      if (state.session.aiConfig) {
-        console.log('[MainLayout] Restoring AI config')
-        setAIConfig(state.session.aiConfig)
-      }
-      if (state.session.chatHistory && state.session.chatHistory.length > 0) {
-        console.log('[MainLayout] Restoring chat history, length:', state.session.chatHistory.length)
-        setAIChatHistory(state.session.chatHistory)
-      }
+      // AI config is now loaded via initializeSession() from session-manager (Rust backend)
+      // Chat history is document-bound now, so no need to restore from here
 
       // Restore window size
       const { width, height, x, y } = state.session.window
@@ -143,15 +142,8 @@ function MainLayout() {
           loadDocumentState(fileData.path, useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState())
         }
         
-        // Restore AI config and chat history
-        if (state.session.aiConfig) {
-          console.log('[MainLayout] Restoring AI config')
-          setAIConfig(state.session.aiConfig)
-        }
-        if (state.session.chatHistory && state.session.chatHistory.length > 0) {
-          console.log('[MainLayout] Restoring chat history, length:', state.session.chatHistory.length)
-          setAIChatHistory(state.session.chatHistory)
-        }
+        // AI config is now loaded via initializeSession() from session-manager (Rust backend)
+        // Chat history is document-bound now, so no need to restore from here
 
         // Restore window size
         const { width, height, x, y } = state.session.window
@@ -259,14 +251,14 @@ function MainLayout() {
     }
   }, [currentFile, currentPage, isHydrated])
 
-  // Save AI config to session when it changes
-  const aiConfig = useAIStore((state) => state.config)
+  // Save AI config to Rust backend when it changes
+  const aiConfig = useAIChatStore((state) => state.config)
   useEffect(() => {
-    if (isHydrated && aiConfig) {
-      console.log('[MainLayout] Saving AI config to session')
-      useSessionStore.getState().setAIConfig(aiConfig)
+    if (aiConfig) {
+      console.log('[MainLayout] Saving AI config to backend:', aiConfig.provider)
+      updateAIConfig(aiConfig)
     }
-  }, [aiConfig, isHydrated])
+  }, [aiConfig])
 
   // Save AI chat history when it changes
   const chatHistory = useAIStore((state) => state.chatHistory)

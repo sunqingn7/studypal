@@ -13,7 +13,12 @@ let fileRestorationCallback: ((files: FilePosition[], activeFile: string | null)
 export async function initializeSession(): Promise<void> {
   try {
     const session = await loadSession();
-    console.log('[Session] Loaded session:', session);
+    console.log('[Session] Loaded session from config:', {
+      aiProvider: session.aiConfig?.provider,
+      aiEndpoint: session.aiConfig?.endpoint,
+      openFiles: session.openFiles?.length || 0,
+      activeFile: session.activeFile,
+    });
 
     // Validate session structure
     if (!session || typeof session !== 'object') {
@@ -33,13 +38,6 @@ export async function initializeSession(): Promise<void> {
     if (session.providerConfigs) {
       useAIChatStore.getState().initializeProviderConfigs(session.providerConfigs);
     }
-
-    console.log('[Session] Loaded session from config:', {
-      aiProvider: session.aiConfig?.provider,
-      aiEndpoint: session.aiConfig?.endpoint,
-      openFiles: session.openFiles?.length || 0,
-      activeFile: session.activeFile,
-    });
 
     // Restore files if callback is registered
     if (fileRestorationCallback && session.openFiles && session.openFiles.length > 0) {
