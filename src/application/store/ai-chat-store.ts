@@ -22,7 +22,7 @@ interface AIChatStore {
   renameTab: (tabId: string, newTitle: string) => void
 
   // Chat operations
-  addMessage: (tabId: string, role: 'user' | 'assistant', content: string) => void
+  addMessage: (tabId: string, role: 'user' | 'assistant', content: string, thinking?: string) => void
   clearChat: (tabId: string) => void
   getActiveTab: () => ChatTab | undefined
   getActiveMessages: () => ChatMessage[]
@@ -104,11 +104,12 @@ export const useAIChatStore = create<AIChatStore>((set, get) => ({
     }))
   },
 
-  addMessage: (tabId, role, content) => {
+  addMessage: (tabId, role, content, thinking) => {
     const message: ChatMessage = {
       id: crypto.randomUUID(),
       role,
       content,
+      thinking,
       timestamp: Date.now(),
     }
 

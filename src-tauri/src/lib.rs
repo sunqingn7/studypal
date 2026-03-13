@@ -230,12 +230,31 @@ async fn chat_with_ai(request: ChatRequest) -> Result<String, String> {
         println!("[RUST] Found choices");
         if let Some(first) = choices.as_array().and_then(|c| c.first()) {
             println!("[RUST] Found first choice");
-            if let Some(content) = first.get("message").and_then(|m| m.get("content")).and_then(|c| c.as_str()) {
+            
+            // Check for reasoning_content (o1/o3 models)
+            let reasoning = first.get("message")
+                .and_then(|m| m.get("reasoning_content"))
+                .or_else(|| first.get("delta").and_then(|d| d.get("reasoning_content")))
+                .and_then(|c| c.as_str());
+            
+            let content = first.get("message")
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_str())
+                .or_else(|| first.get("delta").and_then(|d| d.get("content")).and_then(|c| c.as_str()));
+
+            if let Some(content) = content {
                 println!("[RUST] Returning message content, length: {}", content.len());
-                return Ok(content.to_string());
-            }
-            if let Some(content) = first.get("delta").and_then(|d| d.get("content")).and_then(|c| c.as_str()) {
-                println!("[RUST] Returning delta content, length: {}", content.len());
+                
+                // If there's reasoning content, return as JSON
+                if let Some(reasoning) = reasoning {
+                    println!("[RUST] Has reasoning content, length: {}", reasoning.len());
+                    let response = serde_json::json!({
+                        "content": content,
+                        "thinking": reasoning
+                    });
+                    return Ok(response.to_string());
+                }
+                
                 return Ok(content.to_string());
             }
             println!("[RUST] No content found in choice");

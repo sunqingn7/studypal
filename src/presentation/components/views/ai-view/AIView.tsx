@@ -49,8 +49,21 @@ function AIView() {
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([])
   const [isDetectingModels, setIsDetectingModels] = useState(false)
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
+  const [expandedThinking, setExpandedThinking] = useState<Set<string>>(new Set())
 
   const activeMessages = getActiveMessages()
+  
+  const toggleThinking = (messageId: string) => {
+    setExpandedThinking(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(messageId)) {
+        newSet.delete(messageId)
+      } else {
+        newSet.add(messageId)
+      }
+      return newSet
+    })
+  }
 
   // Rich text editor for input
   const editor = useEditor({
@@ -344,18 +357,34 @@ function AIView() {
       const messages: ChatMessage[] = [...previousMessages, currentMessage]
 
       let fullResponse = ''
+      let fullThinking = ''
 
-    const provider = getProvider(config.provider)
-    await provider.streamChat(
-      messages,
-      config,
-      (chunk: string) => {
-        fullResponse += chunk
+      const provider = getProvider(config.provider)
+      
+      // Try to use streamChatWithThinking if available
+      if ('streamChatWithThinking' in provider && provider.streamChatWithThinking) {
+        await provider.streamChatWithThinking(
+          messages,
+          config,
+          (chunk: string) => {
+            fullResponse += chunk
+          },
+          (thinking: string) => {
+            fullThinking = thinking
+          }
+        )
+      } else {
+        await provider.streamChat(
+          messages,
+          config,
+          (chunk: string) => {
+            fullResponse += chunk
+          }
+        )
       }
-    )
 
       if (activeTabId) {
-        addMessage(activeTabId, 'assistant', fullResponse)
+        addMessage(activeTabId, 'assistant', fullResponse, fullThinking || undefined)
       }
     } catch (error) {
       console.error('AI Error:', error)
@@ -647,6 +676,21 @@ activeMessages.map((msg) => (
                   </div>
                 )}
               </div>
+              {msg.role === 'assistant' && msg.thinking && (
+                <div className="message-thinking">
+                  <button 
+                    className="thinking-toggle"
+                    onClick={() => toggleThinking(msg.id)}
+                  >
+                    {expandedThinking.has(msg.id) ? '▼' : '▶'} Thinking
+                  </button>
+                  {expandedThinking.has(msg.id) && (
+                    <div className="thinking-content">
+                      {msg.thinking}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="message-content" style={{ fontSize: `${fontSize}px` }}>
                 {msg.role === 'user' ? (
                   // User messages are HTML from TipTap editor

@@ -108,6 +108,36 @@ export class AnthropicProvider implements AIProvider {
       throw error
     }
   }
+
+  async streamChatWithThinking(
+    messages: ChatMessage[],
+    config: AIConfig,
+    onChunk: (chunk: string) => void,
+    onThinking: (thinking: string) => void
+  ): Promise<void> {
+    try {
+      const response = await this.chat(messages, config)
+      if (!response || typeof response !== 'string') {
+        throw new Error('Invalid response from chat()')
+      }
+      try {
+        const parsed = JSON.parse(response)
+        if (parsed.thinking) onThinking(parsed.thinking)
+        if (parsed.content) {
+          parsed.content.split(/(?=\s+)/).forEach((chunk: string) => {
+            if (chunk.trim()) onChunk(chunk)
+          })
+        }
+      } catch {
+        response.split(/(?=\s+)/).forEach((chunk: string) => {
+          if (chunk.trim()) onChunk(chunk)
+        })
+      }
+    } catch (error: any) {
+      console.error('[anthropic-provider] streamChatWithThinking error:', error)
+      throw error
+    }
+  }
 }
 
 export const anthropicProvider = new AnthropicProvider()

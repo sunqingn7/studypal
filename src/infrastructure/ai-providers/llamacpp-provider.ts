@@ -109,6 +109,48 @@ export class LlamaCppProvider implements AIProvider {
       throw error
     }
   }
+
+  async streamChatWithThinking(
+    messages: ChatMessage[],
+    config: AIConfig,
+    onChunk: (chunk: string) => void,
+    onThinking: (thinking: string) => void
+  ): Promise<void> {
+    try {
+      const response = await this.chat(messages, config)
+
+      if (!response || typeof response !== 'string') {
+        throw new Error('Invalid response from chat()')
+      }
+
+      // Try to parse as JSON (when Rust returns content + thinking)
+      try {
+        const parsed = JSON.parse(response)
+        if (parsed.thinking) {
+          onThinking(parsed.thinking)
+        }
+        if (parsed.content) {
+          const chunks = parsed.content.split(/(?=\s+)/)
+          for (const chunk of chunks) {
+            if (chunk.trim()) {
+              onChunk(chunk)
+            }
+          }
+        }
+      } catch {
+        // Not JSON, treat as plain content
+        const chunks = response.split(/(?=\s+)/)
+        for (const chunk of chunks) {
+          if (chunk.trim()) {
+            onChunk(chunk)
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('[llamacpp-provider] streamChatWithThinking error:', error)
+      throw error
+    }
+  }
 }
 
 export const llamaCppProvider = new LlamaCppProvider()

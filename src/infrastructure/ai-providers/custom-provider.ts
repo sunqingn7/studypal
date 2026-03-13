@@ -114,6 +114,55 @@ export class CustomProvider implements AIProvider {
       throw error
     }
   }
+
+  async streamChatWithThinking(
+    messages: ChatMessage[],
+    config: AIConfig,
+    onChunk: (chunk: string) => void,
+    onThinking: (thinking: string) => void
+  ): Promise<void> {
+    console.log('[custom-provider] streamChatWithThinking() called')
+
+    try {
+      console.log('[custom-provider] Calling chat()...')
+      const response = await this.chat(messages, config)
+      console.log('[custom-provider] Got response:', response?.slice(0, 100))
+
+      if (!response || typeof response !== 'string') {
+        console.error('[custom-provider] Invalid response:', response)
+        throw new Error('Invalid response from chat()')
+      }
+
+      // Try to parse as JSON (when Rust returns content + thinking)
+      try {
+        const parsed = JSON.parse(response)
+        if (parsed.thinking) {
+          console.log('[custom-provider] Found thinking content:', parsed.thinking.slice(0, 50))
+          onThinking(parsed.thinking)
+        }
+        if (parsed.content) {
+          const content = parsed.content
+          const chunks = content.split(/(?=\s+)/)
+          for (const chunk of chunks) {
+            if (chunk.trim()) {
+              onChunk(chunk)
+            }
+          }
+        }
+      } catch {
+        // Not JSON, treat as plain content
+        const chunks = response.split(/(?=\s+)/)
+        for (const chunk of chunks) {
+          if (chunk.trim()) {
+            onChunk(chunk)
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('[custom-provider] streamChatWithThinking error:', error)
+      throw error
+    }
+  }
 }
 
 export const customProvider = new CustomProvider()
