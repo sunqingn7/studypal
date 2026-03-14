@@ -389,6 +389,19 @@ async fn chat_with_anthropic(
         }
     };
 
+    // Debug: Print response keys
+    if let Some(obj) = data.as_object() {
+        println!("[RUST] Response keys: {:?}", obj.keys().collect::<Vec<_>>());
+    }
+    
+    // Debug: Check for reasoning in various formats
+    let reasoning_fields = ["reasoning", "thinking", "reasoning_content", "reasoning_content"];
+    for field in reasoning_fields {
+        if let Some(val) = data.get(field) {
+            println!("[RUST] Found field '{}': {:?}", field, val);
+        }
+    }
+
     // Parse Anthropic response format
     if let Some(content) = data.get("content") {
         if let Some(content_array) = content.as_array() {
@@ -399,7 +412,16 @@ async fn chat_with_anthropic(
                 }
             }
             if !full_text.is_empty() {
-                println!("[RUST] Returning content, length: {}", full_text.len());
+                // Check for thinking/reasoning in the raw response
+                if let Some(reasoning) = data.get("thinking").or_else(|| data.get("reasoning")) {
+                    if let Some(reasoning_str) = reasoning.as_str() {
+                        let response = serde_json::json!({
+                            "content": full_text,
+                            "thinking": reasoning_str
+                        });
+                        return Ok(response.to_string());
+                    }
+                }
                 return Ok(full_text);
             }
         }
@@ -511,12 +533,31 @@ async fn chat_with_openai_compatible(
         println!("[RUST] Found choices");
         if let Some(first) = choices.as_array().and_then(|c| c.first()) {
             println!("[RUST] Found first choice");
-            if let Some(content) = first.get("message").and_then(|m| m.get("content")).and_then(|c| c.as_str()) {
+            
+            // Check for reasoning_content (o1/o3 models)
+            let reasoning = first.get("message")
+                .and_then(|m| m.get("reasoning_content"))
+                .or_else(|| first.get("delta").and_then(|d| d.get("reasoning_content")))
+                .and_then(|c| c.as_str());
+            
+            let content = first.get("message")
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_str())
+                .or_else(|| first.get("delta").and_then(|d| d.get("content")).and_then(|c| c.as_str()));
+
+            if let Some(content) = content {
                 println!("[RUST] Returning message content, length: {}", content.len());
-                return Ok(content.to_string());
-            }
-            if let Some(content) = first.get("delta").and_then(|d| d.get("content")).and_then(|c| c.as_str()) {
-                println!("[RUST] Returning delta content, length: {}", content.len());
+                
+                // If there's reasoning content, return as JSON
+                if let Some(reasoning) = reasoning {
+                    println!("[RUST] Has reasoning content, length: {}", reasoning.len());
+                    let response = serde_json::json!({
+                        "content": content,
+                        "thinking": reasoning
+                    });
+                    return Ok(response.to_string());
+                }
+                
                 return Ok(content.to_string());
             }
             println!("[RUST] No content found in choice");
