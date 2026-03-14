@@ -330,6 +330,11 @@
   color: white;
 }
 
+.message-action-btn.delete-btn:hover {
+  background: rgba(220, 53, 69, 0.3);
+  color: #ff6b6b;
+}
+
 .message-role {
   font-size: 10px;
   font-weight: 600;

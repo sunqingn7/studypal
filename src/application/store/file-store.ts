@@ -18,7 +18,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
   currentPage: 1,
   fileHistory: [],
 
-    saveCurrentDocumentState: (noteStore, aiChatStore, sessionStore, fileToSave?: { path: string }) => {
+    saveCurrentDocumentState: async (noteStore, aiChatStore, sessionStore, fileToSave?: { path: string }) => {
       // If fileToSave is provided, use it; otherwise use current file
       const currentFile = fileToSave || get().currentFile
       if (!currentFile) return
@@ -26,66 +26,175 @@ export const useFileStore = create<FileStore>((set, get) => ({
       try {
         // Get current state
         const { tabs, globalNotes, topicNotes } = noteStore
-        
+
         console.log('[FileStore] Saving notes for:', currentFile.path, 'globalNotes count:', globalNotes.length)
         if (globalNotes.length > 0) {
           console.log('[FileStore] First note content length:', globalNotes[0].content?.length)
           console.log('[FileStore] First note content:', globalNotes[0].content?.substring(0, 100))
         }
-        
-        // For now, we'll keep using session storage but prepare for database migration
-        // In a full implementation, we would invoke Tauri commands to save to database and markdown files
-        console.log('[FileStore] Preparing to save to database and markdown (future implementation):', currentFile.path);
-        console.log('[FileStore] Total notes:', globalNotes.length);
-        console.log('[FileStore] Chat tabs:', tabs.length);
-        
-        // Keep existing session storage for backward compatibility
+
+        // Prepare data for storage
+        const allNotes: any[] = [...globalNotes];
+        topicNotes.forEach((notes: any[]) => {
+          allNotes.push(...notes);
+        });
+
+        // Get chat data from aiChatStore
+        const chatState = aiChatStore.serialize();
+        const chatTabs: any[] = chatState.tabs.map((tab: any) => ({
+          id: tab.id,
+          title: tab.title,
+          messages: tab.messages,
+          isActive: tab.isActive
+        }));
+
+        // Import Tauri invoke
+        const { invoke } = await import('@tauri-apps/api/core');
+
+        // Save chats to database
+        await invoke('save_chats', {
+          documentPath: currentFile.path,
+          tabs: chatTabs
+        });
+
+        // Save notes to database
+        const notesForDb = allNotes.map(note => ({
+          id: note.id,
+          title: note.title,
+          content: note.content,
+          noteType: note.type,
+          topicId: note.topicId || null,
+          createdAt: note.createdAt,
+          updatedAt: note.updatedAt
+        }));
+        await invoke('save_notes', {
+          documentPath: currentFile.path,
+          notes: notesForDb
+        });
+
+        // Save note tabs to database
+        const noteTabsForDb = tabs.map((tab: any) => ({
+          id: tab.id,
+          noteId: tab.noteId,
+          title: tab.title,
+          isActive: tab.isActive
+        }));
+        await invoke('save_note_tabs', {
+          documentPath: currentFile.path,
+          tabs: noteTabsForDb
+        });
+
+        // Save each note as markdown file in StudyNotes directory
+        for (const note of allNotes) {
+          await invoke('save_note_as_markdown', {
+            documentPath: currentFile.path,
+            noteId: note.id,
+            title: note.title,
+            content: note.content,
+            noteType: note.type,
+            topicId: note.topicId || null,
+            createdAt: note.createdAt,
+            updatedAt: note.updatedAt
+          });
+        }
+
+        console.log('[FileStore] Saved to database:', currentFile.path, 'chats:', chatTabs.length, 'notes:', allNotes.length);
+
+        // Keep session storage as backup during transition
         const fileNoteState = {
           tabs,
           globalNotes: globalNotes,
           topicNotes: Array.from(topicNotes.entries()),
         }
-        
-        const chatState = aiChatStore.serialize()
-        
-        // Use file path as the key for persistence
+
         sessionStore.setDocumentNotes(currentFile.path, fileNoteState)
         sessionStore.setDocumentChat(currentFile.path, chatState)
-        console.log('[FileStore] Saved state for:', currentFile.path, 'globalNotes:', globalNotes.length, 'topicNotes entries:', Array.from(topicNotes.entries()).length)
       } catch (e) {
         console.error('[FileStore] Error saving document state:', e)
       }
     },
 
-    loadDocumentState: async (documentId, noteStore, aiChatStore, sessionStore) => {
-      if (!documentId) return
+  loadDocumentState: async (documentId, noteStore, aiChatStore, sessionStore) => {
+    if (!documentId) return
+
+    try {
+      console.log('[FileStore] Loading state for:', documentId)
+
+      // Import Tauri invoke
+      const { invoke } = await import('@tauri-apps/api/core');
+
+      // Try to load from database first
+      let chatData: { tabs: any[] } | null = null;
+      let notesFromDb: any[] = [];
+      let noteTabsFromDb: any[] = [];
 
       try {
-        console.log('[FileStore] Loading state for:', documentId)
-        
-        // Load chats from database via Tauri
-        // const { invoke } = await import('@tauri-apps/api/core');
-        // const chatData: { tabs: any[] } = await invoke('load_chats', { 
-        //   document_path: documentId
-        // });
-        
-        // Load notes from database and markdown files via Tauri
-        // const notesFromDb: any[] = await invoke('load_notes', { 
-        //   document_path: documentId
-        // });
-        // 
-        // // Also load notes from markdown files
-        // const markdownNotes: any[] = await invoke('load_all_notes_from_markdown', { 
-        //   document_path: documentId
-        // });
-        
-        // For now, we'll keep using session storage but prepare for database migration
-        // In a full implementation, we would use the data from Tauri commands above
-        console.log('[FileStore] Preparing to load from database and markdown (future implementation):', documentId);
-        
-        // Keep existing session storage logic for backward compatibility during transition
+        chatData = await invoke('load_chats', { documentPath: documentId });
+        console.log('[FileStore] Loaded chats from database:', documentId);
+      } catch (e) {
+        console.log('[FileStore] No chats found in database for:', documentId);
+      }
+
+      try {
+        notesFromDb = await invoke('load_notes', { documentPath: documentId });
+        console.log('[FileStore] Loaded notes from database:', documentId, 'count:', notesFromDb.length);
+      } catch (e) {
+        console.log('[FileStore] No notes found in database for:', documentId);
+      }
+
+      try {
+        noteTabsFromDb = await invoke('load_note_tabs', { documentPath: documentId });
+        console.log('[FileStore] Loaded note tabs from database:', documentId, 'count:', noteTabsFromDb.length);
+      } catch (e) {
+        console.log('[FileStore] No note tabs found in database for:', documentId);
+      }
+
+      // If we have data from database, use it; otherwise fall back to session storage
+      if (notesFromDb.length > 0 || noteTabsFromDb.length > 0) {
+        // Process notes from database
+        const globalNotes: any[] = [];
+        const topicNotesMap = new Map<string, any[]>();
+
+        notesFromDb.forEach((note: any) => {
+          const processedNote = {
+            id: note.id,
+            title: note.title,
+            content: note.content,
+            type: note.noteType,
+            topicId: note.topicId,
+            createdAt: note.createdAt,
+            updatedAt: note.updatedAt,
+          };
+
+          if (note.topicId) {
+            const existing = topicNotesMap.get(note.topicId) || [];
+            existing.push(processedNote);
+            topicNotesMap.set(note.topicId, existing);
+          } else {
+            globalNotes.push(processedNote);
+          }
+        });
+
+        // Process tabs from database
+        const tabs = noteTabsFromDb.map((tab: any) => ({
+          id: tab.id,
+          noteId: tab.noteId,
+          title: tab.title,
+          isActive: tab.isActive,
+        }));
+
+        // Convert topicNotesMap to entries array
+        const topicNotesForStore: [string, any][] = Array.from(topicNotesMap.entries());
+
+        noteStore.deserialize({
+          tabs: tabs.length > 0 ? tabs : [],
+          globalNotes: globalNotes,
+          topicNotes: topicNotesForStore,
+        });
+        console.log('[FileStore] Loaded notes from database:', documentId, 'globalNotes:', globalNotes.length, 'topicNotes:', topicNotesForStore.length);
+      } else {
+        // Fall back to session storage
         const noteData = sessionStore.getDocumentNotes(documentId)
-        const chatData = sessionStore.getDocumentChat(documentId)
 
         if (noteData) {
           // Process globalNotes
@@ -94,7 +203,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
             id: crypto.randomUUID(),
             topicId: null,
           })) || []
-          
+
           // Process topicNotes (convert from [string, TopicNote[]][] back to Map<string, TopicNote[]>)
           const topicNotesMap = new Map<string, any>()
           const topicNotesArray = noteData.topicNotes || []
@@ -105,7 +214,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
             }))
             topicNotesMap.set(topicId, processedNotes)
           })
-          
+
           // Map old tab noteIds to new noteIds (for both global and topic notes)
           const noteIdMap = new Map<string, string>()
           noteData.globalNotes?.forEach((note: any, idx: number) => {
@@ -119,51 +228,62 @@ export const useFileStore = create<FileStore>((set, get) => ({
               }
             })
           })
-          
+
           // Update tabs to use new note IDs
           const newTabs = (noteData.tabs || []).map((tab: any) => ({
             ...tab,
             id: crypto.randomUUID(),
             noteId: noteIdMap.get(tab.noteId) || crypto.randomUUID(),
           }))
-          
+
           // Convert topicNotesMap back to the format expected by note store ([string, TopicNote[]][])
           const topicNotesForStore: [string, any][] = Array.from(topicNotesMap.entries())
-          
+
           noteStore.deserialize({
             tabs: newTabs,
             globalNotes: globalNotes,
             topicNotes: topicNotesForStore,
           })
-          console.log('[FileStore] Loaded notes, count:', globalNotes.length + (topicNotesArray.reduce((sum: number, [, notes]: [string, any[]]) => sum + notes.length, 0)), 'new IDs created')
+          console.log('[FileStore] Loaded notes from session storage:', documentId, 'count:', globalNotes.length + (topicNotesArray.reduce((sum: number, [, notes]: [string, any[]]) => sum + notes.length, 0)), 'new IDs created')
         } else {
           noteStore.clear()
           noteStore.addTab(null, 'Note-1')
           console.log('[FileStore] Created new note')
         }
+      }
 
-        if (chatData && chatData.tabs && chatData.tabs.length > 0) {
-          // Also create new chat tabs with new IDs
-          const newChatTabs = chatData.tabs.map((tab: any) => ({
+      // Load chats (from database or session storage)
+      if (chatData && chatData.tabs && chatData.tabs.length > 0) {
+        aiChatStore.deserialize({
+          tabs: chatData.tabs,
+        })
+        console.log('[FileStore] Loaded chat from database:', documentId, 'tabs:', chatData.tabs.length)
+      } else {
+        // Fall back to session storage for chats
+        const chatDataFromSession = sessionStore.getDocumentChat(documentId)
+        if (chatDataFromSession && chatDataFromSession.tabs && chatDataFromSession.tabs.length > 0) {
+          // Create new chat tabs with new IDs
+          const newChatTabs = chatDataFromSession.tabs.map((tab: any) => ({
             ...tab,
             id: crypto.randomUUID(),
           }))
-          
+
           aiChatStore.deserialize({
             tabs: newChatTabs,
           })
-          console.log('[FileStore] Loaded chat, tabs:', newChatTabs.length)
+          console.log('[FileStore] Loaded chat from session storage:', documentId, 'tabs:', newChatTabs.length)
         } else {
           aiChatStore.clear()
           aiChatStore.addTab('Chat 1')
           console.log('[FileStore] Created new chat')
         }
-      } catch (e) {
-        console.error('[FileStore] Error loading document state:', e)
-        noteStore.clear()
-        aiChatStore.clear()
       }
-    },
+    } catch (e) {
+      console.error('[FileStore] Error loading document state:', e)
+      noteStore.clear()
+      aiChatStore.clear()
+    }
+  },
 
   setCurrentFile: (file) => {
     if (file) {

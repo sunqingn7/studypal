@@ -33,6 +33,7 @@ function AIView() {
     setActiveTab,
     renameTab,
     addMessage,
+    deleteMessage,
     clearChat,
     getActiveMessages,
     setConfig,
@@ -674,24 +675,31 @@ activeMessages.map((msg) => (
             <div key={msg.id} className={`chat-message ${msg.role}`}>
               <div className="message-header">
                 <div className="message-role">{msg.role === 'user' ? 'You' : 'AI'}</div>
-                {msg.role === 'user' && (
-                  <div className="message-actions">
-                    <button 
-                      className="message-action-btn"
-                      onClick={() => handleCopyMessage(msg, false)}
-                      title="Copy to clipboard"
-                    >
-                      {copiedMessageId === msg.id ? '✓ Copied' : '📋 Copy'}
-                    </button>
-                    <button 
-                      className="message-action-btn"
-                      onClick={() => handleCopyMessage(msg, true)}
-                      title="Copy and edit"
-                    >
-                      ✏️ Edit
-                    </button>
-                  </div>
-                )}
+              {msg.role === 'user' && (
+                <div className="message-actions">
+                  <button
+                    className="message-action-btn"
+                    onClick={() => handleCopyMessage(msg, false)}
+                    title="Copy to clipboard"
+                  >
+                    {copiedMessageId === msg.id ? '✓ Copied' : '📋 Copy'}
+                  </button>
+                  <button
+                    className="message-action-btn"
+                    onClick={() => handleCopyMessage(msg, true)}
+                    title="Copy and edit"
+                  >
+                    ✏️ Edit
+                  </button>
+                  <button
+                    className="message-action-btn delete-btn"
+                    onClick={() => activeTabId && deleteMessage(activeTabId, msg.id)}
+                    title="Delete message and response"
+                  >
+                    🗑️ Delete
+                  </button>
+                </div>
+              )}
               </div>
               {msg.role === 'assistant' && msg.thinking && (
                 <div className="message-thinking">

@@ -24,6 +24,7 @@ interface AIChatStore {
   // Chat operations
   addMessage: (tabId: string, role: 'user' | 'assistant', content: string, thinking?: string) => void
   updateMessage: (tabId: string, messageId: string, content?: string, thinking?: string) => void
+  deleteMessage: (tabId: string, messageId: string) => void
   clearChat: (tabId: string) => void
   getActiveTab: () => ChatTab | undefined
   getActiveMessages: () => ChatMessage[]
@@ -127,20 +128,48 @@ export const useAIChatStore = create<AIChatStore>((set, get) => ({
     set((state) => ({
       tabs: state.tabs.map((t) =>
         t.id === tabId
-        ? {
-            ...t,
-            messages: t.messages.map((m) =>
-              m.id === messageId
-                ? {
-                    ...m,
-                    ...(content !== undefined && { content }),
-                    ...(thinking !== undefined && { thinking }),
-                  }
-                : m
-            ),
-          }
-        : t
+          ? {
+              ...t,
+              messages: t.messages.map((m) =>
+                m.id === messageId
+                  ? {
+                      ...m,
+                      ...(content !== undefined && { content }),
+                      ...(thinking !== undefined && { thinking }),
+                    }
+                  : m
+              ),
+            }
+          : t
       ),
+    }))
+  },
+
+  deleteMessage: (tabId, messageId) => {
+    set((state) => ({
+      tabs: state.tabs.map((t) => {
+        if (t.id !== tabId) return t
+        
+        const msgIndex = t.messages.findIndex((m) => m.id === messageId)
+        if (msgIndex === -1) return t
+        
+        const targetMsg = t.messages[msgIndex]
+        let indicesToRemove = new Set([msgIndex])
+        
+        // If user message, also remove the next assistant message (the reply)
+        if (targetMsg.role === 'user' && msgIndex < t.messages.length - 1 && t.messages[msgIndex + 1].role === 'assistant') {
+          indicesToRemove.add(msgIndex + 1)
+        }
+        // If assistant message, also remove the previous user message (the query)
+        else if (targetMsg.role === 'assistant' && msgIndex > 0 && t.messages[msgIndex - 1].role === 'user') {
+          indicesToRemove.add(msgIndex - 1)
+        }
+        
+        return {
+          ...t,
+          messages: t.messages.filter((_, idx) => !indicesToRemove.has(idx))
+        }
+      }),
     }))
   },
 

@@ -1,8 +1,13 @@
 use crate::database::{self, ChatTab, Note, NoteTab};
-use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+
+// Initialize database on demand - we'll create a new connection each time for simplicity
+// In a production app, you might want to use a connection pool
+fn get_database() -> database::Database {
+    database::Database::new().expect("Failed to initialize database")
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AIConfig {
@@ -80,11 +85,6 @@ fn get_session_file_path() -> Result<PathBuf, String> {
     Ok(config_dir.join("session.json"))
 }
 
-// Database instance
-lazy_static::lazy_static! {
-    static ref DATABASE: database::Database = database::Database::new().expect("Failed to initialize database");
-}
-
 #[tauri::command]
 pub fn load_session() -> Result<SessionState, String> {
     let session_path = get_session_file_path()?;
@@ -118,14 +118,14 @@ pub fn save_session(session: SessionState) -> Result<(), String> {
 // Chat operations using database
 #[tauri::command]
 pub fn save_chats(document_path: String, tabs: Vec<ChatTab>) -> Result<(), String> {
-    DATABASE
+    get_database()
         .save_chats(&document_path, &tabs)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn load_chats(document_path: String) -> Result<Vec<ChatTab>, String> {
-    DATABASE
+    get_database()
         .load_chats(&document_path)
         .map_err(|e| e.to_string())
 }
@@ -133,14 +133,14 @@ pub fn load_chats(document_path: String) -> Result<Vec<ChatTab>, String> {
 // Note operations using database
 #[tauri::command]
 pub fn save_notes(document_path: String, notes: Vec<Note>) -> Result<(), String> {
-    DATABASE
+    get_database()
         .save_notes(&document_path, &notes)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn load_notes(document_path: String) -> Result<Vec<Note>, String> {
-    DATABASE
+    get_database()
         .load_notes(&document_path)
         .map_err(|e| e.to_string())
 }
@@ -148,14 +148,14 @@ pub fn load_notes(document_path: String) -> Result<Vec<Note>, String> {
 // Note tabs operations using database
 #[tauri::command]
 pub fn save_note_tabs(document_path: String, tabs: Vec<NoteTab>) -> Result<(), String> {
-    DATABASE
+    get_database()
         .save_note_tabs(&document_path, &tabs)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn load_note_tabs(document_path: String) -> Result<Vec<NoteTab>, String> {
-    DATABASE
+    get_database()
         .load_note_tabs(&document_path)
         .map_err(|e| e.to_string())
 }
@@ -163,7 +163,7 @@ pub fn load_note_tabs(document_path: String) -> Result<Vec<NoteTab>, String> {
 // Delete document data
 #[tauri::command]
 pub fn delete_document_data(document_path: String) -> Result<(), String> {
-    DATABASE
+    get_database()
         .delete_document_data(&document_path)
         .map_err(|e| e.to_string())
 }
@@ -189,7 +189,7 @@ pub fn save_note_as_markdown(
         created_at,
         updated_at,
     };
-    DATABASE
+    get_database()
         .save_note_as_markdown(&note, &document_path)
         .map_err(|e| e.to_string())
 }
@@ -199,21 +199,21 @@ pub fn load_note_from_markdown(
     document_path: String,
     note_id: String,
 ) -> Result<Option<Note>, String> {
-    DATABASE
+    get_database()
         .load_note_from_markdown(&document_path, &note_id)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn load_all_notes_from_markdown(document_path: String) -> Result<Vec<Note>, String> {
-    DATABASE
+    get_database()
         .load_all_notes_from_markdown(&document_path)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_note_markdown(document_path: String, note_id: String) -> Result<(), String> {
-    DATABASE
+    get_database()
         .delete_note_markdown(&document_path, &note_id)
         .map_err(|e| e.to_string())
 }

@@ -4,6 +4,7 @@ use std::path::Path;
 use std::process::Command;
 
 mod session;
+mod database;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ChatMessage {
@@ -1465,8 +1466,19 @@ pub fn run() {
             get_file_info,
             open_file_from_browser,
             read_file,
-            session::load_session,
-            session::save_session
+        session::load_session,
+        session::save_session,
+        session::save_chats,
+        session::load_chats,
+        session::save_notes,
+        session::load_notes,
+        session::save_note_tabs,
+        session::load_note_tabs,
+        session::delete_document_data,
+        session::save_note_as_markdown,
+        session::load_note_from_markdown,
+        session::load_all_notes_from_markdown,
+        session::delete_note_markdown
         ])
         .setup(|app| {
             let _app_handle = app.handle().clone();

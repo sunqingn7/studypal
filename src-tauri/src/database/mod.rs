@@ -1,7 +1,6 @@
 use rusqlite::{Connection, Result};
 use std::fs;
-use std::path::{Path, PathBuf};
-use tauri::api::path::{config_dir, document_dir};
+use std::path::Path;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct ChatMessage {
@@ -13,29 +12,39 @@ pub struct ChatMessage {
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ChatTab {
     pub id: String,
     pub title: String,
     pub messages: Vec<ChatMessage>,
+    #[serde(rename = "isActive")]
     pub is_active: bool,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Note {
     pub id: String,
     pub title: String,
     pub content: String,
-    pub note_type: String, // 'note' or 'ai-note'
+    #[serde(rename = "noteType")]
+    pub note_type: String,
+    #[serde(rename = "topicId")]
     pub topic_id: Option<String>,
+    #[serde(rename = "createdAt")]
     pub created_at: i64,
+    #[serde(rename = "updatedAt")]
     pub updated_at: i64,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NoteTab {
     pub id: String,
+    #[serde(rename = "noteId")]
     pub note_id: String,
     pub title: String,
+    #[serde(rename = "isActive")]
     pub is_active: bool,
 }
 
@@ -45,13 +54,13 @@ pub struct Database {
 
 impl Database {
     pub fn new() -> Result<Self> {
-        let config_dir = config_dir()
+        let config_dir = dirs::config_dir()
             .ok_or_else(|| rusqlite::Error::InvalidPath("Failed to get config dir".into()))?
             .join("studypal");
 
         // Create config directory if it doesn't exist
         std::fs::create_dir_all(&config_dir).map_err(|e| {
-            rusqlite::Error::InvalidPath(format!("Failed to create config dir: {}", e))
+            rusqlite::Error::InvalidPath(format!("Failed to create config dir: {}", e).into())
         })?;
 
         let db_path = config_dir.join("studypal.db");
@@ -127,7 +136,7 @@ impl Database {
 
         self.connection.execute(
             "INSERT OR REPLACE INTO chats (id, document_path, tabs) VALUES (?, ?, ?)",
-            (&document_path.to_string(), &document_path, &tabs_json),
+            (document_path, document_path, &tabs_json),
         )?;
 
         Ok(())
@@ -148,26 +157,24 @@ impl Database {
 
     // Note operations
     pub fn save_notes(&self, document_path: &str, notes: &[Note]) -> Result<()> {
-        // Delete existing notes for this document
         self.connection
             .execute("DELETE FROM notes WHERE document_path = ?", [document_path])?;
 
-        // Insert new notes
         let mut stmt = self.connection.prepare(
             "INSERT INTO notes (id, document_path, title, content, note_type, topic_id, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         )?;
 
         for note in notes {
-            stmt.execute([
-                &note.id,
-                &document_path,
-                &note.title,
-                &note.content,
-                &note.note_type,
-                &note.topic_id,
-                &note.created_at.to_string(),
-                &note.updated_at.to_string(),
+            stmt.execute(rusqlite::params![
+                note.id,
+                document_path,
+                note.title,
+                note.content,
+                note.note_type,
+                note.topic_id,
+                note.created_at,
+                note.updated_at,
             ])?;
         }
 
@@ -176,20 +183,19 @@ impl Database {
 
     pub fn load_notes(&self, document_path: &str) -> Result<Vec<Note>> {
         let mut stmt = self.connection.prepare(
-            "SELECT id, document_path, title, content, note_type, topic_id, created_at, updated_at 
+            "SELECT id, title, content, note_type, topic_id, created_at, updated_at 
              FROM notes WHERE document_path = ?",
         )?;
 
         let note_iter = stmt.query_map([document_path], |row| {
             Ok(Note {
                 id: row.get(0)?,
-                document_path: row.get(1)?,
-                title: row.get(2)?,
-                content: row.get(3)?,
-                note_type: row.get(4)?,
-                topic_id: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
+                title: row.get(1)?,
+                content: row.get(2)?,
+                note_type: row.get(3)?,
+                topic_id: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
             })
         })?;
 
@@ -203,25 +209,23 @@ impl Database {
 
     // Note tabs operations
     pub fn save_note_tabs(&self, document_path: &str, tabs: &[NoteTab]) -> Result<()> {
-        // Delete existing tabs for this document
         self.connection.execute(
             "DELETE FROM note_tabs WHERE document_path = ?",
             [document_path],
         )?;
 
-        // Insert new tabs
         let mut stmt = self.connection.prepare(
             "INSERT INTO note_tabs (id, document_path, note_id, title, is_active)
              VALUES (?, ?, ?, ?, ?)",
         )?;
 
         for tab in tabs {
-            stmt.execute([
-                &tab.id,
-                &document_path,
-                &tab.note_id,
-                &tab.title,
-                &tab.is_active.to_string(),
+            stmt.execute(rusqlite::params![
+                tab.id,
+                document_path,
+                tab.note_id,
+                tab.title,
+                tab.is_active,
             ])?;
         }
 
@@ -230,16 +234,15 @@ impl Database {
 
     pub fn load_note_tabs(&self, document_path: &str) -> Result<Vec<NoteTab>> {
         let mut stmt = self.connection.prepare(
-            "SELECT id, document_path, note_id, title, is_active FROM note_tabs WHERE document_path = ?"
+            "SELECT id, note_id, title, is_active FROM note_tabs WHERE document_path = ?",
         )?;
 
         let tab_iter = stmt.query_map([document_path], |row| {
             Ok(NoteTab {
                 id: row.get(0)?,
-                document_path: row.get(1)?,
-                note_id: row.get(2)?,
-                title: row.get(3)?,
-                is_active: row.get::<_, String>(4)?.parse::<bool>().unwrap_or(false),
+                note_id: row.get(1)?,
+                title: row.get(2)?,
+                is_active: row.get::<_, String>(3)?.parse::<bool>().unwrap_or(false),
             })
         })?;
 
@@ -278,7 +281,7 @@ impl Database {
 
         // Create directory if it doesn't exist
         fs::create_dir_all(&study_notes_dir).map_err(|e| {
-            rusqlite::Error::InvalidPath(format!("Failed to create StudyNotes dir: {}", e))
+            rusqlite::Error::InvalidPath(format!("Failed to create StudyNotes dir: {}", e).into())
         })?;
 
         // Create safe filename from note title
@@ -310,7 +313,7 @@ impl Database {
 
         // Write to file
         fs::write(&file_path, markdown_content).map_err(|e| {
-            rusqlite::Error::InvalidPath(format!("Failed to write note file: {}", e))
+            rusqlite::Error::InvalidPath(format!("Failed to write note file: {}", e).into())
         })?;
 
         Ok(())
@@ -334,7 +337,7 @@ impl Database {
 
         // Look for files that might contain this note ID
         let entries = fs::read_dir(&study_notes_dir).map_err(|e| {
-            rusqlite::Error::InvalidPath(format!("Failed to read StudyNotes dir: {}", e))
+            rusqlite::Error::InvalidPath(format!("Failed to read StudyNotes dir: {}", e).into())
         })?;
 
         for entry in entries {
@@ -342,7 +345,9 @@ impl Database {
                 let path = entry.path();
                 if path.extension().and_then(|ext| ext.to_str()) == Some("md") {
                     let content = fs::read_to_string(&path).map_err(|e| {
-                        rusqlite::Error::InvalidPath(format!("Failed to read note file: {}", e))
+                        rusqlite::Error::InvalidPath(
+                            format!("Failed to read note file: {}", e).into(),
+                        )
                     })?;
 
                     // Parse frontmatter to get ID
@@ -418,7 +423,7 @@ impl Database {
         }
 
         let entries = fs::read_dir(&study_notes_dir).map_err(|e| {
-            rusqlite::Error::InvalidPath(format!("Failed to read StudyNotes dir: {}", e))
+            rusqlite::Error::InvalidPath(format!("Failed to read StudyNotes dir: {}", e).into())
         })?;
 
         for entry in entries {
@@ -426,7 +431,9 @@ impl Database {
                 let path = entry.path();
                 if path.extension().and_then(|ext| ext.to_str()) == Some("md") {
                     let content = fs::read_to_string(&path).map_err(|e| {
-                        rusqlite::Error::InvalidPath(format!("Failed to read note file: {}", e))
+                        rusqlite::Error::InvalidPath(
+                            format!("Failed to read note file: {}", e).into(),
+                        )
                     })?;
 
                     // Parse frontmatter to get ID
@@ -500,7 +507,7 @@ impl Database {
 
         // Look for files that might contain this note ID
         let entries = fs::read_dir(&study_notes_dir).map_err(|e| {
-            rusqlite::Error::InvalidPath(format!("Failed to read StudyNotes dir: {}", e))
+            rusqlite::Error::InvalidPath(format!("Failed to read StudyNotes dir: {}", e).into())
         })?;
 
         for entry in entries {
@@ -508,7 +515,9 @@ impl Database {
                 let path = entry.path();
                 if path.extension().and_then(|ext| ext.to_str()) == Some("md") {
                     let content = fs::read_to_string(&path).map_err(|e| {
-                        rusqlite::Error::InvalidPath(format!("Failed to read note file: {}", e))
+                        rusqlite::Error::InvalidPath(
+                            format!("Failed to read note file: {}", e).into(),
+                        )
                     })?;
 
                     // Parse frontmatter to get ID
@@ -521,10 +530,9 @@ impl Database {
                                     if id == note_id {
                                         // Delete the file
                                         fs::remove_file(&path).map_err(|e| {
-                                            rusqlite::Error::InvalidPath(format!(
-                                                "Failed to delete note file: {}",
-                                                e
-                                            ))
+                                            rusqlite::Error::InvalidPath(
+                                                format!("Failed to delete note file: {}", e).into(),
+                                            )
                                         })?;
                                         return Ok(());
                                     }
@@ -535,262 +543,6 @@ impl Database {
                 }
             }
         }
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct ChatTab {
-    pub id: String,
-    pub title: String,
-    pub messages: Vec<ChatMessage>,
-    pub is_active: bool,
-}
-
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct Note {
-    pub id: String,
-    pub title: String,
-    pub content: String,
-    pub note_type: String, // 'note' or 'ai-note'
-    pub topic_id: Option<String>,
-    pub created_at: i64,
-    pub updated_at: i64,
-}
-
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct NoteTab {
-    pub id: String,
-    pub note_id: String,
-    pub title: String,
-    pub is_active: bool,
-}
-
-pub struct Database {
-    connection: Connection,
-}
-
-impl Database {
-    pub fn new() -> Result<Self> {
-        let config_dir = config_dir()
-            .ok_or_else(|| rusqlite::Error::InvalidPath("Failed to get config dir".into()))?
-            .join("studypal");
-
-        // Create config directory if it doesn't exist
-        std::fs::create_dir_all(&config_dir).map_err(|e| {
-            rusqlite::Error::InvalidPath(format!("Failed to create config dir: {}", e))
-        })?;
-
-        let db_path = config_dir.join("studypal.db");
-        let conn = Connection::open(db_path)?;
-
-        // Initialize tables
-        Self::init_tables(&conn)?;
-
-        Ok(Database { connection: conn })
-    }
-
-    fn init_tables(conn: &Connection) -> Result<()> {
-        // Create chats table
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS chats (
-                id TEXT PRIMARY KEY,
-                document_path TEXT NOT NULL,
-                tabs TEXT NOT NULL
-            )",
-            [],
-        )?;
-
-        // Create notes table
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS notes (
-                id TEXT PRIMARY KEY,
-                document_path TEXT NOT NULL,
-                title TEXT NOT NULL,
-                content TEXT NOT NULL,
-                note_type TEXT NOT NULL,
-                topic_id TEXT,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL
-            )",
-            [],
-        )?;
-
-        // Create note tabs table
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS note_tabs (
-                id TEXT PRIMARY KEY,
-                document_path TEXT NOT NULL,
-                note_id TEXT NOT NULL,
-                title TEXT NOT NULL,
-                is_active BOOLEAN NOT NULL
-            )",
-            [],
-        )?;
-
-        // Create indices for better performance
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_chats_document_path ON chats(document_path)",
-            [],
-        )?;
-
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_notes_document_path ON notes(document_path)",
-            [],
-        )?;
-
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_note_tabs_document_path ON note_tabs(document_path)",
-            [],
-        )?;
-
-        Ok(())
-    }
-
-    // Chat operations
-    pub fn save_chats(&self, document_path: &str, tabs: &[ChatTab]) -> Result<()> {
-        let tabs_json = serde_json::to_string(tabs)
-            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-
-        self.connection.execute(
-            "INSERT OR REPLACE INTO chats (id, document_path, tabs) VALUES (?, ?, ?)",
-            (&document_path.to_string(), &document_path, &tabs_json),
-        )?;
-
-        Ok(())
-    }
-
-    pub fn load_chats(&self, document_path: &str) -> Result<Vec<ChatTab>> {
-        let mut stmt = self
-            .connection
-            .prepare("SELECT tabs FROM chats WHERE document_path = ?")?;
-
-        let tabs_json = stmt.query_row([document_path], |row| row.get::<_, String>(0))?;
-
-        let tabs: Vec<ChatTab> = serde_json::from_str(&tabs_json)
-            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-
-        Ok(tabs)
-    }
-
-    // Note operations
-    pub fn save_notes(&self, document_path: &str, notes: &[Note]) -> Result<()> {
-        // Delete existing notes for this document
-        self.connection
-            .execute("DELETE FROM notes WHERE document_path = ?", [document_path])?;
-
-        // Insert new notes
-        let mut stmt = self.connection.prepare(
-            "INSERT INTO notes (id, document_path, title, content, note_type, topic_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-        )?;
-
-        for note in notes {
-            stmt.execute([
-                &note.id,
-                &document_path,
-                &note.title,
-                &note.content,
-                &note.note_type,
-                &note.topic_id,
-                &note.created_at.to_string(),
-                &note.updated_at.to_string(),
-            ])?;
-        }
-
-        Ok(())
-    }
-
-    pub fn load_notes(&self, document_path: &str) -> Result<Vec<Note>> {
-        let mut stmt = self.connection.prepare(
-            "SELECT id, document_path, title, content, note_type, topic_id, created_at, updated_at 
-             FROM notes WHERE document_path = ?",
-        )?;
-
-        let note_iter = stmt.query_map([document_path], |row| {
-            Ok(Note {
-                id: row.get(0)?,
-                document_path: row.get(1)?,
-                title: row.get(2)?,
-                content: row.get(3)?,
-                note_type: row.get(4)?,
-                topic_id: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
-            })
-        })?;
-
-        let mut notes = Vec::new();
-        for note in note_iter {
-            notes.push(note?);
-        }
-
-        Ok(notes)
-    }
-
-    // Note tabs operations
-    pub fn save_note_tabs(&self, document_path: &str, tabs: &[NoteTab]) -> Result<()> {
-        // Delete existing tabs for this document
-        self.connection.execute(
-            "DELETE FROM note_tabs WHERE document_path = ?",
-            [document_path],
-        )?;
-
-        // Insert new tabs
-        let mut stmt = self.connection.prepare(
-            "INSERT INTO note_tabs (id, document_path, note_id, title, is_active)
-             VALUES (?, ?, ?, ?, ?)",
-        )?;
-
-        for tab in tabs {
-            stmt.execute([
-                &tab.id,
-                &document_path,
-                &tab.note_id,
-                &tab.title,
-                &tab.is_active.to_string(),
-            ])?;
-        }
-
-        Ok(())
-    }
-
-    pub fn load_note_tabs(&self, document_path: &str) -> Result<Vec<NoteTab>> {
-        let mut stmt = self.connection.prepare(
-            "SELECT id, document_path, note_id, title, is_active FROM note_tabs WHERE document_path = ?"
-        )?;
-
-        let tab_iter = stmt.query_map([document_path], |row| {
-            Ok(NoteTab {
-                id: row.get(0)?,
-                document_path: row.get(1)?,
-                note_id: row.get(2)?,
-                title: row.get(3)?,
-                is_active: row.get::<_, String>(4)?.parse::<bool>().unwrap_or(false),
-            })
-        })?;
-
-        let mut tabs = Vec::new();
-        for tab in tab_iter {
-            tabs.push(tab?);
-        }
-
-        Ok(tabs)
-    }
-
-    // Utility functions
-    pub fn delete_document_data(&self, document_path: &str) -> Result<()> {
-        self.connection
-            .execute("DELETE FROM chats WHERE document_path = ?", [document_path])?;
-
-        self.connection
-            .execute("DELETE FROM notes WHERE document_path = ?", [document_path])?;
-
-        self.connection.execute(
-            "DELETE FROM note_tabs WHERE document_path = ?",
-            [document_path],
-        )?;
 
         Ok(())
     }
