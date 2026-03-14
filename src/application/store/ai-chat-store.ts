@@ -23,6 +23,7 @@ interface AIChatStore {
 
   // Chat operations
   addMessage: (tabId: string, role: 'user' | 'assistant', content: string, thinking?: string) => void
+  updateMessage: (tabId: string, messageId: string, content?: string, thinking?: string) => void
   clearChat: (tabId: string) => void
   getActiveTab: () => ChatTab | undefined
   getActiveMessages: () => ChatMessage[]
@@ -117,6 +118,27 @@ export const useAIChatStore = create<AIChatStore>((set, get) => ({
       tabs: state.tabs.map((t) =>
         t.id === tabId
         ? { ...t, messages: [...t.messages, message] }
+        : t
+      ),
+    }))
+  },
+
+  updateMessage: (tabId, messageId, content, thinking) => {
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === tabId
+        ? {
+            ...t,
+            messages: t.messages.map((m) =>
+              m.id === messageId
+                ? {
+                    ...m,
+                    ...(content !== undefined && { content }),
+                    ...(thinking !== undefined && { thinking }),
+                  }
+                : m
+            ),
+          }
         : t
       ),
     }))

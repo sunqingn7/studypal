@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
+import { flushSync } from 'react-dom'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import ReactMarkdown from 'react-markdown'
@@ -50,6 +51,10 @@ function AIView() {
   const [isDetectingModels, setIsDetectingModels] = useState(false)
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
   const [expandedThinking, setExpandedThinking] = useState<Set<string>>(new Set())
+  
+  // Local state for real streaming (bypasses zustand batching)
+  const [streamingContent, setStreamingContent] = useState('')
+  const [streamingThinking, setStreamingThinking] = useState('')
 
   const activeMessages = getActiveMessages()
   
@@ -320,8 +325,13 @@ function AIView() {
     const userMessage = textContent
     editor.commands.clearContent()
 
-    if (!activeTabId) return
+  if (!activeTabId) return
     addMessage(activeTabId, 'user', htmlContent)
+    
+    // Initialize local streaming state
+    setStreamingContent('')
+    setStreamingThinking('')
+    
     setStreaming(true)
     setIsProcessing(true)
 
@@ -356,10 +366,11 @@ function AIView() {
       }
       const messages: ChatMessage[] = [...previousMessages, currentMessage]
 
-      let fullResponse = ''
-      let fullThinking = ''
-
       const provider = getProvider(config.provider)
+      
+      // Use local state for streaming display
+      let localContent = ''
+      let localThinking = ''
       
       // Try to use streamChatWithThinking if available
       if ('streamChatWithThinking' in provider && provider.streamChatWithThinking) {
@@ -367,10 +378,12 @@ function AIView() {
           messages,
           config,
           (chunk: string) => {
-            fullResponse += chunk
+            localContent += chunk
+            flushSync(() => setStreamingContent(localContent))
           },
           (thinking: string) => {
-            fullThinking = thinking
+            localThinking = thinking
+            flushSync(() => setStreamingThinking(thinking))
           }
         )
       } else {
@@ -378,19 +391,23 @@ function AIView() {
           messages,
           config,
           (chunk: string) => {
-            fullResponse += chunk
+            localContent += chunk
+            flushSync(() => setStreamingContent(localContent))
           }
         )
       }
+      
+      // Add the final assistant message to the chat
+      addMessage(activeTabId, 'assistant', localContent, localThinking || undefined)
 
-      if (activeTabId) {
-        addMessage(activeTabId, 'assistant', fullResponse, fullThinking || undefined)
-      }
+      // Clear local streaming state
+      setStreamingContent('')
+      setStreamingThinking('')
     } catch (error) {
       console.error('AI Error:', error)
-      if (activeTabId) {
-        addMessage(activeTabId, 'assistant', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
-      }
+      addMessage(activeTabId, 'assistant', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      setStreamingContent('')
+      setStreamingThinking('')
     } finally {
       setStreaming(false)
       setIsProcessing(false)
@@ -710,14 +727,46 @@ activeMessages.map((msg) => (
             </div>
           ))
           )}
-          {(isStreaming || isProcessing) && (
-            <div className="chat-message assistant streaming">
-              <div className="message-role">AI</div>
-              <div className="message-content">
-                <span className="typing-indicator">...</span>
-              </div>
+      {(isStreaming || isProcessing) && (
+        <div className="chat-message assistant streaming">
+          <div className="message-header">
+            <div className="message-role">AI</div>
+          </div>
+          {/* Thinking section - collapsible */}
+          {streamingThinking && (
+            <div className="message-thinking">
+              <button
+                className="thinking-toggle"
+                onClick={() => toggleThinking('streaming')}
+              >
+                {expandedThinking.has('streaming') ? '▼' : '▶'} Thinking
+              </button>
+              {expandedThinking.has('streaming') && (
+                <div className="thinking-content">
+                  {streamingThinking}
+                </div>
+              )}
             </div>
           )}
+          {/* Content section */}
+          {streamingContent ? (
+            <div className="message-content" style={{ fontSize: `${fontSize}px` }}>
+              <div className="markdown-content">
+                <ReactMarkdown
+                  remarkPlugins={[remarkMath]}
+                  rehypePlugins={[rehypeKatex]}
+                >
+                  {streamingContent}
+                </ReactMarkdown>
+              </div>
+            </div>
+          ) : !streamingThinking ? (
+            <div className="message-content">
+              <span className="typing-indicator">...</span>
+            </div>
+          ) : null}
+        </div>
+      )}
         </div>
 
         <div className="chat-input-container">

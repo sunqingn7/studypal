@@ -77,7 +77,7 @@ export class CustomProvider implements AIProvider {
   async streamChat(
     messages: ChatMessage[],
     config: AIConfig,
-    onChunk: (chunk: string) => void
+    onChunk: (chunk: string) => void | Promise<void>
   ): Promise<void> {
     console.log('[custom-provider] streamChat() called')
 
@@ -103,7 +103,8 @@ export class CustomProvider implements AIProvider {
         const chunk = chunks[i]
         if (chunk.trim()) {
           console.log(`[custom-provider] Sending chunk ${i}: "${chunk.slice(0, 20)}..."`)
-          onChunk(chunk)
+          await onChunk(chunk)
+          await new Promise(r => setTimeout(r, 10))
         }
       }
       console.log('[custom-provider] Streaming complete')
@@ -118,8 +119,8 @@ export class CustomProvider implements AIProvider {
   async streamChatWithThinking(
     messages: ChatMessage[],
     config: AIConfig,
-    onChunk: (chunk: string) => void,
-    onThinking: (thinking: string) => void
+    onChunk: (chunk: string) => void | Promise<void>,
+    onThinking: (thinking: string) => void | Promise<void>
   ): Promise<void> {
     console.log('[custom-provider] streamChatWithThinking() called')
 
@@ -138,14 +139,16 @@ export class CustomProvider implements AIProvider {
         const parsed = JSON.parse(response)
         if (parsed.thinking) {
           console.log('[custom-provider] Found thinking content:', parsed.thinking.slice(0, 50))
-          onThinking(parsed.thinking)
+          await onThinking(parsed.thinking)
+          await new Promise(r => setTimeout(r, 100))
         }
         if (parsed.content) {
           const content = parsed.content
           const chunks = content.split(/(?=\s+)/)
           for (const chunk of chunks) {
             if (chunk.trim()) {
-              onChunk(chunk)
+              await onChunk(chunk)
+              await new Promise(r => setTimeout(r, 10))
             }
           }
         }
@@ -154,7 +157,8 @@ export class CustomProvider implements AIProvider {
         const chunks = response.split(/(?=\s+)/)
         for (const chunk of chunks) {
           if (chunk.trim()) {
-            onChunk(chunk)
+            await onChunk(chunk)
+            await new Promise(r => setTimeout(r, 10))
           }
         }
       }

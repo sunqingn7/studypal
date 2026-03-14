@@ -1,4 +1,4 @@
-use tauri::Manager;
+use tauri::{Manager, Emitter};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::process::Command;
@@ -265,6 +265,13 @@ async fn chat_with_ai(request: ChatRequest) -> Result<String, String> {
     Err("No valid response from AI".to_string())
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct StreamChunk {
+    content: String,
+    thinking: Option<String>,
+    done: bool,
+}
+
 #[tauri::command]
 async fn chat_with_provider(
     request: ProviderChatRequest,
@@ -289,6 +296,38 @@ async fn chat_with_provider(
         }
         _ => Err(format!("Unknown provider: {}", provider)),
     }
+}
+
+#[tauri::command]
+async fn stream_chat_with_provider(
+    app_handle: tauri::AppHandle,
+    request: ProviderChatRequest,
+    provider: String,
+) -> Result<(), String> {
+    println!("[RUST] stream_chat_with_provider called for provider: {}", provider);
+    log::info!("Stream chat request to provider: {}", provider);
+    
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let result = match provider.as_str() {
+        "anthropic" => stream_chat_with_anthropic(&app_handle, &client, &request).await,
+        "openai" | "vllm" | "llamacpp" | "ollama" => {
+            stream_chat_with_openai_compatible(&app_handle, &client, &request).await
+        }
+        _ => Err(format!("Unknown provider: {}", provider)),
+    };
+
+    // Always emit a done event at the end
+    let _ = app_handle.emit("chat-stream-chunk", StreamChunk {
+        content: String::new(),
+        thinking: None,
+        done: true,
+    });
+
+    result
 }
 
 async fn chat_with_anthropic(
@@ -572,6 +611,284 @@ async fn chat_with_openai_compatible(
 
     println!("[RUST] Returning error: no valid response");
     Err("No valid response from AI".to_string())
+}
+
+// Streaming functions for real-time chat
+use futures::StreamExt;
+
+async fn stream_chat_with_openai_compatible(
+    app_handle: &tauri::AppHandle,
+    client: &reqwest::Client,
+    request: &ProviderChatRequest,
+) -> Result<(), String> {
+    println!("[RUST] Using OpenAI-compatible streaming API");
+
+    let url = if request.endpoint.ends_with("/v1/chat/completions") {
+        request.endpoint.clone()
+    } else if request.endpoint.ends_with("/v1") {
+        format!("{}/chat/completions", request.endpoint)
+    } else {
+        format!("{}/v1/chat/completions", request.endpoint)
+    };
+
+    println!("[RUST] Streaming URL: {}", url);
+
+    let mut payload = serde_json::Map::new();
+    payload.insert("model".to_string(), serde_json::json!(request.model));
+    payload.insert("messages".to_string(), serde_json::json!(request.messages));
+    payload.insert("stream".to_string(), serde_json::json!(true));
+
+    if let Some(temp) = request.temperature {
+        payload.insert("temperature".to_string(), serde_json::json!(temp));
+    }
+
+    if let Some(max_tokens) = request.max_tokens {
+        payload.insert("max_tokens".to_string(), serde_json::json!(max_tokens));
+    }
+
+    if let Some(top_p) = request.top_p {
+        payload.insert("top_p".to_string(), serde_json::json!(top_p));
+    }
+
+    if let Some(extra) = &request.extra_body {
+        for (key, value) in extra {
+            payload.insert(key.clone(), value.clone());
+        }
+    }
+
+    let mut request_builder = client
+        .post(&url)
+        .header("Content-Type", "application/json");
+
+    if let Some(api_key) = &request.api_key {
+        request_builder = request_builder.header("Authorization", format!("Bearer {}", api_key));
+        println!("[RUST] Using provided API key for streaming");
+    }
+
+    if let Some(headers) = &request.extra_headers {
+        for (key, value) in headers {
+            if let Some(val_str) = value.as_str() {
+                request_builder = request_builder.header(key, val_str);
+            }
+        }
+    }
+
+    println!("[RUST] Sending streaming request...");
+    let response = match request_builder.json(&payload).send().await {
+        Ok(resp) => {
+            println!("[RUST] Got streaming response with status: {}", resp.status());
+            resp
+        }
+        Err(e) => {
+            println!("[RUST] Streaming request failed: {}", e);
+            return Err(format!("Request failed: {}", e));
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_default();
+        println!("[RUST] HTTP error: {} - {}", status, error_text);
+        return Err(format!("HTTP error: {} - {}", status, error_text));
+    }
+
+    println!("[RUST] Starting to stream chunks...");
+    let mut stream = response.bytes_stream();
+    let mut buffer = String::new();
+
+    while let Some(chunk) = stream.next().await {
+        match chunk {
+            Ok(bytes) => {
+                let text = String::from_utf8_lossy(&bytes);
+                buffer.push_str(&text);
+                
+                // Process complete SSE lines
+                while let Some(pos) = buffer.find('\n') {
+                    let line = buffer[..pos].to_string();
+                    buffer = buffer[pos + 1..].to_string();
+                    
+                    if line.starts_with("data: ") {
+                        let data = &line[6..];
+                        if data == "[DONE]" {
+                            println!("[RUST] Stream complete");
+                            return Ok(());
+                        }
+                        
+                        // Parse the SSE data
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                            if let Some(choices) = json.get("choices") {
+                                if let Some(first) = choices.as_array().and_then(|c| c.first()) {
+                                    let content = first.get("delta")
+                                        .and_then(|d| d.get("content"))
+                                        .and_then(|c| c.as_str())
+                                        .unwrap_or("");
+                                    
+                                    let reasoning = first.get("delta")
+                                        .and_then(|d| d.get("reasoning_content"))
+                                        .and_then(|c| c.as_str());
+                                    
+                                    // Emit chunk to frontend
+                                    if !content.is_empty() || reasoning.is_some() {
+                                        let _ = app_handle.emit("chat-stream-chunk", StreamChunk {
+                                            content: content.to_string(),
+                                            thinking: reasoning.map(|s| s.to_string()),
+                                            done: false,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                println!("[RUST] Stream error: {}", e);
+                return Err(format!("Stream error: {}", e));
+            }
+        }
+    }
+
+    println!("[RUST] Streaming complete");
+    Ok(())
+}
+
+async fn stream_chat_with_anthropic(
+    app_handle: &tauri::AppHandle,
+    client: &reqwest::Client,
+    request: &ProviderChatRequest,
+) -> Result<(), String> {
+    println!("[RUST] Using Anthropic streaming API");
+
+    let url = format!("{}/messages", request.endpoint);
+    println!("[RUST] Streaming URL: {}", url);
+
+    // Convert messages to Anthropic format
+    let mut system_message: Option<String> = None;
+    let mut anthropic_messages: Vec<serde_json::Value> = vec![];
+
+    for msg in &request.messages {
+        if msg.role == "system" {
+            system_message = Some(msg.content.clone());
+        } else {
+            anthropic_messages.push(serde_json::json!({
+                "role": msg.role,
+                "content": msg.content
+            }));
+        }
+    }
+
+    let mut payload = serde_json::Map::new();
+    payload.insert("model".to_string(), serde_json::json!(request.model));
+    payload.insert("messages".to_string(), serde_json::json!(anthropic_messages));
+    payload.insert("max_tokens".to_string(), serde_json::json!(request.max_tokens.unwrap_or(4096)));
+    payload.insert("stream".to_string(), serde_json::json!(true));
+
+    if let Some(system) = system_message {
+        payload.insert("system".to_string(), serde_json::json!(system));
+    }
+
+    if let Some(temp) = request.temperature {
+        payload.insert("temperature".to_string(), serde_json::json!(temp));
+    }
+
+    if let Some(top_p) = request.top_p {
+        payload.insert("top_p".to_string(), serde_json::json!(top_p));
+    }
+
+    if let Some(extra) = &request.extra_body {
+        for (key, value) in extra {
+            payload.insert(key.clone(), value.clone());
+        }
+    }
+
+    let mut request_builder = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .header("anthropic-version", "2023-06-01");
+
+    if let Some(api_key) = &request.api_key {
+        request_builder = request_builder.header("x-api-key", api_key);
+        println!("[RUST] Using provided API key for Anthropic streaming");
+    }
+
+    if let Some(headers) = &request.extra_headers {
+        for (key, value) in headers {
+            if let Some(val_str) = value.as_str() {
+                request_builder = request_builder.header(key, val_str);
+            }
+        }
+    }
+
+    let response = match request_builder.json(&payload).send().await {
+        Ok(resp) => {
+            println!("[RUST] Got Anthropic streaming response: {}", resp.status());
+            resp
+        }
+        Err(e) => {
+            println!("[RUST] Anthropic streaming request failed: {}", e);
+            return Err(format!("Request failed: {}", e));
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_default();
+        println!("[RUST] HTTP error: {} - {}", status, error_text);
+        return Err(format!("HTTP error: {} - {}", status, error_text));
+    }
+
+    println!("[RUST] Starting Anthropic stream...");
+    let mut stream = response.bytes_stream();
+    let mut buffer = String::new();
+
+    while let Some(chunk) = stream.next().await {
+        match chunk {
+            Ok(bytes) => {
+                let text = String::from_utf8_lossy(&bytes);
+                buffer.push_str(&text);
+                
+                // Process complete SSE lines
+                while let Some(pos) = buffer.find('\n') {
+                    let line = buffer[..pos].to_string();
+                    buffer = buffer[pos + 1..].to_string();
+                    
+                    if line.starts_with("data: ") {
+                        let data = &line[6..];
+                        
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                            let event_type = json.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                            
+                            match event_type {
+                                "content_block_delta" => {
+                                    if let Some(delta) = json.get("delta") {
+                                        if let Some(text) = delta.get("text").and_then(|t| t.as_str()) {
+                                            let _ = app_handle.emit("chat-stream-chunk", StreamChunk {
+                                                content: text.to_string(),
+                                                thinking: None,
+                                                done: false,
+                                            });
+                                        }
+                                    }
+                                }
+                                "message_stop" => {
+                                    println!("[RUST] Anthropic stream complete");
+                                    return Ok(());
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                println!("[RUST] Anthropic stream error: {}", e);
+                return Err(format!("Stream error: {}", e));
+            }
+        }
+    }
+
+    println!("[RUST] Anthropic streaming complete");
+    Ok(())
 }
 
 use std::fs;
@@ -1133,23 +1450,24 @@ pub fn run() {
         .level(log::LevelFilter::Info)
         .build(),
     )
-    .invoke_handler(tauri::generate_handler![
-      fetch_web_content,
-      search_web,
-      chat_with_ai,
-      chat_with_provider,
-      fetch_models,
-      test_invoke,
-      extract_pdf_text,
-      extract_epub_text,
-      list_directory,
-      get_parent_directory,
-      get_file_info,
-      open_file_from_browser,
-      read_file,
-      session::load_session,
-      session::save_session
-    ])
+.invoke_handler(tauri::generate_handler![
+            fetch_web_content,
+            search_web,
+            chat_with_ai,
+            chat_with_provider,
+            stream_chat_with_provider,
+            fetch_models,
+            test_invoke,
+            extract_pdf_text,
+            extract_epub_text,
+            list_directory,
+            get_parent_directory,
+            get_file_info,
+            open_file_from_browser,
+            read_file,
+            session::load_session,
+            session::save_session
+        ])
         .setup(|app| {
             let _app_handle = app.handle().clone();
             

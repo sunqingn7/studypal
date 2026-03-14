@@ -69,7 +69,7 @@ export class OpenAIProvider implements AIProvider {
   async streamChat(
     messages: ChatMessage[],
     config: AIConfig,
-    onChunk: (chunk: string) => void
+    onChunk: (chunk: string) => void | Promise<void>
   ): Promise<void> {
     console.log('[openai-provider] streamChat() called')
 
@@ -95,7 +95,8 @@ export class OpenAIProvider implements AIProvider {
         const chunk = chunks[i]
         if (chunk.trim()) {
           console.log(`[openai-provider] Sending chunk ${i}: "${chunk.slice(0, 20)}..."`)
-          onChunk(chunk)
+          await onChunk(chunk)
+          await new Promise(r => setTimeout(r, 10))
         }
       }
       console.log('[openai-provider] Streaming complete')
@@ -110,8 +111,8 @@ export class OpenAIProvider implements AIProvider {
   async streamChatWithThinking(
     messages: ChatMessage[],
     config: AIConfig,
-    onChunk: (chunk: string) => void,
-    onThinking: (thinking: string) => void
+    onChunk: (chunk: string) => void | Promise<void>,
+    onThinking: (thinking: string) => void | Promise<void>
   ): Promise<void> {
     try {
       const response = await this.chat(messages, config)
@@ -120,16 +121,25 @@ export class OpenAIProvider implements AIProvider {
       }
       try {
         const parsed = JSON.parse(response)
-        if (parsed.thinking) onThinking(parsed.thinking)
+        if (parsed.thinking) {
+          await onThinking(parsed.thinking)
+          await new Promise(r => setTimeout(r, 100))
+        }
         if (parsed.content) {
-          parsed.content.split(/(?=\s+)/).forEach((chunk: string) => {
-            if (chunk.trim()) onChunk(chunk)
-          })
+          for (const chunk of parsed.content.split(/(?=\s+)/)) {
+            if (chunk.trim()) {
+              await onChunk(chunk)
+              await new Promise(r => setTimeout(r, 10))
+            }
+          }
         }
       } catch {
-        response.split(/(?=\s+)/).forEach((chunk: string) => {
-          if (chunk.trim()) onChunk(chunk)
-        })
+        for (const chunk of response.split(/(?=\s+)/)) {
+          if (chunk.trim()) {
+            await onChunk(chunk)
+            await new Promise(r => setTimeout(r, 10))
+          }
+        }
       }
     } catch (error: any) {
       console.error('[openai-provider] streamChatWithThinking error:', error)

@@ -5,11 +5,18 @@ export interface ChatResponse {
   thinking?: string
 }
 
+export interface StreamChunk {
+  content: string
+  thinking?: string
+  done: boolean
+}
+
 export interface AIProvider {
   name: string
   chat(messages: ChatMessage[], config: AIConfig): Promise<string>
-  streamChat(messages: ChatMessage[], config: AIConfig, onChunk: (chunk: string) => void): Promise<void>
-  streamChatWithThinking?(messages: ChatMessage[], config: AIConfig, onChunk: (chunk: string) => void, onThinking: (thinking: string) => void): Promise<void>
+  streamChat(messages: ChatMessage[], config: AIConfig, onChunk: (chunk: string) => void | Promise<void>): Promise<void>
+  streamChatWithThinking?(messages: ChatMessage[], config: AIConfig, onChunk: (chunk: string) => void | Promise<void>, onThinking: (thinking: string) => void | Promise<void>): Promise<void>
+  supportsTrueStreaming?(): boolean
 }
 
 export async function chatWithAI(

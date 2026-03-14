@@ -371,7 +371,7 @@
   font-size: 12px;
   padding: 4px 8px;
   border-radius: 4px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 4px;
 }
@@ -390,6 +390,15 @@
   white-space: pre-wrap;
   max-height: 200px;
   overflow-y: auto;
+}
+
+/* Streaming message styles */
+.chat-message.streaming {
+  opacity: 0.9;
+}
+
+.chat-message.streaming .thinking-toggle {
+  color: var(--text-secondary);
 }
 
 /* Markdown content styles */
