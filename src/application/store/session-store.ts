@@ -81,6 +81,7 @@ interface SessionStore {
   getDocumentChat: (documentId: string) => SerializedChatState | undefined
   getSession: () => SessionData
   loadSession: (session: SessionData) => void
+  clearSessionData: () => void
 }
 
 // Simple storage - use localStorage directly
@@ -228,6 +229,19 @@ export const useSessionStore = create<SessionStore>()(
 
       loadSession: (session) => {
         set({ session: { ...DEFAULT_SESSION, ...session, lastUpdated: Date.now() } })
+      },
+
+      clearSessionData: () => {
+        console.log('[SessionStore] Clearing all session data')
+        set({
+          session: {
+            ...DEFAULT_SESSION,
+            documentNotes: {},
+            documentChat: {},
+            lastUpdated: Date.now(),
+          }
+        })
+        console.log('[SessionStore] Session data cleared')
       },
     }),
     {

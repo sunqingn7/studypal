@@ -1,5 +1,25 @@
 import { create } from 'zustand'
 import { FileMetadata, FileState, getFileType } from '../../domain/models/file'
+import { useNoteStore } from './note-store'
+import { useAIChatStore } from './ai-chat-store'
+
+/**
+ * STORAGE STRATEGY:
+ * 
+ * AI CHATS → SQLite Database ONLY
+ * - Location: ~/.config/studypal/studypal.db (or ~/Library/Application Support/studypal/ on macOS)
+ * - Table: 'chats' - stores all chat tabs as JSON
+ * - Migration: from sessionStorage to database if needed
+ * 
+ * NOTES → Markdown Files ONLY (human-readable, directly editable)
+ * - Location: StudyNotes/ subfolder next to the document
+ * - Format: Markdown with frontmatter (id, type, topic_id, timestamps)
+ * - Migration: from sessionStorage to markdown files if needed
+ * 
+ * Backup: sessionStorage (temporary, for migration only)
+ * - Not used for primary storage
+ * - Only used during migration from old version
+ */
 
 interface FileStore extends FileState {
   currentPage: number
@@ -10,7 +30,7 @@ interface FileStore extends FileState {
   clearHistory: () => void
   updateFileMetadata: (fileId: string, updates: Partial<FileMetadata>) => void
   saveCurrentDocumentState: (noteStore: any, aiChatStore: any, sessionStore: any, fileToSave?: { path: string }) => void
-  loadDocumentState: (documentId: string, noteStore: any, aiChatStore: any, sessionStore: any) => void
+  loadDocumentState: (documentId: string, noteStore: any, aiChatStore: any, sessionStore?: any) => void
 }
 
 export const useFileStore = create<FileStore>((set, get) => ({
@@ -18,7 +38,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
   currentPage: 1,
   fileHistory: [],
 
-    saveCurrentDocumentState: async (noteStore, aiChatStore, sessionStore, fileToSave?: { path: string }) => {
+    saveCurrentDocumentState: async (noteStore, aiChatStore, _sessionStore, fileToSave?: { path: string }) => {
       // If fileToSave is provided, use it; otherwise use current file
       const currentFile = fileToSave || get().currentFile
       if (!currentFile) return
@@ -27,7 +47,13 @@ export const useFileStore = create<FileStore>((set, get) => ({
         // Get current state
         const { tabs, globalNotes, topicNotes } = noteStore
 
-        console.log('[FileStore] Saving notes for:', currentFile.path, 'globalNotes count:', globalNotes.length)
+        // Build noteId -> tab title mapping
+        const noteIdToTitleMap = new Map<string, string>();
+        tabs.forEach((tab: any) => {
+          noteIdToTitleMap.set(tab.noteId, tab.title);
+        });
+
+        console.log('[FileStore] Saving notes for:', currentFile.path, 'globalNotes count:', globalNotes.length);
         if (globalNotes.length > 0) {
           console.log('[FileStore] First note content length:', globalNotes[0].content?.length)
           console.log('[FileStore] First note content:', globalNotes[0].content?.substring(0, 100))
@@ -41,6 +67,11 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
         // Get chat data from aiChatStore
         const chatState = aiChatStore.serialize();
+        console.log('[FileStore] Chat state to save:', chatState.tabs.length, 'tabs');
+        chatState.tabs.forEach((tab: any, idx: number) => {
+          console.log(`[FileStore] Tab ${idx}:`, tab.title, 'messages:', tab.messages?.length || 0);
+        });
+        
         const chatTabs: any[] = chatState.tabs.map((tab: any) => ({
           id: tab.id,
           title: tab.title,
@@ -51,239 +82,308 @@ export const useFileStore = create<FileStore>((set, get) => ({
         // Import Tauri invoke
         const { invoke } = await import('@tauri-apps/api/core');
 
-        // Save chats to database
+        // ===== SAVE CHATS TO DATABASE =====
         await invoke('save_chats', {
           documentPath: currentFile.path,
           tabs: chatTabs
         });
+        console.log('[FileStore] ✅ Saved', chatTabs.length, 'chat tabs to database');
 
-        // Save notes to database
-        const notesForDb = allNotes.map(note => ({
-          id: note.id,
-          title: note.title,
-          content: note.content,
-          noteType: note.type,
-          topicId: note.topicId || null,
-          createdAt: note.createdAt,
-          updatedAt: note.updatedAt
-        }));
-        await invoke('save_notes', {
-          documentPath: currentFile.path,
-          notes: notesForDb
-        });
-
-        // Save note tabs to database
-        const noteTabsForDb = tabs.map((tab: any) => ({
-          id: tab.id,
-          noteId: tab.noteId,
-          title: tab.title,
-          isActive: tab.isActive
-        }));
-        await invoke('save_note_tabs', {
-          documentPath: currentFile.path,
-          tabs: noteTabsForDb
-        });
-
-        // Save each note as markdown file in StudyNotes directory
+        // ===== SAVE NOTES TO MARKDOWN FILES ONLY =====
+        // Notes are saved as markdown files in StudyNotes/ folder (NOT to database)
+        const studyNotesDir = `${currentFile.path.substring(0, currentFile.path.lastIndexOf('/'))}/StudyNotes`;
+        console.log('[FileStore] Saving notes to:', studyNotesDir);
+        
         for (const note of allNotes) {
+          // Use tab title for filename (what user sees), fall back to note.title, then to note.id
+          const tabTitle = noteIdToTitleMap.get(note.id);
+          const displayTitle = tabTitle || note.title || note.id;
+          
           await invoke('save_note_as_markdown', {
             documentPath: currentFile.path,
             noteId: note.id,
-            title: note.title,
+            title: displayTitle,  // Use display title for filename
             content: note.content,
             noteType: note.type,
             topicId: note.topicId || null,
             createdAt: note.createdAt,
             updatedAt: note.updatedAt
           });
+          console.log(`[FileStore] ✅ Saved note "${displayTitle}" (noteId: ${note.id}) to markdown file`);
         }
+        console.log('[FileStore] ✅ Saved', allNotes.length, 'notes as markdown files');
 
-        console.log('[FileStore] Saved to database:', currentFile.path, 'chats:', chatTabs.length, 'notes:', allNotes.length);
-
-        // Keep session storage as backup during transition
-        const fileNoteState = {
-          tabs,
-          globalNotes: globalNotes,
-          topicNotes: Array.from(topicNotes.entries()),
-        }
-
-        sessionStore.setDocumentNotes(currentFile.path, fileNoteState)
-        sessionStore.setDocumentChat(currentFile.path, chatState)
+        console.log('[FileStore] ========================================');
+        console.log('[FileStore] SAVE COMPLETE for:', currentFile.path);
+        console.log('[FileStore] - Chats:', chatTabs.length, 'tabs → Database');
+        console.log('[FileStore] - Notes:', allNotes.length, 'notes → Markdown files');
+        console.log('[FileStore] ========================================');
       } catch (e) {
         console.error('[FileStore] Error saving document state:', e)
       }
     },
 
-  loadDocumentState: async (documentId, noteStore, aiChatStore, sessionStore) => {
-    if (!documentId) return
-
-    try {
-      console.log('[FileStore] Loading state for:', documentId)
-
-      // Import Tauri invoke
-      const { invoke } = await import('@tauri-apps/api/core');
-
-      // Try to load from database first
-      let chatData: { tabs: any[] } | null = null;
-      let notesFromDb: any[] = [];
-      let noteTabsFromDb: any[] = [];
+    loadDocumentState: async (documentId, noteStore, aiChatStore, sessionStore?: any) => {
+      if (!documentId) return
 
       try {
-        chatData = await invoke('load_chats', { documentPath: documentId });
-        console.log('[FileStore] Loaded chats from database:', documentId);
-      } catch (e) {
-        console.log('[FileStore] No chats found in database for:', documentId);
-      }
+        console.log('[FileStore] Loading state for:', documentId)
 
-      try {
-        notesFromDb = await invoke('load_notes', { documentPath: documentId });
-        console.log('[FileStore] Loaded notes from database:', documentId, 'count:', notesFromDb.length);
-      } catch (e) {
-        console.log('[FileStore] No notes found in database for:', documentId);
-      }
+        // Import Tauri invoke
+        const { invoke } = await import('@tauri-apps/api/core');
 
-      try {
-        noteTabsFromDb = await invoke('load_note_tabs', { documentPath: documentId });
-        console.log('[FileStore] Loaded note tabs from database:', documentId, 'count:', noteTabsFromDb.length);
-      } catch (e) {
-        console.log('[FileStore] No note tabs found in database for:', documentId);
-      }
+        // ===== LOAD CHATS FROM DATABASE =====
+        let chatData: any[] = [];
+        try {
+          chatData = await invoke('load_chats', { documentPath: documentId });
+          console.log('[FileStore] ✅ Loaded', chatData.length, 'chat tabs from database');
+        } catch (e) {
+          console.log('[FileStore] No chats found in database for:', documentId);
+          chatData = [];
+        }
 
-      // If we have data from database, use it; otherwise fall back to session storage
-      if (notesFromDb.length > 0 || noteTabsFromDb.length > 0) {
-        // Process notes from database
-        const globalNotes: any[] = [];
-        const topicNotesMap = new Map<string, any[]>();
+        // ===== LOAD NOTES FROM MARKDOWN FILES =====
+        let notesFromFiles: any[] = [];
+        try {
+          notesFromFiles = await invoke('load_all_notes_from_markdown', { documentPath: documentId });
+          console.log('[FileStore] ✅ Loaded', notesFromFiles.length, 'notes from markdown files');
+        } catch (e) {
+          console.log('[FileStore] No markdown notes found for:', documentId);
+          notesFromFiles = [];
+        }
 
-        notesFromDb.forEach((note: any) => {
-          const processedNote = {
-            id: note.id,
-            title: note.title,
-            content: note.content,
-            type: note.noteType,
-            topicId: note.topicId,
-            createdAt: note.createdAt,
-            updatedAt: note.updatedAt,
-          };
-
-          if (note.topicId) {
-            const existing = topicNotesMap.get(note.topicId) || [];
-            existing.push(processedNote);
-            topicNotesMap.set(note.topicId, existing);
-          } else {
-            globalNotes.push(processedNote);
-          }
-        });
-
-        // Process tabs from database
-        const tabs = noteTabsFromDb.map((tab: any) => ({
-          id: tab.id,
-          noteId: tab.noteId,
-          title: tab.title,
-          isActive: tab.isActive,
-        }));
-
-        // Convert topicNotesMap to entries array
-        const topicNotesForStore: [string, any][] = Array.from(topicNotesMap.entries());
-
-        noteStore.deserialize({
-          tabs: tabs.length > 0 ? tabs : [],
-          globalNotes: globalNotes,
-          topicNotes: topicNotesForStore,
-        });
-        console.log('[FileStore] Loaded notes from database:', documentId, 'globalNotes:', globalNotes.length, 'topicNotes:', topicNotesForStore.length);
-      } else {
-        // Fall back to session storage
-        const noteData = sessionStore.getDocumentNotes(documentId)
-
-        if (noteData) {
-          // Process globalNotes
-          const globalNotes = noteData.globalNotes?.map((note: any) => ({
-            ...note,
-            id: crypto.randomUUID(),
-            topicId: null,
-          })) || []
-
-          // Process topicNotes (convert from [string, TopicNote[]][] back to Map<string, TopicNote[]>)
-          const topicNotesMap = new Map<string, any>()
-          const topicNotesArray = noteData.topicNotes || []
-          topicNotesArray.forEach(([topicId, notes]: [string, any[]]) => {
-            const processedNotes = notes.map((note: any) => ({
-              ...note,
-              id: crypto.randomUUID(),
-            }))
-            topicNotesMap.set(topicId, processedNotes)
-          })
-
-          // Map old tab noteIds to new noteIds (for both global and topic notes)
-          const noteIdMap = new Map<string, string>()
-          noteData.globalNotes?.forEach((note: any, idx: number) => {
-            noteIdMap.set(note.id, globalNotes[idx]?.id || crypto.randomUUID())
-          })
-          topicNotesArray.forEach(([topicId, notes]: [string, any[]]) => {
-            notes.forEach((note: any, idx: number) => {
-              const processedNotes = topicNotesMap.get(topicId)
-              if (processedNotes && processedNotes[idx]) {
-                noteIdMap.set(note.id, processedNotes[idx].id)
+        // If no data or empty data in database, check sessionStorage and migrate if needed
+        const session = sessionStore?.getSession();
+        const hasSessionNotes = session?.documentNotes?.[documentId];
+        const hasSessionChats = session?.documentChat?.[documentId];
+        
+        console.log('===========================================');
+        console.log('[FileStore] MIGRATION CHECK for:', documentId);
+        console.log('[FileStore] - Notes in MD files:', notesFromFiles.length);
+        console.log('[FileStore] - Chats in DB:', chatData.length, 'tabs');
+        console.log('[FileStore] - Session exists:', !!session);
+        console.log('[FileStore] - Session.documentNotes exists:', !!session?.documentNotes);
+        console.log('[FileStore] - Session.documentChat exists:', !!session?.documentChat);
+        console.log('[FileStore] - hasSessionNotes:', !!hasSessionNotes);
+        console.log('[FileStore] - hasSessionChats:', !!hasSessionChats);
+        
+        // Debug: show all document paths in session
+        if (session?.documentNotes) {
+          const notePaths = Object.keys(session.documentNotes);
+          console.log('[FileStore] All note document paths:', notePaths);
+          console.log('[FileStore] Current doc in notes list:', notePaths.includes(documentId));
+        }
+        if (session?.documentChat) {
+          const chatPaths = Object.keys(session.documentChat);
+          console.log('[FileStore] All chat document paths:', chatPaths);
+          console.log('[FileStore] Current doc in chats list:', chatPaths.includes(documentId));
+        }
+        
+        if (hasSessionNotes) {
+          console.log('[FileStore] Session notes structure:', JSON.stringify(hasSessionNotes, null, 2));
+        }
+        if (hasSessionChats) {
+          console.log('[FileStore] Session chats structure:', JSON.stringify(hasSessionChats, null, 2));
+        }
+        console.log('===========================================');
+        
+        // ===== MIGRATION: Notes from sessionStorage to Markdown files =====
+        if (hasSessionNotes) {
+          const noteData = hasSessionNotes as any;
+          const sessionNoteIds = new Set<string>();
+          
+          // Collect all note IDs from session
+          (noteData.globalNotes || []).forEach((note: any) => sessionNoteIds.add(note.id));
+          if (noteData.topicNotes) {
+            for (const [, notes] of noteData.topicNotes) {
+              if (Array.isArray(notes)) {
+                notes.forEach((note: any) => sessionNoteIds.add(note.id));
               }
-            })
-          })
+            }
+          }
+          
+          // Check if all session notes exist in markdown files
+          const loadedNoteIds = new Set(notesFromFiles.map((n: any) => n.id));
+          const needsMigration = Array.from(sessionNoteIds).some(id => !loadedNoteIds.has(id));
+          
+          if (needsMigration) {
+            console.log('[FileStore] 🔄 Migrating notes from sessionStorage to markdown files for:', documentId);
+            console.log('[FileStore]   Session has', sessionNoteIds.size, 'notes, loaded', notesFromFiles.length, 'from files');
+            
+            try {
+              const { invoke } = await import('@tauri-apps/api/core');
+              const allNotes: any[] = [...(noteData.globalNotes || [])];
+              
+              if (noteData.topicNotes) {
+                for (const [, notes] of noteData.topicNotes) {
+                  if (Array.isArray(notes)) {
+                    allNotes.push(...notes);
+                  }
+                }
+              }
+              
+              // Build noteId -> tab title mapping (same as save function)
+              const noteIdToTitleMap = new Map<string, string>();
+              if (noteData.tabs) {
+                noteData.tabs.forEach((tab: any) => {
+                  noteIdToTitleMap.set(tab.noteId, tab.title);
+                });
+              }
+              
+              // Save each note as markdown file
+              for (const note of allNotes) {
+                if (note.content && note.content.trim()) {
+                  // Use tab title for filename (what user sees), fall back to note.title, then to note.id
+                  const tabTitle = noteIdToTitleMap.get(note.id);
+                  const displayTitle = tabTitle || note.title || note.id;
+                  
+                  await invoke('save_note_as_markdown', {
+                    documentPath: documentId,
+                    noteId: note.id,
+                    title: displayTitle,
+                    content: note.content,
+                    noteType: note.type || 'note',
+                    topicId: note.topicId || null,
+                    createdAt: note.createdAt || Date.now(),
+                    updatedAt: note.updatedAt || Date.now()
+                  });
+                  console.log(`[FileStore]   ✅ Migrated note "${displayTitle}" (id: ${note.id}) to markdown`);
+                }
+              }
+              
+              // Reload from markdown files
+              notesFromFiles = await invoke('load_all_notes_from_markdown', { documentPath: documentId });
+              console.log('[FileStore] ✅ Migration complete. Loaded', notesFromFiles.length, 'notes from markdown');
+            } catch (e) {
+              console.error('[FileStore] Error migrating notes:', e);
+            }
+          } else {
+            console.log('[FileStore] ✅ All notes already migrated to markdown files');
+          }
+        }
+        
+        // ===== MIGRATION: Chats from sessionStorage to Database =====
+        if ((chatData.length === 0 || (chatData.length > 0 && chatData.every(tab => !tab.messages || tab.messages.length === 0))) && hasSessionChats) {
+          console.log('[FileStore] 🔄 Migrating chats from sessionStorage to database for:', documentId);
+          try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            const chatDataSession = hasSessionChats as any;
+            
+            if (chatDataSession.tabs && chatDataSession.tabs.length > 0) {
+              const chatTabsToSave = chatDataSession.tabs.map((tab: any) => ({
+                id: tab.id,
+                title: tab.title,
+                messages: tab.messages || [],
+                isActive: tab.isActive
+              }));
+              
+              console.log('[FileStore] Saving', chatTabsToSave.length, 'chat tabs with messages:');
+              chatTabsToSave.forEach((tab: any, idx: number) => {
+                console.log(`[FileStore]   Tab ${idx}:`, tab.title, '->', tab.messages?.length || 0, 'messages');
+              });
+              
+              await invoke('save_chats', {
+                documentPath: documentId,
+                tabs: chatTabsToSave
+              });
+              
+              // Reload from database
+              chatData = await invoke('load_chats', { documentPath: documentId });
+              console.log('[FileStore] ✅ Migration complete. Loaded', chatData.length, 'chat tabs from database');
+            }
+          } catch (e) {
+            console.error('[FileStore] Error migrating chats:', e);
+          }
+        }
 
-          // Update tabs to use new note IDs
-          const newTabs = (noteData.tabs || []).map((tab: any) => ({
-            ...tab,
-            id: crypto.randomUUID(),
-            noteId: noteIdMap.get(tab.noteId) || crypto.randomUUID(),
-          }))
+        // ===== LOAD NOTES INTO STORE =====
+        console.log('[FileStore] === LOADING NOTES ===');
+        if (notesFromFiles.length > 0) {
+          const globalNotes: any[] = [];
+          const topicNotesMap = new Map<string, any[]>();
 
-          // Convert topicNotesMap back to the format expected by note store ([string, TopicNote[]][])
-          const topicNotesForStore: [string, any][] = Array.from(topicNotesMap.entries())
+          notesFromFiles.forEach((note: any) => {
+            const processedNote = {
+              id: note.id,
+              title: note.title,
+              content: note.content,
+              type: note.noteType,
+              topicId: note.topicId,
+              createdAt: note.createdAt,
+              updatedAt: note.updatedAt,
+            };
 
-          noteStore.deserialize({
-            tabs: newTabs,
+            if (note.topicId) {
+              const existing = topicNotesMap.get(note.topicId) || [];
+              existing.push(processedNote);
+              topicNotesMap.set(note.topicId, existing);
+            } else {
+              globalNotes.push(processedNote);
+            }
+          });
+
+          const topicNotesForStore: [string, any][] = Array.from(topicNotesMap.entries());
+          
+          console.log('[FileStore] Loading', globalNotes.length, 'global notes,', topicNotesForStore.length, 'topic note groups from markdown files');
+          
+          // Note: noteStore is the STATE object, not the store hook
+          // We need to use the actual store to call actions
+          const noteStoreActions = useNoteStore.getState();
+          
+          noteStoreActions.deserialize({
+            tabs: [],
             globalNotes: globalNotes,
             topicNotes: topicNotesForStore,
-          })
-          console.log('[FileStore] Loaded notes from session storage:', documentId, 'count:', globalNotes.length + (topicNotesArray.reduce((sum: number, [, notes]: [string, any[]]) => sum + notes.length, 0)), 'new IDs created')
+          });
+          
+          // Create tabs for each existing note (don't create new notes!)
+          globalNotes.forEach((note: any) => {
+            noteStoreActions.createTabForNote(note.id, note.title);
+          });
+          topicNotesForStore.forEach(([_topicId, notes]: [string, any[]]) => {
+            notes.forEach((note: any) => {
+              noteStoreActions.createTabForNote(note.id, note.title);
+            });
+          });
+          
+          console.log('[FileStore] ✅ Loaded', noteStoreActions.tabs.length, 'note tabs');
         } else {
-          noteStore.clear()
-          noteStore.addTab(null, 'Note-1')
-          console.log('[FileStore] Created new note')
+          console.log('[FileStore] No notes found, creating default note');
+          const noteStoreActions = useNoteStore.getState();
+          noteStoreActions.clear();
+          await new Promise(resolve => setTimeout(resolve, 10));
+          noteStoreActions.addTab(null, 'Note-1');
+          console.log('[FileStore] ✅ Created new note tab');
         }
-      }
+        console.log('[FileStore] === END NOTES LOADING ===');
 
-      // Load chats (from database or session storage)
-      if (chatData && chatData.tabs && chatData.tabs.length > 0) {
-        aiChatStore.deserialize({
-          tabs: chatData.tabs,
-        })
-        console.log('[FileStore] Loaded chat from database:', documentId, 'tabs:', chatData.tabs.length)
-      } else {
-        // Fall back to session storage for chats
-        const chatDataFromSession = sessionStore.getDocumentChat(documentId)
-        if (chatDataFromSession && chatDataFromSession.tabs && chatDataFromSession.tabs.length > 0) {
-          // Create new chat tabs with new IDs
-          const newChatTabs = chatDataFromSession.tabs.map((tab: any) => ({
-            ...tab,
-            id: crypto.randomUUID(),
-          }))
-
-          aiChatStore.deserialize({
-            tabs: newChatTabs,
+        // ===== LOAD CHATS INTO STORE =====
+        console.log('[FileStore] === LOADING CHATS ===');
+        
+        const aiChatStoreActions = useAIChatStore.getState();
+        
+        if (chatData && Array.isArray(chatData) && chatData.length > 0) {
+          const totalMessages = chatData.reduce((sum: number, tab: any) => sum + (tab.messages?.length || 0), 0);
+          console.log('[FileStore] Loading', chatData.length, 'chat tabs with', totalMessages, 'total messages from database');
+          
+          aiChatStoreActions.deserialize({
+            tabs: chatData,
           })
-          console.log('[FileStore] Loaded chat from session storage:', documentId, 'tabs:', newChatTabs.length)
+          
+          console.log('[FileStore] ✅ Loaded', aiChatStoreActions.tabs.length, 'chat tabs');
         } else {
-          aiChatStore.clear()
-          aiChatStore.addTab('Chat 1')
-          console.log('[FileStore] Created new chat')
+          console.log('[FileStore] No chat data found, creating default chat');
+          aiChatStoreActions.clear();
+          aiChatStoreActions.addTab('Chat 1');
+          console.log('[FileStore] ✅ Created new chat tab');
         }
+        console.log('[FileStore] === END CHAT LOADING ===');
+      } catch (e) {
+        console.error('[FileStore] Error loading document state:', e)
+        noteStore.clear()
+        aiChatStore.clear()
       }
-    } catch (e) {
-      console.error('[FileStore] Error loading document state:', e)
-      noteStore.clear()
-      aiChatStore.clear()
-    }
-  },
+    },
 
   setCurrentFile: (file) => {
     if (file) {
@@ -331,6 +431,134 @@ export const useFileStore = create<FileStore>((set, get) => ({
     }))
   },
 }))
+
+// Migration function: migrate sessionStorage data to database
+export async function migrateSessionStorageToDatabase(sessionStore: any): Promise<{ migrated: number; errors: number }> {
+  console.log('[Migration] Starting migration from sessionStorage to database...')
+  
+  const session = sessionStore.getSession()
+  const { invoke } = await import('@tauri-apps/api/core')
+  
+  let migratedCount = 0
+  let errorCount = 0
+  
+  // Migrate document notes
+  if (session.documentNotes) {
+    for (const [documentPath, noteData] of Object.entries(session.documentNotes)) {
+      try {
+        if (!noteData || typeof noteData !== 'object') continue
+        
+        const data = noteData as any
+        const allNotes: any[] = [...(data.globalNotes || [])]
+        
+        // Add topic notes
+        if (data.topicNotes) {
+          for (const [, notes] of data.topicNotes) {
+            if (Array.isArray(notes)) {
+              allNotes.push(...notes)
+            }
+          }
+        }
+        
+        // Save notes to database
+        if (allNotes.length > 0) {
+          const notesForDb = allNotes.map((note: any) => ({
+            id: note.id,
+            title: note.title,
+            content: note.content,
+            noteType: note.type || 'note',
+            topicId: note.topicId || null,
+            createdAt: note.createdAt || Date.now(),
+            updatedAt: note.updatedAt || Date.now()
+          }))
+          
+          await invoke('save_notes', {
+            documentPath,
+            notes: notesForDb
+          })
+          
+          // Save note tabs
+          if (data.tabs && data.tabs.length > 0) {
+            const noteTabsForDb = data.tabs.map((tab: any) => ({
+              id: tab.id,
+              noteId: tab.noteId,
+              title: tab.title,
+              isActive: tab.isActive
+            }))
+            
+            await invoke('save_note_tabs', {
+              documentPath,
+              tabs: noteTabsForDb
+            })
+          }
+          
+          // Save markdown files
+          for (const note of allNotes) {
+            if (note.content && note.content.trim()) {
+              await invoke('save_note_as_markdown', {
+                documentPath,
+                noteId: note.id,
+                title: note.title,
+                content: note.content,
+                noteType: note.type || 'note',
+                topicId: note.topicId || null,
+                createdAt: note.createdAt || Date.now(),
+                updatedAt: note.updatedAt || Date.now()
+              })
+            }
+          }
+          
+          console.log('[Migration] Migrated notes for:', documentPath, 'count:', allNotes.length)
+          migratedCount++
+        }
+      } catch (e) {
+        console.error('[Migration] Error migrating notes for:', documentPath, e)
+        errorCount++
+      }
+    }
+  }
+  
+  // Migrate document chats
+  if (session.documentChat) {
+    for (const [documentPath, chatData] of Object.entries(session.documentChat)) {
+      try {
+        if (!chatData || typeof chatData !== 'object') continue
+        
+        const data = chatData as any
+        
+        if (data.tabs && data.tabs.length > 0) {
+          const chatTabs = data.tabs.map((tab: any) => ({
+            id: tab.id,
+            title: tab.title,
+            messages: tab.messages || [],
+            isActive: tab.isActive
+          }))
+          
+          await invoke('save_chats', {
+            documentPath,
+            tabs: chatTabs
+          })
+          
+          console.log('[Migration] Migrated chat for:', documentPath, 'tabs:', chatTabs.length)
+          migratedCount++
+        }
+      } catch (e) {
+        console.error('[Migration] Error migrating chat for:', documentPath, e)
+        errorCount++
+      }
+    }
+  }
+  
+  console.log('[Migration] Complete:', migratedCount, 'documents migrated,', errorCount, 'errors')
+  return { migrated: migratedCount, errors: errorCount }
+}
+
+// Clear sessionStorage data after successful migration
+export function clearSessionStorageData(sessionStore: any): void {
+  console.log('[Migration] Clearing sessionStorage data...')
+  sessionStore.clearSessionData()
+  console.log('[Migration] SessionStorage cleared')
+}
 
 export function createFileMetadata(path: string, name: string, size: number): FileMetadata {
   return {

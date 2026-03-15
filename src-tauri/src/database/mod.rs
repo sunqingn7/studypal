@@ -242,7 +242,7 @@ impl Database {
                 id: row.get(0)?,
                 note_id: row.get(1)?,
                 title: row.get(2)?,
-                is_active: row.get::<_, String>(3)?.parse::<bool>().unwrap_or(false),
+                is_active: row.get::<_, bool>(3)?,
             })
         })?;
 
@@ -274,17 +274,24 @@ impl Database {
     pub fn save_note_as_markdown(&self, note: &Note, document_path: &str) -> Result<()> {
         // Create StudyNotes directory in the same folder as the document
         let doc_path = Path::new(document_path);
+        let doc_name = doc_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unnamed");
+
+        // Create subfolder structure: StudyNotes/<document_name>/
         let study_notes_dir = doc_path
             .parent()
             .unwrap_or_else(|| Path::new("."))
-            .join("StudyNotes");
+            .join("StudyNotes")
+            .join(doc_name);
 
         // Create directory if it doesn't exist
         fs::create_dir_all(&study_notes_dir).map_err(|e| {
             rusqlite::Error::InvalidPath(format!("Failed to create StudyNotes dir: {}", e).into())
         })?;
 
-        // Create safe filename from note title
+        // Create safe filename from note title (tab title from frontend)
         let safe_title = note
             .title
             .chars()
@@ -324,12 +331,18 @@ impl Database {
         document_path: &str,
         note_id: &str,
     ) -> Result<Option<Note>> {
-        // Look for markdown file in StudyNotes directory
+        // Look for markdown file in StudyNotes/<document_name>/ directory
         let doc_path = Path::new(document_path);
+        let doc_name = doc_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unnamed");
+
         let study_notes_dir = doc_path
             .parent()
             .unwrap_or_else(|| Path::new("."))
-            .join("StudyNotes");
+            .join("StudyNotes")
+            .join(doc_name);
 
         if !study_notes_dir.exists() {
             return Ok(None);
@@ -411,12 +424,18 @@ impl Database {
     pub fn load_all_notes_from_markdown(&self, document_path: &str) -> Result<Vec<Note>> {
         let mut notes = Vec::new();
 
-        // Look for markdown files in StudyNotes directory
+        // Look for markdown files in StudyNotes/<document_name>/ directory
         let doc_path = Path::new(document_path);
+        let doc_name = doc_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unnamed");
+
         let study_notes_dir = doc_path
             .parent()
             .unwrap_or_else(|| Path::new("."))
-            .join("StudyNotes");
+            .join("StudyNotes")
+            .join(doc_name);
 
         if !study_notes_dir.exists() {
             return Ok(notes);
@@ -429,6 +448,7 @@ impl Database {
         for entry in entries {
             if let Ok(entry) = entry {
                 let path = entry.path();
+
                 if path.extension().and_then(|ext| ext.to_str()) == Some("md") {
                     let content = fs::read_to_string(&path).map_err(|e| {
                         rusqlite::Error::InvalidPath(
@@ -494,12 +514,18 @@ impl Database {
     }
 
     pub fn delete_note_markdown(&self, document_path: &str, note_id: &str) -> Result<()> {
-        // Look for markdown file in StudyNotes directory
+        // Look for markdown file in StudyNotes/<document_name>/ directory
         let doc_path = Path::new(document_path);
+        let doc_name = doc_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unnamed");
+
         let study_notes_dir = doc_path
             .parent()
             .unwrap_or_else(|| Path::new("."))
-            .join("StudyNotes");
+            .join("StudyNotes")
+            .join(doc_name);
 
         if !study_notes_dir.exists() {
             return Ok(());

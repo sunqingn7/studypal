@@ -8,6 +8,7 @@ interface NoteStore {
   topicNotes: Map<string, TopicNote[]>
 
   addTab: (topicId: string | null, title?: string) => string
+  createTabForNote: (noteId: string, title: string) => string
   removeTab: (tabId: string) => void
   setActiveTab: (tabId: string | null) => void
   renameTab: (tabId: string, newTitle: string) => void
@@ -56,6 +57,22 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
       id: crypto.randomUUID(),
       noteId: note.id,
       title: noteTitle,
+      isActive: true,
+    }
+
+    set((state) => ({
+      tabs: [...state.tabs.map((t) => ({ ...t, isActive: false })), newTab],
+      activeTabId: newTab.id,
+    }))
+
+    return newTab.id
+  },
+
+  createTabForNote: (noteId, title) => {
+    const newTab: NoteTab = {
+      id: crypto.randomUUID(),
+      noteId: noteId,
+      title: title,
       isActive: true,
     }
 
@@ -211,11 +228,13 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   },
 
   clear: () => {
+    console.log('[NoteStore] Clearing all notes and tabs')
     set({
       tabs: [],
       activeTabId: null,
       globalNotes: [],
       topicNotes: new Map(),
     })
+    console.log('[NoteStore] Clear complete')
   },
 }))
