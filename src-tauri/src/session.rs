@@ -1,4 +1,4 @@
-use crate::database::{self, ChatTab, Note, NoteTab};
+use crate::database::{self, ChatTab, DocumentMetadata, Note, NoteTab};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -216,4 +216,49 @@ pub fn delete_note_markdown(document_path: String, note_id: String) -> Result<()
     get_database()
         .delete_note_markdown(&document_path, &note_id)
         .map_err(|e| e.to_string())
+}
+
+// Document metadata operations
+#[tauri::command]
+pub fn save_document_metadata(metadata: DocumentMetadata) -> Result<(), String> {
+    println!(
+        "[Rust] save_document_metadata called for: {}, page: {}",
+        metadata.document_path, metadata.current_page
+    );
+    let result = get_database().save_document_metadata(&metadata);
+    match &result {
+        Ok(_) => println!("[Rust] Successfully saved metadata"),
+        Err(e) => println!("[Rust] Error saving metadata: {:?}", e),
+    }
+    result.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn load_document_metadata(document_path: String) -> Result<Option<DocumentMetadata>, String> {
+    println!(
+        "[Rust] load_document_metadata called for: {}",
+        document_path
+    );
+    let result = get_database().load_document_metadata(&document_path);
+    match &result {
+        Ok(Some(m)) => println!("[Rust] Found metadata: current_page={}", m.current_page),
+        Ok(None) => println!("[Rust] No metadata found"),
+        Err(e) => println!("[Rust] Error: {:?}", e),
+    }
+    result.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_document_with_context(document_path: String) -> Result<serde_json::Value, String> {
+    get_database()
+        .get_document_with_context(&document_path)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn debug_list_all_metadata() -> Result<serde_json::Value, String> {
+    let all = get_database()
+        .debug_list_all_metadata()
+        .map_err(|e| e.to_string())?;
+    Ok(serde_json::json!(all))
 }

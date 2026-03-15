@@ -1475,10 +1475,14 @@ pub fn run() {
         session::save_note_tabs,
         session::load_note_tabs,
         session::delete_document_data,
-        session::save_note_as_markdown,
-        session::load_note_from_markdown,
-        session::load_all_notes_from_markdown,
-        session::delete_note_markdown
+      session::save_note_as_markdown,
+      session::load_note_from_markdown,
+      session::load_all_notes_from_markdown,
+      session::delete_note_markdown,
+      session::save_document_metadata,
+      session::load_document_metadata,
+      session::get_document_with_context,
+      session::debug_list_all_metadata
         ])
         .setup(|app| {
             let _app_handle = app.handle().clone();

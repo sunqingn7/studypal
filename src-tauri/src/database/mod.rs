@@ -48,6 +48,20 @@ pub struct NoteTab {
     pub is_active: bool,
 }
 
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct DocumentMetadata {
+    pub id: String,
+    pub document_path: String,
+    pub chat_id: Option<String>,
+    pub view_mode: String, // 'single' | 'double'
+    pub scale: f64,
+    pub current_page: i32,
+    pub scroll_position: f64,
+    pub settings_json: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
 pub struct Database {
     connection: Connection,
 }
@@ -123,6 +137,33 @@ impl Database {
 
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_note_tabs_document_path ON note_tabs(document_path)",
+            [],
+        )?;
+
+        // Create document_metadata table if not exists
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS document_metadata (
+            id TEXT PRIMARY KEY,
+            document_path TEXT NOT NULL UNIQUE,
+            chat_id TEXT,
+            view_mode TEXT DEFAULT 'single',
+            scale REAL DEFAULT 1.0,
+            current_page INTEGER DEFAULT 1,
+            scroll_position REAL DEFAULT 0.0,
+            settings_json TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )",
+            [],
+        )?;
+
+        // Create indices for document_metadata
+        conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_metadata_document_path ON document_metadata(document_path)",
+        [],
+    )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_metadata_chat_id ON document_metadata(chat_id)",
             [],
         )?;
 
@@ -571,5 +612,139 @@ impl Database {
         }
 
         Ok(())
+    }
+
+    // Document metadata operations
+    pub fn save_document_metadata(&self, metadata: &DocumentMetadata) -> Result<()> {
+        println!(
+            "[DB] save_document_metadata: id={}, path={}, page={}, view_mode={}, scale={}",
+            metadata.id,
+            metadata.document_path,
+            metadata.current_page,
+            metadata.view_mode,
+            metadata.scale
+        );
+
+        let rows_affected = self.connection.execute(
+            "INSERT OR REPLACE INTO document_metadata 
+             (id, document_path, chat_id, view_mode, scale, current_page, scroll_position, settings_json, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rusqlite::params![
+                metadata.id,
+                metadata.document_path,
+                metadata.chat_id,
+                metadata.view_mode,
+                metadata.scale,
+                metadata.current_page,
+                metadata.scroll_position,
+                metadata.settings_json,
+                metadata.created_at,
+                metadata.updated_at,
+            ],
+        )?;
+
+        println!(
+            "[DB] save_document_metadata: rows_affected={}",
+            rows_affected
+        );
+        Ok(())
+    }
+
+    pub fn load_document_metadata(&self, document_path: &str) -> Result<Option<DocumentMetadata>> {
+        println!(
+            "[DB] load_document_metadata: looking for path={}",
+            document_path
+        );
+
+        let mut stmt = self.connection.prepare(
+            "SELECT id, document_path, chat_id, view_mode, scale, current_page, scroll_position, settings_json, created_at, updated_at
+             FROM document_metadata WHERE document_path = ?"
+        )?;
+
+        let result = stmt.query_row([document_path], |row| {
+            Ok(DocumentMetadata {
+                id: row.get(0)?,
+                document_path: row.get(1)?,
+                chat_id: row.get(2)?,
+                view_mode: row.get(3)?,
+                scale: row.get(4)?,
+                current_page: row.get(5)?,
+                scroll_position: row.get(6)?,
+                settings_json: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+            })
+        });
+
+        match result {
+            Ok(metadata) => {
+                println!(
+                    "[DB] load_document_metadata: FOUND - page={}, view_mode={}",
+                    metadata.current_page, metadata.view_mode
+                );
+                Ok(Some(metadata))
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => {
+                println!(
+                    "[DB] load_document_metadata: NO ROWS FOUND for path={}",
+                    document_path
+                );
+                Ok(None)
+            }
+            Err(e) => {
+                println!("[DB] load_document_metadata: ERROR={:?}", e);
+                Err(e)
+            }
+        }
+    }
+
+    pub fn get_document_with_context(&self, document_path: &str) -> Result<serde_json::Value> {
+        let metadata = self.load_document_metadata(document_path)?;
+        let chats = self.load_chats(document_path).ok();
+        let notes = self.load_all_notes_from_markdown(document_path)?;
+
+        let result = serde_json::json!({
+            "metadata": metadata,
+            "chats": chats,
+            "notes": notes,
+        });
+
+        Ok(result)
+    }
+
+    pub fn debug_list_all_metadata(&self) -> Result<Vec<DocumentMetadata>> {
+        println!("[DB] debug_list_all_metadata: fetching all rows");
+        let mut stmt = self.connection.prepare(
+            "SELECT id, document_path, chat_id, view_mode, scale, current_page, scroll_position, settings_json, created_at, updated_at
+             FROM document_metadata"
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            Ok(DocumentMetadata {
+                id: row.get(0)?,
+                document_path: row.get(1)?,
+                chat_id: row.get(2)?,
+                view_mode: row.get(3)?,
+                scale: row.get(4)?,
+                current_page: row.get(5)?,
+                scroll_position: row.get(6)?,
+                settings_json: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+            })
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            let m = row?;
+            println!(
+                "[DB] debug row: path={}, page={}",
+                m.document_path, m.current_page
+            );
+            results.push(m);
+        }
+
+        println!("[DB] debug_list_all_metadata: found {} rows", results.len());
+        Ok(results)
     }
 }

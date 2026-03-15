@@ -6,25 +6,85 @@ import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
 import 'katex/dist/katex.min.css';
 import { FileReadingService } from '../../../../infrastructure/file-handlers/file-reading-service';
+import { useDocumentMetadataStore } from '../../../../application/store/document-metadata-store';
+import { useFileStore } from '../../../../application/store/file-store';
 import './PagedDocumentViewer.css';
 
 interface PagedDocumentViewerProps {
   filePath: string;
   fileType: 'txt' | 'md';
+  initialPage?: number;
 }
 
 export const PagedDocumentViewer: React.FC<PagedDocumentViewerProps> = ({
   filePath,
   fileType,
+  initialPage = 1,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPageState] = useState(initialPage);
   const [totalPages, setTotalPages] = useState(1);
-  const [scale, setScale] = useState(1);
+  const [scale, setScaleState] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [content, setContent] = useState<string>('');
+  const metadataStore = useDocumentMetadataStore();
+  const { setCurrentPage: setFileStorePage } = useFileStore();
+  const hasInitialized = useRef(false);
+
+  // Update file store when currentPage changes (to sync for file switching)
+  useEffect(() => {
+    if (!hasInitialized.current) {
+      hasInitialized.current = true;
+      return;
+    }
+    setFileStorePage(currentPage);
+  }, [currentPage, setFileStorePage]);
+
+  // Update page when initialPage changes (from file store)
+  useEffect(() => {
+    if (initialPage && initialPage !== currentPage) {
+      console.log('[PagedDocumentViewer] Setting page from initialPage:', initialPage);
+      setCurrentPageState(initialPage);
+    }
+  }, [initialPage]);
+
+  // Load metadata when document opens - only view settings
+  useEffect(() => {
+    const loadMetadata = async () => {
+      try {
+        const metadata = await metadataStore.loadMetadata(filePath);
+        if (metadata) {
+          console.log('[PagedDocumentViewer] Loaded metadata:', metadata);
+          if (metadata.scale && metadata.scale !== 1.0) {
+            setScaleState(metadata.scale);
+          }
+        }
+      } catch (e) {
+        console.log('[PagedDocumentViewer] No metadata found, using defaults');
+      }
+    };
+    
+    loadMetadata();
+  }, [filePath]);
+
+  // Wrapped state setters to save metadata
+  const setCurrentPage = useCallback((page: number | ((prev: number) => number)) => {
+    setCurrentPageState((prev) => {
+      const newPage = typeof page === 'function' ? page(prev) : page;
+      metadataStore.updateMetadata({ currentPage: newPage });
+      return newPage;
+    });
+  }, [metadataStore]);
+
+  const setScale = useCallback((newScale: number | ((prev: number) => number)) => {
+    setScaleState((prev) => {
+      const scaleValue = typeof newScale === 'function' ? newScale(prev) : newScale;
+      metadataStore.updateMetadata({ scale: scaleValue });
+      return scaleValue;
+    });
+  }, [metadataStore]);
 
   // Load content
   useEffect(() => {

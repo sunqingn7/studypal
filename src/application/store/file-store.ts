@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { FileMetadata, FileState, getFileType } from '../../domain/models/file'
 import { useNoteStore } from './note-store'
 import { useAIChatStore } from './ai-chat-store'
+import { useDocumentMetadataStore } from './document-metadata-store'
 
 /**
  * STORAGE STRATEGY:
@@ -23,7 +24,7 @@ import { useAIChatStore } from './ai-chat-store'
 
 interface FileStore extends FileState {
   currentPage: number
-  setCurrentFile: (file: FileMetadata | null) => void
+  setCurrentFile: (file: FileMetadata | null, preservePage?: boolean) => void
   setCurrentPage: (page: number) => void
   addToHistory: (file: FileMetadata) => void
   removeFromHistory: (fileId: string) => void
@@ -31,6 +32,8 @@ interface FileStore extends FileState {
   updateFileMetadata: (fileId: string, updates: Partial<FileMetadata>) => void
   saveCurrentDocumentState: (noteStore: any, aiChatStore: any, sessionStore: any, fileToSave?: { path: string }) => void
   loadDocumentState: (documentId: string, noteStore: any, aiChatStore: any, sessionStore?: any) => void
+  saveDocumentMetadata: (documentPath: string, metadata: Partial<import('./document-metadata-store').DocumentMetadata>) => Promise<void>
+  loadDocumentMetadata: (documentPath: string) => Promise<import('./document-metadata-store').DocumentMetadata | null>
 }
 
 export const useFileStore = create<FileStore>((set, get) => ({
@@ -38,7 +41,17 @@ export const useFileStore = create<FileStore>((set, get) => ({
   currentPage: 1,
   fileHistory: [],
 
-    saveCurrentDocumentState: async (noteStore, aiChatStore, _sessionStore, fileToSave?: { path: string }) => {
+  saveDocumentMetadata: async (documentPath: string, metadata: Partial<import('./document-metadata-store').DocumentMetadata>) => {
+    const metadataStore = useDocumentMetadataStore.getState()
+    await metadataStore.saveMetadata({ documentPath, ...metadata })
+  },
+
+  loadDocumentMetadata: async (documentPath: string) => {
+    const metadataStore = useDocumentMetadataStore.getState()
+    return await metadataStore.loadMetadata(documentPath)
+  },
+
+  saveCurrentDocumentState: async (noteStore, aiChatStore, _sessionStore, fileToSave?: { path: string }) => {
       // If fileToSave is provided, use it; otherwise use current file
       const currentFile = fileToSave || get().currentFile
       if (!currentFile) return
@@ -113,26 +126,69 @@ export const useFileStore = create<FileStore>((set, get) => ({
         }
         console.log('[FileStore] ✅ Saved', allNotes.length, 'notes as markdown files');
 
-        console.log('[FileStore] ========================================');
-        console.log('[FileStore] SAVE COMPLETE for:', currentFile.path);
-        console.log('[FileStore] - Chats:', chatTabs.length, 'tabs → Database');
-        console.log('[FileStore] - Notes:', allNotes.length, 'notes → Markdown files');
-        console.log('[FileStore] ========================================');
+      // ===== SAVE DOCUMENT METADATA =====
+      const metadataStore = useDocumentMetadataStore.getState()
+      await metadataStore.saveMetadata({
+        documentPath: currentFile.path,
+        currentPage: get().currentPage,
+      })
+      console.log('[FileStore] ✅ Saved document metadata');
+      
+      // Debug: verify save by listing all metadata
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const allMetadata = await invoke('debug_list_all_metadata');
+        console.log('[FileStore] 📊 All metadata in DB after save:', JSON.stringify(allMetadata, null, 2));
+      } catch (e) {
+        console.log('[FileStore] Debug list failed:', e);
+      }
+
+      console.log('[FileStore] ========================================');
+      console.log('[FileStore] SAVE COMPLETE for:', currentFile.path);
+      console.log('[FileStore] - Chats:', chatTabs.length, 'tabs → Database');
+      console.log('[FileStore] - Notes:', allNotes.length, 'notes → Markdown files');
+      console.log('[FileStore] - Metadata: currentPage=' + get().currentPage);
+      console.log('[FileStore] ========================================');
       } catch (e) {
         console.error('[FileStore] Error saving document state:', e)
       }
     },
 
-    loadDocumentState: async (documentId, noteStore, aiChatStore, sessionStore?: any) => {
-      if (!documentId) return
+  loadDocumentState: async (documentId, noteStore, aiChatStore, sessionStore?: any) => {
+    if (!documentId) return
 
-      try {
-        console.log('[FileStore] Loading state for:', documentId)
+    try {
+      console.log('[FileStore] Loading state for:', documentId)
 
-        // Import Tauri invoke
-        const { invoke } = await import('@tauri-apps/api/core');
+      // Import Tauri invoke
+      const { invoke } = await import('@tauri-apps/api/core');
 
-        // ===== LOAD CHATS FROM DATABASE =====
+    // ===== LOAD DOCUMENT METADATA =====
+    try {
+      const metadataStore = useDocumentMetadataStore.getState()
+      const metadata = await metadataStore.loadMetadata(documentId)
+      if (metadata) {
+        console.log('[FileStore] Loaded metadata:', metadata)
+        // Note: We don't update currentPage here - it should already be set
+        // by setCurrentFile() or setCurrentPage() before loadDocumentState is called.
+        // Loading document state (notes/chat) should not override the page number.
+      } else {
+        console.log('[FileStore] No metadata found for:', documentId)
+      }
+        
+        // Debug: list all metadata in database
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          const allMetadata = await invoke('debug_list_all_metadata');
+          console.log('[FileStore] 📊 All metadata in DB:', JSON.stringify(allMetadata, null, 2));
+        } catch (e) {
+          console.log('[FileStore] Debug list failed:', e);
+        }
+      } catch (e) {
+        console.log('[FileStore] No metadata in database for:', documentId)
+      }
+
+      // ===== LOAD CHATS FROM DATABASE =====
         let chatData: any[] = [];
         try {
           chatData = await invoke('load_chats', { documentPath: documentId });
@@ -385,15 +441,63 @@ export const useFileStore = create<FileStore>((set, get) => ({
       }
     },
 
-  setCurrentFile: (file) => {
+setCurrentFile: async (file, preservePage = false) => {
+    const prevFile = get().currentFile
+
+    // Save metadata for previous file before switching
+    if (prevFile) {
+      const metadataStore = useDocumentMetadataStore.getState()
+      // Get the current page from metadata store (which is synced from PDFViewer)
+      const currentMetadata = metadataStore.currentMetadata
+      // Only save metadata if we have it for this specific file path
+      if (currentMetadata && currentMetadata.documentPath === prevFile.path) {
+        const pageToSave = currentMetadata.currentPage
+        console.log('[FileStore] Saving page:', pageToSave, 'from metadata store')
+        await metadataStore.saveMetadata({
+          documentPath: prevFile.path,
+          currentPage: pageToSave,
+        })
+        console.log('[FileStore] Saved metadata for previous file:', prevFile.path, 'page:', pageToSave)
+      } else {
+        console.log('[FileStore] No metadata found for previous file:', prevFile.path, 'skipping save')
+      }
+    }
+
     if (file) {
       get().addToHistory(file)
+
+      // Load metadata for new file
+      const metadataStore = useDocumentMetadataStore.getState()
+      const metadata = await metadataStore.loadMetadata(file.path)
+
+      if (metadata) {
+        console.log('[FileStore] Loaded metadata for new file:', file.path, metadata)
+        // If preservePage is true, don't overwrite the current page (used when restoring from session)
+        // Otherwise, use the page from metadata (used when opening a new file)
+        const currentPage = preservePage ? get().currentPage : metadata.currentPage
+        set({
+          currentFile: file,
+          currentPage: currentPage
+        })
+      } else {
+        console.log('[FileStore] No metadata found for new file, using defaults:', file.path)
+        set({ currentFile: file, currentPage: 1 })
+      }
+    } else {
+      set({ currentFile: null, currentPage: 1 })
     }
-    set({ currentFile: file, currentPage: 1 })
   },
 
   setCurrentPage: (page) => {
     set({ currentPage: page })
+    
+    // Auto-save metadata when page changes (if we have a current file)
+    const currentFile = get().currentFile
+    if (currentFile) {
+      const metadataStore = useDocumentMetadataStore.getState()
+      metadataStore.updateMetadata({ currentPage: page })
+        .catch(e => console.error('[FileStore] Error auto-saving page metadata:', e))
+    }
   },
 
   addToHistory: (file) => {

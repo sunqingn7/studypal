@@ -3,6 +3,7 @@ import * as pdfjsLib from 'pdfjs-dist'
 import { TextLayer } from 'pdfjs-dist'
 import { FileReadingService } from '../../../../infrastructure/file-handlers/file-reading-service'
 import { useFileStore } from '../../../../application/store/file-store'
+import { useDocumentMetadataStore } from '../../../../application/store/document-metadata-store'
 import './PDFViewer.css'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -15,34 +16,81 @@ type PageMode = 'single' | 'double'
 interface PDFViewerProps {
   path: string
   fileData?: Uint8Array | null
+  initialPage?: number
 }
 
-function PDFViewer({ path, fileData }: PDFViewerProps) {
+function PDFViewer({ path, fileData, initialPage = 1 }: PDFViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const { setCurrentPage: updateStorePage } = useFileStore()
+  const metadataStore = useDocumentMetadataStore()
+  const { setCurrentPage: setFileStorePage } = useFileStore()
   const [pdf, setPdf] = useState<pdfjsLib.PDFDocumentProxy | null>(null)
-  const [currentPage, setCurrentPageState] = useState(1)
+  const [currentPage, setCurrentPageState] = useState(initialPage)
   const [totalPages, setTotalPages] = useState(0)
   const [scale, setScale] = useState(1.2)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [pageMode, setPageMode] = useState<PageMode>('single')
+  const [pageMode, setPageModeState] = useState<PageMode>('single')
   const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map())
   const textLayerRefs = useRef<Map<number, HTMLDivElement>>(new Map())
   const renderTasksRef = useRef<Map<number, { cancel: () => void }>>(new Map())
 
+  // Update file store when currentPage changes (to sync for file switching)
+  useEffect(() => {
+    setFileStorePage(currentPage)
+  }, [currentPage, setFileStorePage])
+
+  // Update page when initialPage changes (from file store)
+  useEffect(() => {
+    if (initialPage && initialPage !== currentPage) {
+      console.log('[PDFViewer] Setting page from initialPage:', initialPage)
+      setCurrentPageState(initialPage)
+    }
+  }, [initialPage])
+
+  // Load metadata when PDF opens - only apply view settings, not page (page comes from file store)
+  useEffect(() => {
+    const loadMetadata = async () => {
+      try {
+        const metadata = await metadataStore.loadMetadata(path)
+        if (metadata) {
+          console.log('[PDFViewer] Loaded metadata:', metadata)
+          // Apply saved view settings (viewMode, scale)
+          if (metadata.viewMode === 'double') {
+            setPageModeState('double')
+          }
+          if (metadata.scale && metadata.scale !== 1.0) {
+            setScale(metadata.scale)
+          }
+        }
+      } catch (e) {
+        console.log('[PDFViewer] No metadata found, using defaults')
+      }
+    }
+    
+    loadMetadata()
+  }, [path])
+
+  // Wrap setPageMode to save metadata
+  const setPageMode = useCallback((mode: PageMode) => {
+    setPageModeState(mode)
+    metadataStore.updateMetadata({ viewMode: mode })
+  }, [metadataStore])
+
   const setCurrentPage = useCallback((page: number | ((prev: number) => number)) => {
+    console.log('[PDFViewer] setCurrentPage called with:', typeof page === 'function' ? '(function)' : page, 'currentPageState:', currentPage)
     if (typeof page === 'function') {
       setCurrentPageState((prev) => {
         const newPage = page(prev)
-        updateStorePage(newPage)
+        console.log('[PDFViewer] setCurrentPage function updater: prev=', prev, 'newPage=', newPage)
+        metadataStore.updateMetadata({ currentPage: newPage })
         return newPage
       })
     } else {
+      console.log('[PDFViewer] setCurrentPage direct call: page=', page)
+      metadataStore.updateMetadata({ currentPage: page })
       setCurrentPageState(page)
-      updateStorePage(page)
     }
-  }, [updateStorePage])
+  }, [metadataStore, currentPage])
 
   const getSecondPage = useCallback(() => {
     if (pageMode === 'double' && currentPage < totalPages) {
@@ -181,7 +229,10 @@ useEffect(() => {
         const pdfDoc = await loadingTask.promise
         setPdf(pdfDoc)
         setTotalPages(pdfDoc.numPages)
-        setCurrentPage(1)
+        // Only set to page 1 if initialPage is not provided or is invalid
+        if (!initialPage || initialPage < 1) {
+          setCurrentPage(1)
+        }
       } catch (err) {
         console.error('Error loading PDF:', err)
         
@@ -316,11 +367,19 @@ useEffect(() => {
   }, [pageMode, totalPages])
 
   const zoomIn = () => {
-    setScale((prev) => Math.min(3, prev + 0.2))
+    setScale((prev) => {
+      const newScale = Math.min(3, prev + 0.2)
+      metadataStore.updateMetadata({ scale: newScale })
+      return newScale
+    })
   }
 
   const zoomOut = () => {
-    setScale((prev) => Math.max(0.5, prev - 0.2))
+    setScale((prev) => {
+      const newScale = Math.max(0.5, prev - 0.2)
+      metadataStore.updateMetadata({ scale: newScale })
+      return newScale
+    })
   }
 
   if (loading) {

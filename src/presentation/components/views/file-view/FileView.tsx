@@ -10,7 +10,7 @@ import './FileView.css'
 import type { FileType } from '../../../../domain/models/file'
 
 function FileView() {
-  const { currentFile, setCurrentFile } = useFileStore()
+  const { currentFile, setCurrentFile, currentPage } = useFileStore()
   const { activeTopicId, addFileToTopic } = useTopicStore()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -223,7 +223,7 @@ let fileType: FileType
 
       // Default viewers - always read fresh from disk
       if (currentFile.type === 'pdf') {
-        return <PDFViewer path={currentFile.path} />
+        return <PDFViewer path={currentFile.path} initialPage={currentPage} />
       }
 
       // Use paged view for all other file types (TXT, EPUB fallback)
@@ -232,7 +232,8 @@ let fileType: FileType
                         currentFile.name.toLowerCase().endsWith('.markdown')
       return <PagedDocumentViewer 
         filePath={currentFile.path} 
-        fileType={isMarkdown ? 'md' : 'txt'} 
+        fileType={isMarkdown ? 'md' : 'txt'}
+        initialPage={currentPage}
       />
   }
 

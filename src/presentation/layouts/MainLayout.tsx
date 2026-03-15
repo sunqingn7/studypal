@@ -88,9 +88,9 @@ function MainLayout() {
           type: 'pdf',
           size: 0,
         }
-        console.log('[MainLayout] Restoring file:', fileData)
-        setCurrentFile(fileData)
-        setCurrentPage(state.session.currentPage)
+      console.log('[MainLayout] Restoring file:', fileData, 'with page:', state.session.currentPage)
+      setCurrentPage(state.session.currentPage)
+      setCurrentFile(fileData, true) // preservePage=true to keep the session page
         
         // Load document-bound notes and chat
         const { loadDocumentState } = useFileStore.getState()
@@ -133,36 +133,36 @@ function MainLayout() {
             type: 'pdf',
             size: 0,
           }
-          console.log('[MainLayout] Restoring file:', fileData)
-          setCurrentFile(fileData)
-          setCurrentPage(state.session.currentPage)
-          
-          // Load document-bound notes and chat
-          const { loadDocumentState } = useFileStore.getState()
-          loadDocumentState(fileData.path, useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState())
-        }
-        
-        // AI config is now loaded via initializeSession() from session-manager (Rust backend)
-        // Chat history is document-bound now, so no need to restore from here
+      console.log('[MainLayout] Restoring file:', fileData, 'with page:', state.session.currentPage)
+      setCurrentPage(state.session.currentPage)
+      setCurrentFile(fileData, true) // preservePage=true to keep the session page
 
-        // Restore window size
-        const { width, height, x, y } = state.session.window
-        console.log('[MainLayout] Attempting to restore window:', { width, height, x, y })
-        if (width && height && width > 0 && height > 0) {
-          import('@tauri-apps/api/dpi').then(({ PhysicalSize }) => {
-            appWindow.setSize(new PhysicalSize(Math.round(width), Math.round(height)))
-            console.log('[MainLayout] Window size restored to:', width, height)
-          })
-        }
-        if (x && y && x > 0 && y > 0) {
-          import('@tauri-apps/api/dpi').then(({ PhysicalPosition }) => {
-            appWindow.setPosition(new PhysicalPosition(Math.round(x), Math.round(y)))
-            console.log('[MainLayout] Window position restored to:', x, y)
-          })
-        }
-      })
-      return unsub
+      // Load document-bound notes and chat
+      const { loadDocumentState } = useFileStore.getState()
+      loadDocumentState(fileData.path, useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState())
     }
+
+    // AI config is now loaded via initializeSession() from session-manager (Rust backend)
+    // Chat history is document-bound now, so no need to restore from here
+
+    // Restore window size
+    const { width, height, x, y } = state.session.window
+    console.log('[MainLayout] Attempting to restore window:', { width, height, x, y })
+    if (width && height && width > 0 && height > 0) {
+      import('@tauri-apps/api/dpi').then(({ PhysicalSize }) => {
+        appWindow.setSize(new PhysicalSize(Math.round(width), Math.round(height)))
+        console.log('[MainLayout] Window size restored to:', width, height)
+      })
+    }
+    if (x && y && x > 0 && y > 0) {
+      import('@tauri-apps/api/dpi').then(({ PhysicalPosition }) => {
+        appWindow.setPosition(new PhysicalPosition(Math.round(x), Math.round(y)))
+        console.log('[MainLayout] Window position restored to:', x, y)
+      })
+    }
+  })
+  return unsub
+}
   }, [])
 
   useEffect(() => {
