@@ -17,6 +17,7 @@ import { ChatMessage, AIProviderType } from '../../../../domain/models/ai-contex
 import { updateAIConfig, updateProviderConfigs } from '../../../../application/services/session-manager'
 import { getAllMCPTools, executeMCPTool } from '../../../../infrastructure/ai-providers/mcp-utils'
 import { buildToolPrompt, parseToolCalls, extractFinalResponse } from '../../../../infrastructure/ai-providers/tool-calling'
+import { PaperLink } from './components/PaperLink'
 import './AIView.css'
 
 const FONT_SIZES = [12, 14, 16, 18, 20, 22, 24, 28, 32]
@@ -777,15 +778,20 @@ activeMessages.map((msg) => (
                   // User messages are HTML from TipTap editor
                   <div dangerouslySetInnerHTML={{ __html: msg.content }} />
                 ) : (
-                  // AI messages are Markdown
-                  <div className="markdown-content">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkMath]}
-                      rehypePlugins={[rehypeKatex]}
-                    >
-                      {msg.content}
-                    </ReactMarkdown>
-                  </div>
+              // AI messages are Markdown
+              <div className="markdown-content">
+                <ReactMarkdown
+                  remarkPlugins={[remarkMath]}
+                  rehypePlugins={[rehypeKatex]}
+                  components={{
+                    a: ({ href, children }) => (
+                      <PaperLink href={href || ''}>{children}</PaperLink>
+                    )
+                  }}
+                >
+                  {msg.content}
+                </ReactMarkdown>
+              </div>
                 )}
               </div>
             </div>

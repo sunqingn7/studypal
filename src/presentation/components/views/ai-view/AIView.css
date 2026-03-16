@@ -597,3 +597,123 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* Paper Link Styles */
+.paper-link-container {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  margin: 2px 0;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.paper-link-container:hover {
+  background-color: var(--bg-secondary);
+  border-color: var(--accent-color);
+}
+
+.paper-icon {
+  color: var(--accent-color);
+  flex-shrink: 0;
+}
+
+.paper-link {
+  color: var(--text-primary);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paper-link:hover {
+  color: var(--accent-color);
+}
+
+.paper-action-icon {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.paper-action-icon.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.paper-error {
+  color: var(--error-color);
+  font-size: 12px;
+  cursor: help;
+}
+
+/* Markdown link styles */
+.markdown-link {
+  color: var(--accent-color);
+  text-decoration: none;
+}
+
+.markdown-link:hover {
+  text-decoration: underline;
+}
+
+/* Paper references in chat */
+.paper-reference {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+  margin: 8px 0;
+}
+
+.paper-reference .paper-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.paper-reference-content {
+  flex: 1;
+}
+
+.paper-reference-title {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.paper-reference-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.paper-reference-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.paper-reference-actions button {
+  padding: 4px 12px;
+  font-size: 12px;
+  background-color: var(--accent-color);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.paper-reference-actions button:hover {
+  background-color: var(--accent-hover);
+}

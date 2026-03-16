@@ -13,6 +13,7 @@ export interface DownloadResult {
   success: boolean;
   path: string;
   metadata: PaperMetadata;
+  fileSize?: number;
   error?: string;
 }
 
