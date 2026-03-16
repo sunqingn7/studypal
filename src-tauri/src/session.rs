@@ -262,3 +262,11 @@ pub fn debug_list_all_metadata() -> Result<serde_json::Value, String> {
         .map_err(|e| e.to_string())?;
     Ok(serde_json::json!(all))
 }
+
+#[tauri::command]
+pub fn debug_list_all_chats() -> Result<serde_json::Value, String> {
+    let all = get_database()
+        .debug_list_all_chats()
+        .map_err(|e| e.to_string())?;
+    Ok(serde_json::json!(all))
+}

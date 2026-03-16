@@ -102,6 +102,15 @@ export const useFileStore = create<FileStore>((set, get) => ({
         });
         console.log('[FileStore] ✅ Saved', chatTabs.length, 'chat tabs to database');
 
+        // Debug: verify save by listing all chats in DB
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          const allChats = await invoke('debug_list_all_chats');
+          console.log('[FileStore] 📊 All chats in DB after save:', JSON.stringify(allChats, null, 2));
+        } catch (e) {
+          console.log('[FileStore] Debug list chats failed:', e);
+        }
+
         // ===== SAVE NOTES TO MARKDOWN FILES ONLY =====
         // Notes are saved as markdown files in StudyNotes/ folder (NOT to database)
         const studyNotesDir = `${currentFile.path.substring(0, currentFile.path.lastIndexOf('/'))}/StudyNotes`;
@@ -193,6 +202,10 @@ export const useFileStore = create<FileStore>((set, get) => ({
         try {
           chatData = await invoke('load_chats', { documentPath: documentId });
           console.log('[FileStore] ✅ Loaded', chatData.length, 'chat tabs from database');
+          // Debug: log what was loaded
+          chatData.forEach((tab: any, idx: number) => {
+            console.log(`[FileStore]   Loaded tab ${idx}:`, tab.title, '->', tab.messages?.length || 0, 'messages');
+          });
         } catch (e) {
           console.log('[FileStore] No chats found in database for:', documentId);
           chatData = [];

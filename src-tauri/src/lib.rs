@@ -1522,7 +1522,8 @@ pub fn run() {
       session::save_document_metadata,
       session::load_document_metadata,
       session::get_document_with_context,
-      session::debug_list_all_metadata
+        session::debug_list_all_metadata,
+        session::debug_list_all_chats
         ])
         .setup(|app| {
             let _app_handle = app.handle().clone();

@@ -33,20 +33,54 @@ function MainLayout() {
   }
 
   useEffect(() => {
-    // Save session before window closes
+    // Save session before window closes using Tauri API
+    let unlistenFn: (() => void) | null = null;
+    
+    const setupCloseHandler = async () => {
+      try {
+        const appWindow = getCurrentWindow();
+        
+        // Use Tauri's onCloseRequested to properly handle async save
+        const unlisten = await appWindow.onCloseRequested(async (_event) => {
+          console.log('[MainLayout] Window close requested, saving state...');
+          const { currentFile, saveCurrentDocumentState } = useFileStore.getState();
+          if (currentFile) {
+            await saveCurrentDocumentState(useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState());
+          }
+
+          const session = useSessionStore.getState().getSession();
+          localStorage.setItem('studypal-session', JSON.stringify(session));
+          console.log('[MainLayout] State saved, closing window...');
+        });
+        
+        unlistenFn = unlisten;
+      } catch (e) {
+        // Not in Tauri environment, use beforeunload as fallback
+        console.log('[MainLayout] Not in Tauri, using beforeunload fallback');
+      }
+    };
+    
+    setupCloseHandler();
+    
+    // Also add beforeunload as fallback (won't wait for async but better than nothing)
     const handleBeforeUnload = () => {
-      // Save current document's notes and chat
-      const { currentFile, saveCurrentDocumentState } = useFileStore.getState()
+      const { currentFile, saveCurrentDocumentState } = useFileStore.getState();
       if (currentFile) {
-        saveCurrentDocumentState(useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState())
+        saveCurrentDocumentState(useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState());
       }
 
-      const session = useSessionStore.getState().getSession()
-      localStorage.setItem('studypal-session', JSON.stringify(session))
-    }
+      const session = useSessionStore.getState().getSession();
+      localStorage.setItem('studypal-session', JSON.stringify(session));
+    };
 
-    window.addEventListener('beforeunload', handleBeforeUnload)
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      if (unlistenFn) {
+        unlistenFn();
+      }
+    };
   }, [])
 
   useEffect(() => {
