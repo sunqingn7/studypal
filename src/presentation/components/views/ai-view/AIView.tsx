@@ -417,12 +417,10 @@ function AIView() {
           }
           
           // Get final response incorporating tool results
-          const finalContent = extractFinalResponse(localContent, toolCalls)
-          
-          // Continue conversation with tool results for a more complete response
-          // (Optional: make a second LLM call with tool results)
-          // For now, we'll use the extracted response
-          localContent = finalContent
+          localContent = extractFinalResponse(localContent, toolCalls)
+        } else {
+          // No tool calls, but model might still output JSON format - extract content
+          localContent = extractFinalResponse(localContent, [])
         }
       }
       
