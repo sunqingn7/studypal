@@ -13,8 +13,9 @@ import { FileBrowserView } from '../../plugins/file-browser-view/FileBrowserView
 import FileView from '../components/views/file-view/FileView'
 import NoteView from '../components/views/note-view/NoteView'
 import AIView from '../components/views/ai-view/AIView'
-import { Sun, Moon } from 'lucide-react'
+import { Sun, Moon, Settings } from 'lucide-react'
 import { FileMetadata } from '../../domain/models/file'
+import { SettingsView } from '../components/views/settings-view/SettingsView'
 
 function MainLayout() {
   const { currentFile } = useFileStore()
@@ -24,6 +25,7 @@ function MainLayout() {
   const [hasFileBrowser, setHasFileBrowser] = useState(false)
   const [isHydrated, setIsHydrated] = useState(false)
   const [panelSizesRestored, setPanelSizesRestored] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
 
   const mainGroupRef = useGroupRef()
   const rightGroupRef = useGroupRef()
@@ -395,14 +397,26 @@ function MainLayout() {
          {showFileBrowser ? '◀' : '▶'}
        </button>
 
-       {/* Theme toggle button */}
-       <button
-         onClick={handleThemeToggle}
-         className="fixed left-2 top-6 z-50 p-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded shadow-md hover:bg-[var(--bg-tertiary)] transition-colors"
-         title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-       >
-         {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-       </button>
+      {/* Theme toggle button */}
+      <button
+        onClick={handleThemeToggle}
+        className="fixed left-2 top-4 z-50 p-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded shadow-md hover:bg-[var(--bg-tertiary)] transition-colors"
+        title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+      >
+        {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+      </button>
+
+      {/* Settings button */}
+      <button
+        onClick={() => setShowSettings(true)}
+        className="fixed left-2 top-12 z-50 p-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded shadow-md hover:bg-[var(--bg-tertiary)] transition-colors"
+        title="Open Settings"
+      >
+        <Settings className="w-4 h-4" />
+      </button>
+
+      {/* Settings Modal */}
+      <SettingsView isOpen={showSettings} onClose={() => setShowSettings(false)} />
     </div>
   )
 }
