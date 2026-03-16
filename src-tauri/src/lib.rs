@@ -718,30 +718,40 @@ async fn stream_chat_with_openai_compatible(
                             return Ok(());
                         }
                         
-                        // Parse the SSE data
-                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-                            if let Some(choices) = json.get("choices") {
-                                if let Some(first) = choices.as_array().and_then(|c| c.first()) {
-                                    let content = first.get("delta")
-                                        .and_then(|d| d.get("content"))
-                                        .and_then(|c| c.as_str())
-                                        .unwrap_or("");
-                                    
-                                    let reasoning = first.get("delta")
-                                        .and_then(|d| d.get("reasoning_content"))
-                                        .and_then(|c| c.as_str());
-                                    
-                                    // Emit chunk to frontend
-                                    if !content.is_empty() || reasoning.is_some() {
-                                        let _ = app_handle.emit("chat-stream-chunk", StreamChunk {
-                                            content: content.to_string(),
-                                            thinking: reasoning.map(|s| s.to_string()),
-                                            done: false,
-                                        });
-                                    }
-                                }
-                            }
-                        }
+            // Parse the SSE data
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+              println!("[RUST] SSE data parsed: {}", json);
+              if let Some(choices) = json.get("choices") {
+                if let Some(first) = choices.as_array().and_then(|c| c.first()) {
+                  let content = first.get("delta")
+                    .and_then(|d| d.get("content"))
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("");
+                  
+                  let reasoning = first.get("delta")
+                    .and_then(|d| d.get("reasoning_content"))
+                    .and_then(|c| c.as_str())
+                    .or_else(|| {
+                      // Try alternative field names for reasoning/thinking
+                      first.get("delta")
+                        .and_then(|d| d.get("reasoning"))
+                        .and_then(|c| c.as_str())
+                    });
+                  
+                  // Debug: log what we got
+                  if !content.is_empty() || reasoning.is_some() {
+                    println!("[RUST] Emitting chunk: content.len={}, reasoning={}", 
+                      content.len(), 
+                      reasoning.map(|s| s.len()).unwrap_or(0));
+                    let _ = app_handle.emit("chat-stream-chunk", StreamChunk {
+                      content: content.to_string(),
+                      thinking: reasoning.map(|s| s.to_string()),
+                      done: false,
+                    });
+                  }
+                }
+              }
+            }
                     }
                 }
             }
