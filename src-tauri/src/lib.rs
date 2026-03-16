@@ -1498,6 +1498,105 @@ async fn tts_qwen_voices(server_url: Option<String>) -> Result<serde_json::Value
 }
 
 #[tauri::command]
+async fn download_and_open_paper(
+    url: String,
+    save_location: Option<String>,
+) -> Result<DownloadResult, String> {
+    println!("[RUST] download_and_open_paper called with url: {}", url);
+    
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| e.to_string())?;
+    
+    // Determine save location
+    let save_path = if let Some(loc) = save_location {
+        loc
+    } else {
+        // Default to ~/StudyMaterials/Papers/
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .map_err(|_| "Could not determine home directory".to_string())?;
+        format!("{}/StudyMaterials/Papers", home)
+    };
+    
+    // Create directory if it doesn't exist
+    std::fs::create_dir_all(&save_path)
+        .map_err(|e| format!("Failed to create directory: {}", e))?;
+    
+    // Extract filename from URL
+    let filename = url.split('/').last()
+        .unwrap_or("paper.pdf")
+        .to_string();
+    
+    // Ensure it has .pdf extension
+    let filename = if filename.ends_with(".pdf") {
+        filename
+    } else {
+        format!("{}.pdf", filename)
+    };
+    
+    let filepath = format!("{}/{}", save_path, filename);
+    
+    // Download the file
+    println!("[RUST] Downloading from: {} to: {}", url, filepath);
+    let response = client
+        .get(&url)
+        .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+        .send()
+        .await
+        .map_err(|e| format!("Download failed: {}", e))?;
+    
+    if !response.status().is_success() {
+        return Err(format!("HTTP error: {}", response.status()));
+    }
+    
+    let bytes = response.bytes().await
+        .map_err(|e| format!("Failed to read response: {}", e))?;
+    
+    // Save to file
+    std::fs::write(&filepath, &bytes)
+        .map_err(|e| format!("Failed to save file: {}", e))?;
+    
+    // Try to extract metadata from arxiv URL
+    let (title, authors, year) = if url.contains("arxiv.org") {
+        let arxiv_id = url.split('/').last()
+            .and_then(|s| s.split('.').next())
+            .unwrap_or("");
+        let year = if arxiv_id.len() >= 2 {
+            arxiv_id[..2].parse::<u32>().ok().map(|y| 2000 + y)
+        } else {
+            None
+        };
+        (Some(format!("Paper {}", arxiv_id)), None, year)
+    } else {
+        (None, None, None)
+    };
+    
+    println!("[RUST] Downloaded {} bytes to {}", bytes.len(), filepath);
+    
+    Ok(DownloadResult {
+        path: filepath,
+        title,
+        authors,
+        year,
+        file_size: bytes.len() as u64,
+    })
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct DownloadResult {
+    path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    authors: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    year: Option<u32>,
+    file_size: u64,
+}
+
+#[tauri::command]
 async fn tts_qwen_synth(request: TTSRequest, server_url: Option<String>) -> Result<TTSResponse, String> {
     let tts = QwenTTS::new(server_url);
     tts.synthesize(request).await
@@ -1514,10 +1613,11 @@ pub fn run() {
         .level(log::LevelFilter::Info)
         .build(),
     )
-.invoke_handler(tauri::generate_handler![
-            fetch_web_content,
-            search_web,
-            chat_with_ai,
+    .invoke_handler(tauri::generate_handler![
+      fetch_web_content,
+      search_web,
+      download_and_open_paper,
+      chat_with_ai,
             chat_with_provider,
             stream_chat_with_provider,
             fetch_models,
