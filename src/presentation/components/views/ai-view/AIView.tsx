@@ -391,8 +391,11 @@ function AIView() {
             flushSync(() => setStreamingContent(localContent))
           },
           (thinking: string) => {
+            console.log('[AIView] Thinking callback, thinking:', thinking.slice(0, 30))
             localThinking += thinking
+            console.log('[AIView] localThinking now:', localThinking.slice(0, 30))
             flushSync(() => setStreamingThinking(localThinking))
+            console.log('[AIView] setStreamingThinking called, streamingThinking state should update')
           }
         )
 
