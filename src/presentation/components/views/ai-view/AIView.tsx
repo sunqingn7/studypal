@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
-import { flushSync } from 'react-dom'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import ReactMarkdown from 'react-markdown'
@@ -376,7 +375,7 @@ function AIView() {
           config,
           (chunk: string) => {
             localContent += chunk
-            flushSync(() => setStreamingContent(localContent))
+            setStreamingContent(localContent)
           }
         )
       } else if (supportsThinking) {
@@ -388,14 +387,13 @@ function AIView() {
           config,
           (chunk: string) => {
             localContent += chunk
-            flushSync(() => setStreamingContent(localContent))
+            setStreamingContent(localContent)
           },
           (thinking: string) => {
             console.log('[AIView] Thinking callback, thinking:', thinking.slice(0, 30))
             localThinking += thinking
-            console.log('[AIView] localThinking now:', localThinking.slice(0, 30))
-            flushSync(() => setStreamingThinking(localThinking))
-            console.log('[AIView] setStreamingThinking called, streamingThinking state should update')
+            console.log('[AIView] localThinking now:', localThinking.slice(0, 50))
+            setStreamingThinking(localThinking)
           }
         )
 
@@ -412,7 +410,7 @@ function AIView() {
             // Add tool result to display
             const toolResultText = `\n\n[Used tool: ${toolCall.name}]\n${result.success ? JSON.stringify(result.data) : result.error}`
             localContent += toolResultText
-            flushSync(() => setStreamingContent(localContent))
+            setStreamingContent(localContent)
           }
           
           // Get final response
@@ -428,7 +426,7 @@ function AIView() {
           config,
           (chunk: string) => {
             localContent += chunk
-            flushSync(() => setStreamingContent(localContent))
+            setStreamingContent(localContent)
           }
         )
 
@@ -445,7 +443,7 @@ function AIView() {
             // Add tool result to display
             const toolResultText = `\n\n[Used tool: ${toolCall.name}]\n${result.success ? JSON.stringify(result.data) : result.error}`
             localContent += toolResultText
-            flushSync(() => setStreamingContent(localContent))
+            setStreamingContent(localContent)
           }
           
           // Get final response
