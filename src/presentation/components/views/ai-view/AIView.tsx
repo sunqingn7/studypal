@@ -18,6 +18,7 @@ import { ChatMessage, AIProviderType } from '../../../../domain/models/ai-contex
 import { updateAIConfig, updateProviderConfigs } from '../../../../application/services/session-manager'
 import { getAllMCPTools, executeMCPTool } from '../../../../infrastructure/ai-providers/mcp-utils'
 import { buildToolPrompt, parseToolCalls, extractFinalResponse } from '../../../../infrastructure/ai-providers/tool-calling'
+import type { ExtractResult } from '../../../../infrastructure/ai-providers/tool-calling'
 import './AIView.css'
 
 const FONT_SIZES = [12, 14, 16, 18, 20, 22, 24, 28, 32]
@@ -417,10 +418,18 @@ function AIView() {
           }
           
           // Get final response incorporating tool results
-          localContent = extractFinalResponse(localContent, toolCalls)
+          const extracted1: ExtractResult = extractFinalResponse(localContent, toolCalls)
+          localContent = extracted1.content
+          if (extracted1.thinking && !localThinking) {
+            localThinking = extracted1.thinking
+          }
         } else {
           // No tool calls, but model might still output JSON format - extract content
-          localContent = extractFinalResponse(localContent, [])
+          const extracted2: ExtractResult = extractFinalResponse(localContent, [])
+          localContent = extracted2.content
+          if (extracted2.thinking && !localThinking) {
+            localThinking = extracted2.thinking
+          }
         }
       }
       

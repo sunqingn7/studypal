@@ -64,7 +64,12 @@ export function parseToolCalls(response: string): ToolCall[] {
   return toolCalls;
 }
 
-export function extractFinalResponse(response: string, _toolCalls: ToolCall[]): string {
+export interface ExtractResult {
+  content: string;
+  thinking?: string;
+}
+
+export function extractFinalResponse(response: string, _toolCalls: ToolCall[]): ExtractResult {
   let finalResponse = response.trim();
   
   // First, try to parse as JSON with content/thinking structure (model sometimes outputs this)
@@ -74,8 +79,9 @@ export function extractFinalResponse(response: string, _toolCalls: ToolCall[]): 
       finalResponse = parsed.content;
       if (parsed.thinking && typeof parsed.thinking === 'string') {
         console.log('[ToolCalling] Extracted thinking:', parsed.thinking.slice(0, 50));
+        return { content: finalResponse, thinking: parsed.thinking };
       }
-      return finalResponse;
+      return { content: finalResponse };
     }
   } catch {
     // Not JSON, continue with normal processing
@@ -90,7 +96,7 @@ export function extractFinalResponse(response: string, _toolCalls: ToolCall[]): 
     finalResponse = 'I have processed your request using the necessary tools.';
   }
   
-  return finalResponse;
+  return { content: finalResponse };
 }
 
 export interface ToolExecutor {
