@@ -12,36 +12,30 @@ export interface ChatWithToolsResult {
 
 export function buildToolPrompt(tools: MCPTool[]): string {
   const toolDefinitions = tools.map(tool => {
-    const params = tool.parameters.map(p => {
-      let paramStr = `  - ${p.name} (${p.type})`;
-      if (p.required) paramStr += ' [required]';
-      if (p.enum) paramStr += ` [choices: ${p.enum.join(', ')}]`;
-      paramStr += `: ${p.description}`;
-      return paramStr;
-    }).join('\n');
+    const requiredParams = tool.parameters
+      .filter(p => p.required)
+      .map(p => `${p.name} (${p.type})`)
+      .join(', ');
     
-    return `${tool.name}: ${tool.description}\nParameters:\n${params}`;
-  }).join('\n\n');
+    return `${tool.name}(${requiredParams || 'no params'}): ${tool.description}`;
+  }).join('\n');
 
-  const availableTools = tools.map(t => t.name).join(', ');
+  return `TOOL USAGE INSTRUCTIONS:
 
-  return `You have access to the following tools:
-
+You have access to these tools:
 ${toolDefinitions}
 
-When you need to use a tool, respond with JSON in this exact format:
-{"tool_call": {"name": "tool_name", "parameters": {"param1": "value1"}}}
+HOW TO USE TOOLS:
+- ONLY use tools when you NEED external information or actions
+- For normal conversation, answer directly WITHOUT any JSON
+- When you MUST use a tool, output ONLY this JSON format (nothing else):
+{"tool_call": {"name": "tool_name", "parameters": {"param": "value"}}}
 
-If no tool is needed, respond normally without JSON.
-
-IMPORTANT: Only use tools when absolutely necessary. For simple questions or statements, respond directly without tool calls.
-
-Available tools list: ${availableTools}
-
-Remember:
-- Only call a tool if you need information you don't have or need to perform an action
-- Don't call tools for general knowledge you already have
-- After getting tool results, incorporate them into your response naturally`;
+IMPORTANT RULES:
+1. Simple greetings like "hi", "hello" - respond naturally, NO tools
+2. General questions you can answer - respond naturally, NO tools
+3. Only use tools for: searching web, accessing notes, playing TTS
+4. After tool returns, continue conversation naturally`;
 }
 
 export function parseToolCalls(response: string): ToolCall[] {

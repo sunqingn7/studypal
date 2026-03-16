@@ -22,63 +22,56 @@ impl EdgeTTS {
     }
 
     pub async fn get_voices(&self) -> Result<Vec<EdgeVoice>, String> {
-        let url = "https://edge.microsoft.com/voice/config/v1/edge-speech-configuration";
-        
-        let response = self.client
-            .get(url)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            .header("Accept", "application/json")
-            .send()
-            .await
-            .map_err(|e| format!("Failed to fetch voices: {}", e))?;
-
-        if !response.status().is_success() {
-            return Err(format!("Failed to fetch voices: HTTP {}", response.status()));
-        }
-
-        let config: serde_json::Value = response.json()
-            .await
-            .map_err(|e| format!("Failed to parse voices response: {}", e))?;
-
-        let mut voices = Vec::new();
-        
-        if let Some(voice_config) = config.get("voice").and_then(|v| v.get("voices")).and_then(|v| v.as_array()) {
-            for voice in voice_config {
-                if let (Some(short_name), Some(localized_name)) = (
-                    voice.get("shortName").and_then(|s| s.as_str()),
-                    voice.get("localizedName").and_then(|s| s.as_str()),
-                ) {
-                    voices.push(EdgeVoice {
-                        short_name: short_name.to_string(),
-                        localized_name: localized_name.to_string(),
-                        gender: voice.get("gender").and_then(|g| g.as_str()).unwrap_or("Unknown").to_string(),
-                        locale: voice.get("locale").and_then(|l| l.as_str()).unwrap_or("en-US").to_string(),
-                    });
-                }
-            }
-        }
-
-        if voices.is_empty() {
-            // Default voices if API fails
-            voices.push(EdgeVoice {
+        // Return default voices - Edge TTS API is unreliable, use hardcoded list
+        Ok(vec![
+            EdgeVoice {
                 short_name: "en-US-JennyNeural".to_string(),
                 localized_name: "Jenny (Online) (English (United States))".to_string(),
                 gender: "Female".to_string(),
                 locale: "en-US".to_string(),
-            });
-            voices.push(EdgeVoice {
+            },
+            EdgeVoice {
                 short_name: "en-US-GuyNeural".to_string(),
                 localized_name: "Guy (Online) (English (United States))".to_string(),
                 gender: "Male".to_string(),
                 locale: "en-US".to_string(),
-            });
-        }
-
-        Ok(voices)
+            },
+            EdgeVoice {
+                short_name: "en-GB-SoniaNeural".to_string(),
+                localized_name: "Sonia (Online) (English (United Kingdom))".to_string(),
+                gender: "Female".to_string(),
+                locale: "en-GB".to_string(),
+            },
+            EdgeVoice {
+                short_name: "zh-CN-XiaoxiaoNeural".to_string(),
+                localized_name: "Xiaoxiao (Online) (Chinese (Mandarin, Simplified))".to_string(),
+                gender: "Female".to_string(),
+                locale: "zh-CN".to_string(),
+            },
+            EdgeVoice {
+                short_name: "ja-JP-NanamiNeural".to_string(),
+                localized_name: "Nanami (Online) (Japanese)".to_string(),
+                gender: "Female".to_string(),
+                locale: "ja-JP".to_string(),
+            },
+            EdgeVoice {
+                short_name: "de-DE-KatjaNeural".to_string(),
+                localized_name: "Katja (Online) (German)".to_string(),
+                gender: "Female".to_string(),
+                locale: "de-DE".to_string(),
+            },
+            EdgeVoice {
+                short_name: "fr-FR-DeniseNeural".to_string(),
+                localized_name: "Denise (Online) (French)".to_string(),
+                gender: "Female".to_string(),
+                locale: "fr-FR".to_string(),
+            },
+        ])
     }
 
     pub async fn synthesize(&self, request: TTSRequest) -> Result<TTSResponse, String> {
-        let url = "https://api.edge-tts.microsoft.com/v1/synthesize";
+        // Use the correct Edge TTS synthesis endpoint
+        let url = "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1";
         
         let voice = request.voice.unwrap_or_else(|| "en-US-JennyNeural".to_string());
         let rate = request.rate.unwrap_or(0.0);
