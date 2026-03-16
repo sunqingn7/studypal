@@ -390,12 +390,10 @@ function AIView() {
             localContent += chunk
             setStreamingContent(localContent)
           },
-          (thinking: string) => {
-            console.log('[AIView] Thinking callback, thinking:', thinking.slice(0, 30))
-            localThinking += thinking
-            console.log('[AIView] localThinking now:', localThinking.slice(0, 50))
-            setStreamingThinking(localThinking)
-          }
+    (thinking: string) => {
+      localThinking += thinking
+      setStreamingThinking(localThinking)
+    }
         )
 
       // Parse tool calls from response
