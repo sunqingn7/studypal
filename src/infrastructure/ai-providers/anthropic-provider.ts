@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type { AIConfig, ChatMessage } from '../../domain/models/ai-context'
 import type { AIProvider } from './base-provider'
 
@@ -18,6 +19,12 @@ interface ChatRequestPayload {
   topP?: number
   extraHeaders?: Record<string, string>
   extraBody?: Record<string, unknown>
+}
+
+interface StreamChunkData {
+  content: string
+  thinking?: string
+  done: boolean
 }
 
 export class AnthropicProvider implements AIProvider {
@@ -73,40 +80,51 @@ export class AnthropicProvider implements AIProvider {
     config: AIConfig,
     onChunk: (chunk: string) => void | Promise<void>
   ): Promise<void> {
-    console.log('[anthropic-provider] streamChat() called')
+    console.log('[anthropic-provider] streamChat() called - using true streaming')
+
+    const payload: ChatRequestPayload = {
+      endpoint: config.endpoint,
+      model: config.model,
+      messages: messages.map((m) => ({
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: m.content,
+      })),
+      systemPrompt: config.systemPrompt,
+      apiKey: config.apiKey,
+      temperature: config.temperature,
+      maxTokens: config.maxTokens,
+      topP: config.topP,
+      extraHeaders: config.extraHeaders,
+      extraBody: config.extraBody,
+    }
+
+    // Set up event listener for streaming chunks
+    let unlisten: UnlistenFn | null = null
+    let fullContent = ''
 
     try {
-      // Tauri WebView doesn't support streaming fetch, use non-streaming and simulate
-      console.log('[anthropic-provider] Calling chat()...')
-      const response = await this.chat(messages, config)
-      console.log('[anthropic-provider] Got response from chat(), type:', typeof response)
-      console.log('[anthropic-provider] Response string:', response)
-
-      if (!response || typeof response !== 'string') {
-        console.error('[anthropic-provider] Invalid response:', response)
-        throw new Error('Invalid response from chat()')
-      }
-
-      console.log('[anthropic-provider] Starting to stream chunks...')
-
-      // Simulate streaming by chunking the response
-      const chunks = response.split(/(?=\s+)/)
-      console.log('[anthropic-provider] Split into', chunks.length, 'chunks')
-
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i]
-        if (chunk.trim()) {
-          console.log(`[anthropic-provider] Sending chunk ${i}: "${chunk.slice(0, 20)}..."`)
-          await onChunk(chunk)
-          await new Promise(r => setTimeout(r, 10))
+      // Listen for stream chunks from the backend
+      unlisten = await listen<StreamChunkData>('chat-stream-chunk', (event) => {
+        if (event.payload.done) {
+          console.log('[anthropic-provider] Stream complete, received', fullContent.length, 'chars')
+          return
         }
-      }
-      console.log('[anthropic-provider] Streaming complete')
+
+        if (event.payload.content) {
+          fullContent += event.payload.content
+          onChunk(event.payload.content)
+        }
+      })
+
+      // Start the streaming request
+      await invoke<void>('stream_chat_with_provider', { request: payload, provider: 'anthropic' })
     } catch (error: any) {
       console.error('[anthropic-provider] streamChat error:', error)
-      console.error('[anthropic-provider] error name:', error?.name)
-      console.error('[anthropic-provider] error message:', error?.message)
       throw error
+    } finally {
+      if (unlisten) {
+        unlisten()
+      }
     }
   }
 
@@ -116,36 +134,57 @@ export class AnthropicProvider implements AIProvider {
     onChunk: (chunk: string) => void | Promise<void>,
     onThinking: (thinking: string) => void | Promise<void>
   ): Promise<void> {
+    console.log('[anthropic-provider] streamChatWithThinking() called - using true streaming')
+
+    const payload: ChatRequestPayload = {
+      endpoint: config.endpoint,
+      model: config.model,
+      messages: messages.map((m) => ({
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: m.content,
+      })),
+      systemPrompt: config.systemPrompt,
+      apiKey: config.apiKey,
+      temperature: config.temperature,
+      maxTokens: config.maxTokens,
+      topP: config.topP,
+      extraHeaders: config.extraHeaders,
+      extraBody: config.extraBody,
+    }
+
+    // Set up event listener for streaming chunks
+    let unlisten: UnlistenFn | null = null
+    let fullContent = ''
+    let fullThinking = ''
+
     try {
-      const response = await this.chat(messages, config)
-      if (!response || typeof response !== 'string') {
-        throw new Error('Invalid response from chat()')
-      }
-      try {
-        const parsed = JSON.parse(response)
-        if (parsed.thinking) {
-          await onThinking(parsed.thinking)
-          await new Promise(r => setTimeout(r, 100))
+      // Listen for stream chunks from the backend
+      unlisten = await listen<StreamChunkData>('chat-stream-chunk', (event) => {
+        if (event.payload.done) {
+          console.log('[anthropic-provider] Stream complete, content:', fullContent.length, 'chars, thinking:', fullThinking.length, 'chars')
+          return
         }
-        if (parsed.content) {
-          for (const chunk of parsed.content.split(/(?=\s+)/)) {
-            if (chunk.trim()) {
-              await onChunk(chunk)
-              await new Promise(r => setTimeout(r, 10))
-            }
-          }
+
+        if (event.payload.thinking) {
+          fullThinking += event.payload.thinking
+          onThinking(fullThinking)
         }
-      } catch {
-        for (const chunk of response.split(/(?=\s+)/)) {
-          if (chunk.trim()) {
-            await onChunk(chunk)
-            await new Promise(r => setTimeout(r, 10))
-          }
+
+        if (event.payload.content) {
+          fullContent += event.payload.content
+          onChunk(event.payload.content)
         }
-      }
+      })
+
+      // Start the streaming request
+      await invoke<void>('stream_chat_with_provider', { request: payload, provider: 'anthropic' })
     } catch (error: any) {
       console.error('[anthropic-provider] streamChatWithThinking error:', error)
       throw error
+    } finally {
+      if (unlisten) {
+        unlisten()
+      }
     }
   }
 }

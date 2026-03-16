@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type { AIConfig, ChatMessage } from '../../domain/models/ai-context'
 import type { AIProvider } from './base-provider'
 
@@ -16,6 +17,12 @@ interface ChatRequestPayload {
   topP?: number
   extraHeaders?: Record<string, string>
   extraBody?: Record<string, unknown>
+}
+
+interface StreamChunkData {
+  content: string
+  thinking?: string
+  done: boolean
 }
 
 export class OllamaProvider implements AIProvider {
@@ -69,40 +76,49 @@ export class OllamaProvider implements AIProvider {
     config: AIConfig,
     onChunk: (chunk: string) => void | Promise<void>
   ): Promise<void> {
-    console.log('[ollama-provider] streamChat() called')
+    console.log('[ollama-provider] streamChat() called - using true streaming')
+
+    const payload: ChatRequestPayload = {
+      endpoint: config.endpoint,
+      model: config.model,
+      messages: messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      })),
+      temperature: config.temperature,
+      maxTokens: config.maxTokens,
+      topP: config.topP,
+      extraHeaders: config.extraHeaders,
+      extraBody: config.extraBody,
+    }
+
+    // Set up event listener for streaming chunks
+    let unlisten: UnlistenFn | null = null
+    let fullContent = ''
 
     try {
-      // Tauri WebView doesn't support streaming fetch, use non-streaming and simulate
-      console.log('[ollama-provider] Calling chat()...')
-      const response = await this.chat(messages, config)
-      console.log('[ollama-provider] Got response from chat(), type:', typeof response)
-      console.log('[ollama-provider] Response string:', response)
-
-      if (!response || typeof response !== 'string') {
-        console.error('[ollama-provider] Invalid response:', response)
-        throw new Error('Invalid response from chat()')
-      }
-
-      console.log('[ollama-provider] Starting to stream chunks...')
-
-      // Simulate streaming by chunking the response
-      const chunks = response.split(/(?=\s+)/)
-      console.log('[ollama-provider] Split into', chunks.length, 'chunks')
-
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i]
-        if (chunk.trim()) {
-          console.log(`[ollama-provider] Sending chunk ${i}: "${chunk.slice(0, 20)}..."`)
-          await onChunk(chunk)
-          await new Promise(r => setTimeout(r, 10))
+      // Listen for stream chunks from the backend
+      unlisten = await listen<StreamChunkData>('chat-stream-chunk', (event) => {
+        if (event.payload.done) {
+          console.log('[ollama-provider] Stream complete, received', fullContent.length, 'chars')
+          return
         }
-      }
-      console.log('[ollama-provider] Streaming complete')
+
+        if (event.payload.content) {
+          fullContent += event.payload.content
+          onChunk(event.payload.content)
+        }
+      })
+
+      // Start the streaming request
+      await invoke<void>('stream_chat_with_provider', { request: payload, provider: 'ollama' })
     } catch (error: any) {
       console.error('[ollama-provider] streamChat error:', error)
-      console.error('[ollama-provider] error name:', error?.name)
-      console.error('[ollama-provider] error message:', error?.message)
       throw error
+    } finally {
+      if (unlisten) {
+        unlisten()
+      }
     }
   }
 
@@ -112,36 +128,55 @@ export class OllamaProvider implements AIProvider {
     onChunk: (chunk: string) => void | Promise<void>,
     onThinking: (thinking: string) => void | Promise<void>
   ): Promise<void> {
+    console.log('[ollama-provider] streamChatWithThinking() called - using true streaming')
+
+    const payload: ChatRequestPayload = {
+      endpoint: config.endpoint,
+      model: config.model,
+      messages: messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      })),
+      temperature: config.temperature,
+      maxTokens: config.maxTokens,
+      topP: config.topP,
+      extraHeaders: config.extraHeaders,
+      extraBody: config.extraBody,
+    }
+
+    // Set up event listener for streaming chunks
+    let unlisten: UnlistenFn | null = null
+    let fullContent = ''
+    let fullThinking = ''
+
     try {
-      const response = await this.chat(messages, config)
-      if (!response || typeof response !== 'string') {
-        throw new Error('Invalid response from chat()')
-      }
-      try {
-        const parsed = JSON.parse(response)
-        if (parsed.thinking) {
-          await onThinking(parsed.thinking)
-          await new Promise(r => setTimeout(r, 100))
+      // Listen for stream chunks from the backend
+      unlisten = await listen<StreamChunkData>('chat-stream-chunk', (event) => {
+        if (event.payload.done) {
+          console.log('[ollama-provider] Stream complete, content:', fullContent.length, 'chars, thinking:', fullThinking.length, 'chars')
+          return
         }
-        if (parsed.content) {
-          for (const chunk of parsed.content.split(/(?=\s+)/)) {
-            if (chunk.trim()) {
-              await onChunk(chunk)
-              await new Promise(r => setTimeout(r, 10))
-            }
-          }
+
+        if (event.payload.thinking) {
+          fullThinking += event.payload.thinking
+          onThinking(fullThinking)
         }
-      } catch {
-        for (const chunk of response.split(/(?=\s+)/)) {
-          if (chunk.trim()) {
-            await onChunk(chunk)
-            await new Promise(r => setTimeout(r, 10))
-          }
+
+        if (event.payload.content) {
+          fullContent += event.payload.content
+          onChunk(event.payload.content)
         }
-      }
+      })
+
+      // Start the streaming request
+      await invoke<void>('stream_chat_with_provider', { request: payload, provider: 'ollama' })
     } catch (error: any) {
       console.error('[ollama-provider] streamChatWithThinking error:', error)
       throw error
+    } finally {
+      if (unlisten) {
+        unlisten()
+      }
     }
   }
 }
