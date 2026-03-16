@@ -2627,3 +2627,345 @@ The implementation is phased over 5 weeks, starting with core infrastructure and
 1. Review this plan and provide feedback
 2. Confirm architecture decisions
 3. Begin Phase 1 implementation
+
+---
+
+## Appendix A: Web Search Plugin for MCP and Topic-Based Workflow
+
+### Overview
+
+This appendix defines the enhanced web search MCP plugin implementation that supports multiple search providers and enables a topic-based workflow starting from AI chat.
+
+### Goals
+
+1. **Multi-Provider Search**: Support Brave, Tavily, DuckDuckGo, Serper, and custom search APIs
+2. **Configurable via Global Settings**: Search provider and API keys managed in unified settings UI
+3. **Topic-Based Workflow**: Start with AI chat → discover papers → download/open → switch to file view
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  AI Chat View (Frontend)                                 │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ User: "I want to study ResNet"                     │  │
+│  │ AI: Overview + [Top Papers] with clickable links   │  │
+│  │     [📄 Deep Residual Learning.pdf]                │  │
+│  │     [📄 ResNet V2.pdf]                             │  │
+│  └──────────────────────────────────────────────────┘  │
+│                      │                                    │
+│                      ▼                                    │
+│  Click Paper Link ──► Download & Open ──► File View     │
+└─────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────┐
+│  Rust Backend (Tauri)                                    │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ Web Search Command                               │  │
+│  │ search_web(query, provider, api_key)             │  │
+│  │ Support: brave, tavily, duckduckgo, serper       │  │
+│  └──────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ Paper Download Command                           │  │
+│  │ download_and_open_paper(url, save_location)      │  │
+│  │ Auto-detect: .pdf, arxiv.org, paperswithcode      │  │
+│  └──────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Implementation Phases
+
+#### Phase 1: Web Search Configuration
+
+**1.1 Extend Settings Store** (`src/application/store/settings-store.ts`)
+
+```typescript
+export interface GlobalSettings {
+  language: string;
+  theme: 'light' | 'dark' | 'auto';
+  autoSave: boolean;
+  webSearch: WebSearchConfig;  // NEW
+}
+
+export interface WebSearchConfig {
+  provider: 'brave' | 'tavily' | 'duckduckgo' | 'serper' | 'custom';
+  apiKey?: string;
+  maxResults: number;
+  defaultQueryType: 'general' | 'academic' | 'news';
+  academicFilters?: {
+    yearFrom?: number;
+    yearTo?: number;
+    pdfOnly: boolean;
+  };
+}
+
+const DEFAULT_WEB_SEARCH_CONFIG: WebSearchConfig = {
+  provider: 'duckduckgo',
+  maxResults: 10,
+  defaultQueryType: 'academic',
+  academicFilters: {
+    pdfOnly: true
+  }
+};
+```
+
+**1.2 Create Global Settings View** (`src/presentation/components/views/settings-view/`)
+
+New components:
+- `GlobalSettingsView.tsx`: Main settings page
+- `WebSearchSettings.tsx`: Web search configuration panel
+- `ConfigForm.tsx`: Dynamic form based on configSchema
+
+Features:
+- Provider dropdown (Brave, Tavily, DuckDuckGo, Serper, Custom)
+- API key input with visibility toggle
+- Max results slider (1-50)
+- Query type selector
+- Academic filters (PDF-only toggle, year range)
+- Test connection button
+
+**1.3 Update Rust Backend** (`src-tauri/src/lib.rs`)
+
+```rust
+#[tauri::command]
+async fn search_web(
+    query: String,
+    provider: String,
+    api_key: Option<String>,
+    max_results: Option<u32>,
+    query_type: Option<String>,
+) -> Result<String, String> {
+    match provider.as_str() {
+        "brave" => search_brave(&query, api_key, max_results).await,
+        "tavily" => search_tavily(&query, api_key, max_results).await,
+        "serper" => search_serper(&query, api_key, max_results).await,
+        "duckduckgo" | _ => search_duckduckgo(&query, max_results).await,
+    }
+}
+
+async fn search_brave(
+    query: &str,
+    api_key: Option<String>,
+    max_results: Option<u32>,
+) -> Result<String, String> {
+    // Brave Search API implementation
+    // Endpoint: https://api.search.brave.com/res/v1/web/search
+    // Headers: X-Subscription-Token: {api_key}
+}
+
+async fn search_tavily(
+    query: &str,
+    api_key: Option<String>,
+    max_results: Option<u32>,
+) -> Result<String, String> {
+    // Tavily API implementation
+    // Academic search support
+}
+```
+
+**1.4 Update Web Search MCP Plugin** (`src/plugins/mcp-tools/web-search-mcp-plugin.ts`)
+
+Enhance tools:
+- `web_search`: Add academic mode, PDF filtering
+- `search_papers`: New tool specifically for academic papers
+- `get_paper_metadata`: Extract metadata from paper URL
+
+```typescript
+getTools(): MCPTool[] {
+  return [
+    {
+      name: 'web_search',
+      description: 'Search the web for information, papers, or resources',
+      parameters: [
+        { name: 'query', type: 'string', required: true },
+        { name: 'search_type', type: 'string', enum: ['general', 'academic', 'news'], default: 'general' },
+        { name: 'pdf_only', type: 'boolean', default: false },
+        { name: 'max_results', type: 'number', default: 10 }
+      ]
+    },
+    {
+      name: 'search_papers',
+      description: 'Search for academic papers and research publications',
+      parameters: [
+        { name: 'topic', type: 'string', required: true },
+        { name: 'year_from', type: 'number', required: false },
+        { name: 'year_to', type: 'number', required: false },
+        { name: 'max_results', type: 'number', default: 5 }
+      ]
+    }
+  ];
+}
+```
+
+#### Phase 2: Paper Download Workflow
+
+**2.1 Smart Link Detection in Chat**
+
+Update AI message rendering (`src/presentation/components/views/ai-view/`):
+
+```typescript
+// Detect paper links and render special UI
+const PAPER_PATTERNS = [
+  /arxiv\.org\/abs\/\d+/,
+  /arxiv\.org\/pdf\/\d+/,
+  /paperswithcode\.com\/paper\//,
+  /openreview\.net\/forum\?id=/,
+  /\.pdf$/i,
+  /ieee\.org\/.*\/document\//,
+  /acm\.org\/doi\//
+];
+
+function PaperLink({ url, title }: PaperLinkProps) {
+  return (
+    <div className="paper-link">
+      <span className="paper-icon">📄</span>
+      <span className="paper-title">{title}</span>
+      <button 
+        className="open-paper-btn"
+        onClick={() => downloadAndOpenPaper(url)}
+      >
+        Open
+      </button>
+    </div>
+  );
+}
+```
+
+**2.2 Paper Download Command (Rust)**
+
+```rust
+#[tauri::command]
+async fn download_and_open_paper(
+    url: String,
+    save_location: Option<String>,
+) -> Result<DownloadResult, String> {
+    // 1. Download the paper
+    // 2. Save to ~/StudyMaterials/Papers/ or temp
+    // 3. Return metadata (path, title, authors if available)
+    // 4. Frontend opens file and switches to file view
+}
+
+#[derive(Serialize)]
+struct DownloadResult {
+    path: String,
+    title: Option<String>,
+    authors: Option<Vec<String>>,
+    year: Option<u32>,
+    file_size: u64,
+}
+```
+
+**2.3 Workflow Integration**
+
+```typescript
+// In AIView.tsx
+async function downloadAndOpenPaper(url: string) {
+  try {
+    const result = await invoke<DownloadResult>('download_and_open_paper', { url });
+    
+    // Open the downloaded file
+    await openFile(result.path);
+    
+    // Switch to file view
+    setCurrentFile({ path: result.path, name: result.title || 'Paper' });
+    
+    // Optional: Add note with paper metadata
+    if (result.title) {
+      addNote(`📄 Paper: ${result.title}`, 'paper', result.authors);
+    }
+  } catch (error) {
+    showError('Failed to download paper: ' + error);
+  }
+}
+```
+
+**2.4 Chat AI Integration**
+
+Update AI prompt to encourage paper links:
+
+```
+When the user asks to study a topic like "ResNet", you should:
+1. Provide a brief overview
+2. List the top 3-5 most important papers on this topic
+3. For each paper, provide:
+   - Title
+   - Authors
+   - Year
+   - A clickable link (if available from search results)
+   - Brief summary of key contributions
+
+Format paper references as:
+[📄 Paper Title](URL) by Authors, Year
+Brief description of the paper.
+```
+
+### User Workflow Example
+
+1. **User**: Types "I want to study ResNet" in AI chat
+2. **AI**: Responds with overview and lists papers:
+   - 📄 Deep Residual Learning for Image Recognition (ResNet)
+     by Kaiming He et al., 2016
+     [View Paper](https://arxiv.org/pdf/1512.03385.pdf)
+3. **User**: Clicks "View Paper" link
+4. **System**: 
+   - Downloads PDF to `~/StudyMaterials/Papers/`
+   - Opens PDF in file view
+   - Creates note with paper metadata
+   - Switches focus to file view
+5. **User**: Now in file-centric workflow, can take notes, chat about specific pages
+
+### Configuration Options
+
+| Setting | Options | Default |
+|---------|---------|---------|
+| Provider | Brave, Tavily, DuckDuckGo, Serper, Custom | DuckDuckGo |
+| API Key | Encrypted string | None |
+| Max Results | 1-50 | 10 |
+| Default Query Type | general, academic, news | academic |
+| PDF Only Filter | boolean | true |
+| Auto-Download Papers | boolean | false |
+| Papers Save Location | Path string | ~/StudyMaterials/Papers/ |
+
+### Security Considerations
+
+1. **API Keys**: Store encrypted or use system keychain (Tauri secure storage)
+2. **Downloads**: Validate URLs, scan for malware, limit file size
+3. **Rate Limiting**: Implement per-provider rate limits
+4. **Privacy**: Don't log search queries containing sensitive info
+
+### Files to Modify/Create
+
+**Frontend:**
+- `src/application/store/settings-store.ts` - Add webSearch config
+- `src/presentation/components/views/settings-view/GlobalSettingsView.tsx` - NEW
+- `src/presentation/components/views/settings-view/WebSearchSettings.tsx` - NEW
+- `src/presentation/components/views/ai-view/components/PaperLink.tsx` - NEW
+- `src/plugins/mcp-tools/web-search-mcp-plugin.ts` - Update for multi-provider
+
+**Backend:**
+- `src-tauri/src/lib.rs` - Add search commands
+- `src-tauri/src/web_search/` - NEW module
+  - `mod.rs` - Module exports
+  - `brave.rs` - Brave Search API
+  - `tavily.rs` - Tavily API
+  - `serper.rs` - Serper API
+  - `duckduckgo.rs` - DuckDuckGo API
+  - `paper_downloader.rs` - Paper download logic
+
+### Dependencies
+
+**Rust:**
+```toml
+[dependencies]
+reqwest = { version = "0.12", features = ["json", "stream"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+urlencoding = "2.1"
+```
+
+**TypeScript:**
+- Existing: `@tauri-apps/api/core`, `zustand`
+- No new dependencies needed
+
+---

@@ -148,23 +148,81 @@ async fn fetch_web_content(url: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn search_web(query: String) -> Result<String, String> {
+async fn search_web(query: String, api_key: Option<String>) -> Result<String, String> {
+    println!("[RUST] search_web called with query: {}", query);
+    
     let client = reqwest::Client::new();
-    let search_url = format!(
-        "https://ddg-api.vercel.app/search?q={}&max_results=5",
-        urlencoding::encode(&query)
-    );
-
-    let response = client
-        .get(&search_url)
-        .header("User-Agent", "Mozilla/5.0")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let body = response.text().await.map_err(|e| e.to_string())?;
-
-    Ok(body)
+    
+    // Use Brave Search API if key provided, otherwise fallback to DuckDuckGo
+    if let Some(key) = api_key {
+        // Brave Search API
+        let search_url = format!(
+            "https://api.search.brave.com/res/v1/web/search?q={}&count=10",
+            urlencoding::encode(&query)
+        );
+        
+        println!("[RUST] Using Brave Search API");
+        let response = client
+            .get(&search_url)
+            .header("X-Subscription-Token", key)
+            .header("Accept", "application/json")
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        
+        let status = response.status();
+        println!("[RUST] Brave API status: {}", status);
+        
+        if !status.is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            println!("[RUST] Brave API error: {}", error_text);
+            return Err(format!("Brave API error: {}", error_text));
+        }
+        
+        let body = response.text().await.map_err(|e| e.to_string())?;
+        
+        // Parse Brave response and convert to our format
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
+            let results: Vec<serde_json::Value> = json
+                .get("web")
+                .and_then(|w| w.get("results"))
+                .and_then(|r| r.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .map(|item| {
+                            serde_json::json!({
+                                "title": item.get("title").and_then(|t| t.as_str()).unwrap_or(""),
+                                "url": item.get("url").and_then(|u| u.as_str()).unwrap_or(""),
+                                "snippet": item.get("description").and_then(|d| d.as_str()).unwrap_or(""),
+                                "publishedDate": item.get("age").and_then(|a| a.as_str()).unwrap_or("")
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            
+            return Ok(serde_json::to_string(&results).unwrap_or_default());
+        }
+        
+        Ok(body)
+    } else {
+        // Fallback to DuckDuckGo
+        let search_url = format!(
+            "https://ddg-api.vercel.app/search?q={}&max_results=5",
+            urlencoding::encode(&query)
+        );
+        
+        println!("[RUST] Using DuckDuckGo fallback");
+        let response = client
+            .get(&search_url)
+            .header("User-Agent", "Mozilla/5.0")
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        
+        let body = response.text().await.map_err(|e| e.to_string())?;
+        Ok(body)
+    }
 }
 
 #[tauri::command]
