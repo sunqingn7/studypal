@@ -786,11 +786,11 @@ activeMessages.map((msg) => (
                   >
                     {expandedThinking.has(msg.id) ? '▼' : '▶'} Thinking
                   </button>
-                  {expandedThinking.has(msg.id) && (
-                    <div className="thinking-content">
-                      {msg.thinking}
-                    </div>
-                  )}
+      {expandedThinking.has(msg.id) && (
+        <div className="thinking-content">
+          {msg.thinking?.replace(/\{"tool_call":\s*\{[^}]+\}\}/g, '[Tool execution hidden]')}
+        </div>
+      )}
                 </div>
               )}
               <div className="message-content" style={{ fontSize: `${fontSize}px` }}>
