@@ -398,26 +398,29 @@ function AIView() {
           }
         )
 
-        // Parse tool calls from response
-        const toolCalls = parseToolCalls(localContent)
-        
-        if (toolCalls.length > 0) {
-          console.log('[AIView] Found tool calls:', toolCalls)
-          
-          // Execute tool calls and get results
-          for (const toolCall of toolCalls) {
-            const result = await executeTool(toolCall.name, toolCall.arguments)
-            
-            // Add tool result to display
-            const toolResultText = `\n\n[Used tool: ${toolCall.name}]\n${result.success ? JSON.stringify(result.data) : result.error}`
-            localContent += toolResultText
-            setStreamingContent(localContent)
-          }
-          
-          // Get final response
-          localContent = extractFinalResponse(localContent, toolCalls).content
+      // Parse tool calls from response
+      const toolCalls = parseToolCalls(localContent)
+
+      if (toolCalls.length > 0) {
+        console.log('[AIView] Found tool calls:', toolCalls)
+
+        // Clear streaming content before executing tools (don't show raw JSON)
+        setStreamingContent('Processing tools...')
+
+        // Execute tool calls and get results
+        for (const toolCall of toolCalls) {
+          const result = await executeTool(toolCall.name, toolCall.arguments)
+
+          // Add tool result to display
+          const toolResultText = `\n\n[Used tool: ${toolCall.name}]\n${result.success ? JSON.stringify(result.data) : result.error}`
+          localContent += toolResultText
+          setStreamingContent(localContent)
         }
-      } else {
+
+        // Get final response
+        localContent = extractFinalResponse(localContent, toolCalls).content
+      }
+    } else {
         // Use prompt-based tool calling (fallback for llama.cpp, vLLM, etc.)
         console.log('[AIView] Using prompt-based tool calling')
         
@@ -434,11 +437,14 @@ function AIView() {
         // Parse tool calls from response
         const toolCalls = parseToolCalls(localContent)
         
-        if (toolCalls.length > 0) {
-          console.log('[AIView] Found tool calls:', toolCalls)
-          
-          // Execute tool calls and get results
-          for (const toolCall of toolCalls) {
+      if (toolCalls.length > 0) {
+        console.log('[AIView] Found tool calls:', toolCalls)
+
+        // Clear streaming content before executing tools (don't show raw JSON)
+        setStreamingContent('Processing tools...')
+
+        // Execute tool calls and get results
+        for (const toolCall of toolCalls) {
             const result = await executeTool(toolCall.name, toolCall.arguments)
             
             // Add tool result to display
