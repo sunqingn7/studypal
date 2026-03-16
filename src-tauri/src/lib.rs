@@ -326,7 +326,6 @@ async fn stream_chat_with_provider(
     request: ProviderChatRequest,
     provider: String,
 ) -> Result<(), String> {
-    println!("[RUST] stream_chat_with_provider called for provider: {}", provider);
     log::info!("Stream chat request to provider: {}", provider);
     
     let client = reqwest::Client::builder()
@@ -643,7 +642,6 @@ async fn stream_chat_with_openai_compatible(
     client: &reqwest::Client,
     request: &ProviderChatRequest,
 ) -> Result<(), String> {
-    println!("[RUST] Using OpenAI-compatible streaming API");
 
     let url = if request.endpoint.ends_with("/v1/chat/completions") {
         request.endpoint.clone()
@@ -653,7 +651,6 @@ async fn stream_chat_with_openai_compatible(
         format!("{}/v1/chat/completions", request.endpoint)
     };
 
-    println!("[RUST] Streaming URL: {}", url);
 
     let mut payload = serde_json::Map::new();
     payload.insert("model".to_string(), serde_json::json!(request.model));
@@ -684,7 +681,6 @@ async fn stream_chat_with_openai_compatible(
 
     if let Some(api_key) = &request.api_key {
         request_builder = request_builder.header("Authorization", format!("Bearer {}", api_key));
-        println!("[RUST] Using provided API key for streaming");
     }
 
     if let Some(headers) = &request.extra_headers {
@@ -695,10 +691,8 @@ async fn stream_chat_with_openai_compatible(
         }
     }
 
-    println!("[RUST] Sending streaming request...");
     let response = match request_builder.json(&payload).send().await {
         Ok(resp) => {
-            println!("[RUST] Got streaming response with status: {}", resp.status());
             resp
         }
         Err(e) => {
@@ -714,7 +708,6 @@ async fn stream_chat_with_openai_compatible(
         return Err(format!("HTTP error: {} - {}", status, error_text));
     }
 
-    println!("[RUST] Starting to stream chunks...");
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
 
@@ -732,13 +725,11 @@ async fn stream_chat_with_openai_compatible(
                     if line.starts_with("data: ") {
                         let data = &line[6..];
                         if data == "[DONE]" {
-                            println!("[RUST] Stream complete");
                             return Ok(());
                         }
                         
             // Parse the SSE data
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-              println!("[RUST] SSE data parsed: {}", json);
               if let Some(choices) = json.get("choices") {
                 if let Some(first) = choices.as_array().and_then(|c| c.first()) {
                   let content = first.get("delta")
@@ -756,11 +747,8 @@ async fn stream_chat_with_openai_compatible(
                         .and_then(|c| c.as_str())
                     });
                   
-                  // Debug: log what we got
+                  // Emit chunk to frontend
                   if !content.is_empty() || reasoning.is_some() {
-                    println!("[RUST] Emitting chunk: content.len={}, reasoning={}", 
-                      content.len(), 
-                      reasoning.map(|s| s.len()).unwrap_or(0));
                     let _ = app_handle.emit("chat-stream-chunk", StreamChunk {
                       content: content.to_string(),
                       thinking: reasoning.map(|s| s.to_string()),
@@ -774,13 +762,11 @@ async fn stream_chat_with_openai_compatible(
                 }
             }
             Err(e) => {
-                println!("[RUST] Stream error: {}", e);
                 return Err(format!("Stream error: {}", e));
             }
         }
     }
 
-    println!("[RUST] Streaming complete");
     Ok(())
 }
 
@@ -789,10 +775,8 @@ async fn stream_chat_with_anthropic(
     client: &reqwest::Client,
     request: &ProviderChatRequest,
 ) -> Result<(), String> {
-    println!("[RUST] Using Anthropic streaming API");
 
     let url = format!("{}/messages", request.endpoint);
-    println!("[RUST] Streaming URL: {}", url);
 
     // Convert messages to Anthropic format
     let mut system_message: Option<String> = None;
@@ -840,7 +824,6 @@ async fn stream_chat_with_anthropic(
 
     if let Some(api_key) = &request.api_key {
         request_builder = request_builder.header("x-api-key", api_key);
-        println!("[RUST] Using provided API key for Anthropic streaming");
     }
 
     if let Some(headers) = &request.extra_headers {
@@ -853,11 +836,9 @@ async fn stream_chat_with_anthropic(
 
     let response = match request_builder.json(&payload).send().await {
         Ok(resp) => {
-            println!("[RUST] Got Anthropic streaming response: {}", resp.status());
             resp
         }
         Err(e) => {
-            println!("[RUST] Anthropic streaming request failed: {}", e);
             return Err(format!("Request failed: {}", e));
         }
     };
@@ -869,7 +850,6 @@ async fn stream_chat_with_anthropic(
         return Err(format!("HTTP error: {} - {}", status, error_text));
     }
 
-    println!("[RUST] Starting Anthropic stream...");
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
 
@@ -903,7 +883,6 @@ async fn stream_chat_with_anthropic(
                                     }
                                 }
                                 "message_stop" => {
-                                    println!("[RUST] Anthropic stream complete");
                                     return Ok(());
                                 }
                                 _ => {}
@@ -913,13 +892,11 @@ async fn stream_chat_with_anthropic(
                 }
             }
             Err(e) => {
-                println!("[RUST] Anthropic stream error: {}", e);
                 return Err(format!("Stream error: {}", e));
             }
         }
     }
 
-    println!("[RUST] Anthropic streaming complete");
     Ok(())
 }
 
