@@ -5,6 +5,9 @@ use std::process::Command;
 
 mod session;
 mod database;
+mod tts;
+
+use tts::{EdgeTTS, QwenTTS, TTSRequest, TTSResponse};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ChatMessage {
@@ -1440,6 +1443,38 @@ async fn fetch_models(request: FetchModelsRequest) -> Result<Vec<ModelInfo>, Str
     Ok(models)
 }
 
+#[tauri::command]
+async fn tts_edge_voices() -> Result<serde_json::Value, String> {
+    let tts = EdgeTTS::new();
+    let voices = tts.get_voices().await?;
+    serde_json::to_value(voices).map_err(|e| format!("Failed to serialize voices: {}", e))
+}
+
+#[tauri::command]
+async fn tts_edge_synth(request: TTSRequest) -> Result<TTSResponse, String> {
+    let tts = EdgeTTS::new();
+    tts.synthesize(request).await
+}
+
+#[tauri::command]
+async fn tts_qwen_health(server_url: Option<String>) -> Result<bool, String> {
+    let tts = QwenTTS::new(server_url);
+    tts.health_check().await
+}
+
+#[tauri::command]
+async fn tts_qwen_voices(server_url: Option<String>) -> Result<serde_json::Value, String> {
+    let tts = QwenTTS::new(server_url);
+    let voices = tts.get_voices().await?;
+    serde_json::to_value(voices).map_err(|e| format!("Failed to serialize voices: {}", e))
+}
+
+#[tauri::command]
+async fn tts_qwen_synth(request: TTSRequest, server_url: Option<String>) -> Result<TTSResponse, String> {
+    let tts = QwenTTS::new(server_url);
+    tts.synthesize(request).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -1466,6 +1501,11 @@ pub fn run() {
             get_file_info,
             open_file_from_browser,
             read_file,
+            tts_edge_voices,
+            tts_edge_synth,
+            tts_qwen_health,
+            tts_qwen_voices,
+            tts_qwen_synth,
         session::load_session,
         session::save_session,
         session::save_chats,

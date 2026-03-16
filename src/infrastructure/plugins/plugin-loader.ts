@@ -7,9 +7,17 @@ import { webSearchMCPServerPlugin } from '../../plugins/mcp-tools/web-search-mcp
 import { markdownViewerPlugin } from '../../plugins/markdown-viewer';
 import { htmlViewerPlugin } from '../../plugins/html-viewer';
 import { latexViewerPlugin } from '../../plugins/latex-viewer';
+import { EdgeTTSBackendPlugin } from '../../plugins/tts-backends/edge-tts-backend';
+import { QwenTTSBackendPlugin } from '../../plugins/tts-backends/qwen-tts-backend';
+import { TTSMCPServerPlugin } from '../../plugins/mcp-tools/tts-mcp-plugin';
 
 export async function loadAllPlugins(): Promise<void> {
   console.log('[PluginLoader] Starting plugin loading...');
+
+  // Initialize TTS backends and register with manager
+  const edgeTTSPlugin = new EdgeTTSBackendPlugin();
+  const qwenTTSPlugin = new QwenTTSBackendPlugin();
+  const ttsMCPPlugin = new TTSMCPServerPlugin();
 
   // Load built-in plugins
   const plugins = [
@@ -20,6 +28,9 @@ export async function loadAllPlugins(): Promise<void> {
     { plugin: markdownViewerPlugin, enabled: true },
     { plugin: htmlViewerPlugin, enabled: true },
     { plugin: latexViewerPlugin, enabled: true },
+    { plugin: edgeTTSPlugin, enabled: true },
+    { plugin: qwenTTSPlugin, enabled: true },
+    { plugin: ttsMCPPlugin, enabled: true },
   ];
   
   for (const { plugin, enabled } of plugins) {
