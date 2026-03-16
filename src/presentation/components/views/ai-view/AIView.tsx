@@ -399,8 +399,12 @@ function AIView() {
           }
         },
         (thinking: string) => {
-          localThinking += thinking
-          setStreamingThinking(localThinking)
+          // Filter out JSON tool calls from thinking
+          const filteredThinking = thinking.replace(/\{"tool_call":\s*\{[^}]+\}\}/g, '')
+          if (filteredThinking) {
+            localThinking += filteredThinking
+            setStreamingThinking(localThinking)
+          }
         }
       )
 
