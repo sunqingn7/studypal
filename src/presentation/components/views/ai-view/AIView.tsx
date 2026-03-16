@@ -369,32 +369,40 @@ function AIView() {
         // Use native function calling (for OpenAI, Anthropic, etc.)
         console.log('[AIView] Using native function calling')
         
-        // For now, we'll use the standard streamChat and parse for tool calls
-        // Native function calling will be fully implemented in later phases
-        await provider.streamChat(
-          messagesWithTools,
-          config,
-          (chunk: string) => {
-            localContent += chunk
-            setStreamingContent(localContent)
-          }
-        )
-      } else if (supportsThinking) {
+    // For now, we'll use the standard streamChat and parse for tool calls
+    // Native function calling will be fully implemented in later phases
+    await provider.streamChat(
+      messagesWithTools,
+      config,
+      (chunk: string) => {
+        // Filter out JSON tool calls from display
+        const filteredChunk = chunk.replace(/\{"tool_call":\s*\{[^}]+\}\}/g, '')
+        if (filteredChunk) {
+          localContent += filteredChunk
+          setStreamingContent(localContent)
+        }
+      }
+    )
+  } else if (supportsThinking) {
         // Use streamChatWithThinking for models that return thinking
         console.log('[AIView] Using streamChatWithThinking')
         
-        await provider.streamChatWithThinking!(
-          messagesWithTools,
-          config,
-          (chunk: string) => {
-            localContent += chunk
+      await provider.streamChatWithThinking!(
+        messagesWithTools,
+        config,
+        (chunk: string) => {
+          // Filter out JSON tool calls from display
+          const filteredChunk = chunk.replace(/\{"tool_call":\s*\{[^}]+\}\}/g, '')
+          if (filteredChunk) {
+            localContent += filteredChunk
             setStreamingContent(localContent)
-          },
-    (thinking: string) => {
-      localThinking += thinking
-      setStreamingThinking(localThinking)
-    }
-        )
+          }
+        },
+        (thinking: string) => {
+          localThinking += thinking
+          setStreamingThinking(localThinking)
+        }
+      )
 
       // Parse tool calls from response
       const toolCalls = parseToolCalls(localContent)
@@ -422,15 +430,19 @@ function AIView() {
         // Use prompt-based tool calling (fallback for llama.cpp, vLLM, etc.)
         console.log('[AIView] Using prompt-based tool calling')
         
-        // First call: get response with potential tool calls
-        await provider.streamChat(
-          messagesWithTools,
-          config,
-          (chunk: string) => {
-            localContent += chunk
+      // First call: get response with potential tool calls
+      await provider.streamChat(
+        messagesWithTools,
+        config,
+        (chunk: string) => {
+          // Filter out JSON tool calls from display
+          const filteredChunk = chunk.replace(/\{"tool_call":\s*\{[^}]+\}\}/g, '')
+          if (filteredChunk) {
+            localContent += filteredChunk
             setStreamingContent(localContent)
           }
-        )
+        }
+      )
 
         // Parse tool calls from response
         const toolCalls = parseToolCalls(localContent)
