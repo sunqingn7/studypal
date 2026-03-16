@@ -64,13 +64,24 @@ export function parseToolCalls(response: string): ToolCall[] {
   return toolCalls;
 }
 
-export function extractFinalResponse(response: string, toolCalls: ToolCall[]): string {
-  if (toolCalls.length === 0) {
-    return response;
+export function extractFinalResponse(response: string, _toolCalls: ToolCall[]): string {
+  let finalResponse = response.trim();
+  
+  // First, try to parse as JSON with content/thinking structure (model sometimes outputs this)
+  try {
+    const parsed = JSON.parse(finalResponse);
+    if (parsed.content && typeof parsed.content === 'string') {
+      finalResponse = parsed.content;
+      if (parsed.thinking && typeof parsed.thinking === 'string') {
+        console.log('[ToolCalling] Extracted thinking:', parsed.thinking.slice(0, 50));
+      }
+      return finalResponse;
+    }
+  } catch {
+    // Not JSON, continue with normal processing
   }
   
   // Remove tool call JSON from the response
-  let finalResponse = response;
   const toolCallRegex = /\{"tool_call":\s*\{[^}]+\}\}/g;
   finalResponse = finalResponse.replace(toolCallRegex, '').trim();
   
