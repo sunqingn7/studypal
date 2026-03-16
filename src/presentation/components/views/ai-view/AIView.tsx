@@ -14,9 +14,10 @@ import { useTopicStore } from '../../../../application/store/topic-store'
 import { getProvider, AVAILABLE_PROVIDERS } from '../../../../infrastructure/ai-providers/provider-factory'
 import { fetchAvailableModels, ModelInfo, getModelMaxTokens } from '../../../../infrastructure/ai-providers/model-detector'
 import { getCurrentPageText, getAllPagesText } from '../../../../infrastructure/file-handlers/pdf-utils'
-import { searchWeb, fetchWebContent } from '../../../../infrastructure/web-service'
 import { ChatMessage, AIProviderType } from '../../../../domain/models/ai-context'
 import { updateAIConfig, updateProviderConfigs } from '../../../../application/services/session-manager'
+import { getAllMCPTools, executeMCPTool } from '../../../../infrastructure/ai-providers/mcp-utils'
+import { buildToolPrompt, parseToolCalls, extractFinalResponse } from '../../../../infrastructure/ai-providers/tool-calling'
 import './AIView.css'
 
 const FONT_SIZES = [12, 14, 16, 18, 20, 22, 24, 28, 32]
@@ -288,33 +289,15 @@ function AIView() {
     return context
   }, [currentFile, activeTopicId, extractPdfText, extractNoteText])
 
-  const handleWebSearch = async (query: string): Promise<string> => {
-    try {
-      const results = await searchWeb(query)
-      if (results.length === 0) {
-        return 'No search results found.'
-      }
-
-      const formatted = results.map((r, i) =>
-        `${i + 1}. ${r.title}\n ${r.url}\n ${r.snippet}`
-      ).join('\n\n')
-
-      return `[Web Search Results]\n${formatted}`
-    } catch (error) {
-      return `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-    }
+  // Tool calling executor for MCP tools
+  const executeTool = async (toolName: string, params: Record<string, unknown>) => {
+    console.log(`[AIView] Executing tool: ${toolName}`, params)
+    const result = await executeMCPTool(toolName, params)
+    console.log(`[AIView] Tool result:`, result)
+    return result
   }
 
-  const handleFetchUrl = async (url: string): Promise<string> => {
-    try {
-      const content = await fetchWebContent(url)
-      const snippet = content.slice(0, 3000)
-      return `[Web Content from ${url}]\n${snippet}${content.length > 3000 ? '\n...(truncated)' : ''}`
-    } catch (error) {
-      return `Failed to fetch: ${error instanceof Error ? error.message : 'Unknown error'}`
-    }
-  }
-
+  // Handle message with tool calling support
   const handleSend = async () => {
     if (!activeTabId || !editor || isStreaming || isProcessing) return
 
@@ -337,35 +320,38 @@ function AIView() {
     setIsProcessing(true)
 
     try {
+      // Build context from current file and notes
       const context = await buildContext(userMessage)
 
-      const lowerMessage = userMessage.toLowerCase()
-      let additionalContext = ''
+      // Get available MCP tools
+      const mcpTools = getAllMCPTools()
+      const toolPrompt = buildToolPrompt(mcpTools)
 
-      if (lowerMessage.includes('search') || lowerMessage.includes('look up') || lowerMessage.includes('find information')) {
-        const query = userMessage.replace(/(search|look up|find information about)/gi, '').trim()
-        additionalContext = await handleWebSearch(query)
-      } else if (lowerMessage.match(/(https?:\/\/[^\s]+)/)) {
-        const urlMatch = userMessage.match(/(https?:\/\/[^\s]+)/)
-        if (urlMatch) {
-          additionalContext = await handleFetchUrl(urlMatch[1])
-        }
+      // Build messages with tool context
+      const systemMessage: ChatMessage = {
+        id: 'system',
+        role: 'system',
+        content: toolPrompt,
+        timestamp: Date.now()
       }
 
-      const fullMessage = context
-        ? `[Context]\n${context}${additionalContext ? '\n\n' + additionalContext : ''}\n\n[User Question]\n${userMessage}`
-        : additionalContext
-        ? `${additionalContext}\n\n[User Question]\n${userMessage}`
-        : userMessage
+      // Build context message if there's context
+      const contextMessage: ChatMessage | null = context ? {
+        id: 'context',
+        role: 'system',
+        content: `[Context]\n${context}`,
+        timestamp: Date.now()
+      } : null
 
       const previousMessages = activeMessages.slice(0, -1)
-      const currentMessage: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: 'user',
-        content: fullMessage,
-        timestamp: Date.now(),
-      }
-      const messages: ChatMessage[] = [...previousMessages, currentMessage]
+      
+      // Messages for initial call (with tools available)
+      const messagesWithTools: ChatMessage[] = [
+        systemMessage,
+        ...(contextMessage ? [contextMessage] : []),
+        ...previousMessages,
+        { id: crypto.randomUUID(), role: 'user', content: userMessage, timestamp: Date.now() }
+      ]
 
       const provider = getProvider(config.provider)
       
@@ -373,29 +359,71 @@ function AIView() {
       let localContent = ''
       let localThinking = ''
       
-      // Try to use streamChatWithThinking if available
-      if ('streamChatWithThinking' in provider && provider.streamChatWithThinking) {
-        await provider.streamChatWithThinking(
-          messages,
+      // Check if provider supports native function calling
+      const supportsToolCalling = 'chatWithTools' in provider && provider.supportsNativeFunctionCalling?.()
+      
+      if (supportsToolCalling && mcpTools.length > 0) {
+        // Use native function calling (for OpenAI, Anthropic, etc.)
+        console.log('[AIView] Using native function calling')
+        
+        // For now, we'll use the standard streamChat and parse for tool calls
+        // Native function calling will be fully implemented in later phases
+        await provider.streamChat(
+          messagesWithTools,
           config,
           (chunk: string) => {
             localContent += chunk
             flushSync(() => setStreamingContent(localContent))
-          },
-          (thinking: string) => {
-            localThinking = thinking
-            flushSync(() => setStreamingThinking(thinking))
           }
         )
       } else {
+        // Use prompt-based tool calling (fallback for llama.cpp, vLLM, etc.)
+        console.log('[AIView] Using prompt-based tool calling')
+        
+        // First call: get response with potential tool calls
         await provider.streamChat(
-          messages,
+          messagesWithTools,
           config,
           (chunk: string) => {
             localContent += chunk
             flushSync(() => setStreamingContent(localContent))
           }
         )
+
+        // Parse tool calls from response
+        const toolCalls = parseToolCalls(localContent)
+        
+        if (toolCalls.length > 0) {
+          console.log('[AIView] Found tool calls:', toolCalls)
+          
+          // Execute tool calls and get results
+          let currentMessages = [...messagesWithTools]
+          
+          for (const toolCall of toolCalls) {
+            const result = await executeTool(toolCall.name, toolCall.arguments)
+            
+            // Add tool result to messages
+            currentMessages.push({
+              id: crypto.randomUUID(),
+              role: 'system',
+              content: `[Tool: ${toolCall.name}] Result: ${JSON.stringify(result)}`,
+              timestamp: Date.now()
+            })
+            
+            // Add tool result to display
+            const toolResultText = `\n\n[Used tool: ${toolCall.name}]\n${result.success ? JSON.stringify(result.data) : result.error}`
+            localContent += toolResultText
+            flushSync(() => setStreamingContent(localContent))
+          }
+          
+          // Get final response incorporating tool results
+          const finalContent = extractFinalResponse(localContent, toolCalls)
+          
+          // Continue conversation with tool results for a more complete response
+          // (Optional: make a second LLM call with tool results)
+          // For now, we'll use the extracted response
+          localContent = finalContent
+        }
       }
       
       // Add the final assistant message to the chat

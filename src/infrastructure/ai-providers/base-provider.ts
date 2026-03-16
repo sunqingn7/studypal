@@ -1,4 +1,6 @@
 import { AIConfig, ChatMessage } from '../../domain/models/ai-context'
+import { MCPTool } from '../../domain/models/plugin'
+import { ToolCall, ChatWithToolsResult } from './tool-calling'
 
 export interface ChatResponse {
   content: string
@@ -17,6 +19,11 @@ export interface AIProvider {
   streamChat(messages: ChatMessage[], config: AIConfig, onChunk: (chunk: string) => void | Promise<void>): Promise<void>
   streamChatWithThinking?(messages: ChatMessage[], config: AIConfig, onChunk: (chunk: string) => void | Promise<void>, onThinking: (thinking: string) => void | Promise<void>): Promise<void>
   supportsTrueStreaming?(): boolean
+  
+  // Tool calling support
+  supportsNativeFunctionCalling?(): boolean
+  chatWithTools?(messages: ChatMessage[], config: AIConfig, tools: MCPTool[]): Promise<ChatWithToolsResult>
+  streamChatWithTools?(messages: ChatMessage[], config: AIConfig, tools: MCPTool[], onChunk: (chunk: string) => void, onToolCall?: (toolCall: ToolCall) => void): Promise<void>
 }
 
 export async function chatWithAI(

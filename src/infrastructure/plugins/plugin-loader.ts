@@ -2,7 +2,8 @@ import { pluginManager } from './plugin-manager';
 import { pluginRegistry } from './plugin-registry';
 import { fileBrowserViewPlugin } from '../../plugins/file-browser-view';
 import { epubSupportPlugin } from '../../plugins/epub-support';
-import { mcpToolsPlugin } from '../../plugins/mcp-tools';
+import { noteMCPServerPlugin } from '../../plugins/mcp-tools/note-mcp-plugin';
+import { webSearchMCPServerPlugin } from '../../plugins/mcp-tools/web-search-mcp-plugin';
 import { markdownViewerPlugin } from '../../plugins/markdown-viewer';
 import { htmlViewerPlugin } from '../../plugins/html-viewer';
 import { latexViewerPlugin } from '../../plugins/latex-viewer';
@@ -14,7 +15,8 @@ export async function loadAllPlugins(): Promise<void> {
   const plugins = [
     { plugin: fileBrowserViewPlugin, enabled: true },
     { plugin: epubSupportPlugin, enabled: true },
-    { plugin: mcpToolsPlugin, enabled: true },
+    { plugin: noteMCPServerPlugin, enabled: true },
+    { plugin: webSearchMCPServerPlugin, enabled: true },
     { plugin: markdownViewerPlugin, enabled: true },
     { plugin: htmlViewerPlugin, enabled: true },
     { plugin: latexViewerPlugin, enabled: true },

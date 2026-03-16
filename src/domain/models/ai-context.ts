@@ -66,7 +66,7 @@ export const PROVIDER_DEFAULTS: Record<AIProviderType, Partial<AIConfig>> = {
 
 export interface ChatMessage {
   id: string
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'system'
   content: string
   thinking?: string
   timestamp: number

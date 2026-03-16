@@ -1,26 +1,58 @@
 # StudyPal
 
-A study pal program for all - cross-platform desktop app built with Tauri + React + TypeScript.
+A cross-platform desktop study companion for reading, note-taking, and AI-assisted learning.
+
+## Overview
+
+StudyPal combines document viewing, rich text note-taking, and AI chat in a flexible three-pane interface. Built with modern web technologies and Rust for performance.
 
 ## Features
 
-- **File View**: Open and read PDF, EPUB, HTML, LaTeX, and text files with built-in viewers
-- **Note View**: Rich text note-taking with TipTap editor, tabbed interface
-- **AI View**: Chat with AI models (supports multiple providers)
-  - Local: llama.cpp, Ollama, vLLM
-  - Cloud: OpenAI, Anthropic, Custom endpoints
-- **File Browser**: Navigate folders and open files within the app
-- **Resizable Panels**: Flexible 3-pane layout
-- **System Theme**: Automatically follows system dark/light mode
-- **Session Persistence**: Remembers window size, panel layout, and open files
+### 📚 Document Viewer
+- **PDF**: Rendering via PDF.js, text extraction via Rust `pdftotext`
+- **EPUB**: Full support via epub.js
+- **HTML**: Native browser rendering
+- **LaTeX**: Mathematical notation support
+- **Markdown/Text**: Native support with syntax highlighting
+
+### ✍️ Note-Taking
+- Rich text editor powered by **TipTap**
+- Document-bound notes (persisted per file)
+- Tabbed interface for multiple notes
+
+### 🤖 AI Chat
+- **Local Providers**: llama.cpp, Ollama, vLLM
+- **Cloud Providers**: OpenAI, Anthropic, Custom endpoints
+- **Context Triggers**:
+  - `this page` — current page content
+  - `whole file` — entire document
+  - `selected text` — highlighted selection
+  - `topic notes` — topic-related notes
+
+### 🎨 Interface
+- **Resizable 3-Pane Layout**: File browser, document viewer, AI/notes panels
+- **Theme Support**: Dark/light mode following system preferences
+- **Session Persistence**: Window size, panel layout, and open files restored on restart
+
+### 🔌 Plugin System
+- **View Plugins**: Custom view components
+- **File Handlers**: Support for new file formats
+- **AI Providers**: Custom AI backend integrations
+- **Action Plugins**: User actions and commands
+- **MCP Servers**: Model Context Protocol tool support
 
 ## Tech Stack
 
-- **Frontend**: React 19, TypeScript, Vite
-- **Desktop**: Tauri 2.x (Rust backend)
-- **State Management**: Zustand
-- **Editor**: TipTap
-- **PDF Rendering**: PDF.js
+| Layer | Technology |
+|-------|------------|
+| **Frontend** | React 19, TypeScript, Vite |
+| **Desktop** | Tauri 2.x (Rust) |
+| **State** | Zustand (with persistence) |
+| **Styling** | Tailwind CSS |
+| **Editor** | TipTap |
+| **PDF** | PDF.js (render), pdftotext (extract) |
+| **EPUB** | epub.js |
+| **Markdown** | react-markdown, remark-math, rehype-katex |
 
 ## Getting Started
 
@@ -47,55 +79,146 @@ npm run tauri build
 
 ```
 src/
-├── domain/           # Business logic & models
+├── domain/           # Business models
 │   └── models/       # Note, Topic, File, AI-Context, Plugin
 ├── application/      # Application layer
-│   └── store/       # Zustand stores
+│   ├── store/       # Zustand stores
+│   └── services/    # Session management
 ├── infrastructure/  # External integrations
-│   ├── ai-providers/
-│   ├── file-handlers/
-│   └── plugins/
+│   ├── plugins/     # Plugin system
+│   ├── file-handlers/ # File reading/rendering
+│   └── web-service.ts # AI service
 └── presentation/    # UI layer
-    ├── components/
-    └── layouts/
+    ├── components/  # Reusable components
+    ├── layouts/     # Page layouts
+    └── views/       # Feature views
+
+src-tauri/
+├── src/
+│   ├── lib.rs       # Tauri commands (AI, PDF extraction)
+│   ├── session.rs   # Session persistence
+│   └── database/    # SQLite storage
+└── Cargo.toml
+```
+
+## Architecture
+
+### Layered Design
+```
+┌──────────────────┐
+│  Presentation    │  React components, layouts
+├──────────────────┤
+│  Application     │  Zustand stores, services
+├──────────────────┤
+│  Infrastructure  │  Plugins, file handlers, AI
+├──────────────────┤
+│  Domain          │  Models, types, constants
+└──────────────────┘
+```
+
+### Three-Pane Layout
+```
+┌───────────┬──────────────────┬──────────────┐
+│           │                  │ ┌──────────┐ │
+│  File     │   Document       │ │   AI     │ │
+│  Browser  │   Viewer         │ │   Chat   │ │
+│           │                  │ └──────────┘ │
+│           │                  │              │
+│           │                  │ ┌──────────┐ │
+│           │                  │ │  Notes   │ │
+│           │                  │ └──────────┘ │
+└───────────┴──────────────────┴──────────────┘
+```
+
+### Data Flow
+```
+User UI (React)
+    │
+    ▼
+Zustand Stores ←─── Persistence (localStorage)
+    │
+    ▼
+Plugin Registry
+    │
+    ▼
+Tauri Commands ←── Rust Backend (AI, PDF extraction)
 ```
 
 ## AI Configuration
 
-StudyPal supports multiple AI providers. Configure in the AI view settings:
+Configure AI provider in the AI view settings:
 
-### Local Providers
-- **llama.cpp**: Connect to local llama.cpp server (`http://localhost:8080`)
-- **Ollama**: Connect to local Ollama (`http://localhost:11434`)
-- **vLLM**: Connect to local vLLM server
+### Supported Providers
 
-### Cloud Providers
-- **OpenAI**: Connect to OpenAI API
-- **Anthropic**: Connect to Anthropic Claude API
-- **Custom**: Connect to any OpenAI-compatible endpoint
+**Local:**
+- llama.cpp (`http://localhost:8080`)
+- Ollama (`http://localhost:11434`)
+- vLLM (`http://localhost:8000/v1`)
 
-### Usage
-1. Select a provider in AI view settings
-2. Enter endpoint URL and API key
-3. Select a model (auto-detected from endpoint)
-4. Start chatting!
+**Cloud:**
+- OpenAI (`https://api.openai.com/v1`)
+- Anthropic (`https://api.anthropic.com/v1`)
+- Custom (any OpenAI-compatible endpoint)
 
-## Plugins
+### Configuration Options
 
-StudyPal supports plugins for extending functionality:
+```typescript
+interface AIConfig {
+  provider: AIProviderType
+  endpoint: string
+  model: string
+  apiKey?: string
+  systemPrompt?: string
+  temperature?: number
+  maxTokens?: number
+  topP?: number
+  extraHeaders?: Record<string, string>
+  extraBody?: Record<string, unknown>
+}
+```
 
-- **View Plugins**: Custom viewers for file types
-- **File Handlers**: Custom file reading/rendering
-- **AI Providers**: Custom AI backend integrations
+## Plugin System
+
+### Plugin Types
+
+| Type | Purpose | Interface |
+|------|---------|----------|
+| `view` | Custom views | `ViewPlugin` |
+| `file-handler` | File reading/rendering | `FileHandlerPlugin` |
+| `action` | User actions | `ActionPlugin` |
+| `ai-provider` | AI backends | `AIProviderPlugin` |
+| `mcp-server` | MCP tools | `MCPServerPlugin` |
+
+### Example Plugin
+
+```typescript
+const myPlugin: ViewPlugin = {
+  metadata: {
+    id: 'my-view',
+    name: 'My View',
+    version: '1.0.0',
+    description: 'A custom view',
+    author: 'Your Name',
+    type: 'view',
+  },
+  getViewComponent() { return MyViewComponent; },
+  canHandle(context) { return !!context.filePath; },
+  getViewName() { return 'My View'; },
+  initialize() { return Promise.resolve(); },
+  destroy() { return Promise.resolve(); },
+};
+```
 
 ## Roadmap
 
-- [x] Persistence (save notes to markdown files)
+- [x] Document persistence (notes saved per file)
 - [x] Topic management
-- [x] AI context triggers ("this page", "whole file", web search)
-- [x] Plugin system for additional file formats
-- [x] EPUB, HTML, and LaTeX support
-- [ ] Translation plugin (AI-powered document translation)
+- [x] AI context triggers
+- [x] Plugin system
+- [x] EPUB, HTML, LaTeX support
+- [ ] Translation plugin
+- [ ] Collaborative notes
+- [ ] Cloud sync
 
 ## License
 
