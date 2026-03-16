@@ -87,8 +87,8 @@ export function extractFinalResponse(response: string, _toolCalls: ToolCall[]): 
     // Not JSON, continue with normal processing
   }
   
-  // Remove tool call JSON from the response
-  const toolCallRegex = /\{"tool_call":\s*\{[^}]+\}\}/g;
+  // Remove tool call JSON from the response (handles multiline)
+  const toolCallRegex = /\{[\s\S]*?"tool_call"[\s\S]*?\}\s*\}/g;
   finalResponse = finalResponse.replace(toolCallRegex, '').trim();
   
   // If response is empty after removing tool calls, provide a default

@@ -788,7 +788,13 @@ activeMessages.map((msg) => (
                   </button>
       {expandedThinking.has(msg.id) && (
         <div className="thinking-content">
-          {msg.thinking?.replace(/\{"tool_call":\s*\{[^}]+\}\}/g, '[Tool execution hidden]')}
+          {(() => {
+            // Remove JSON tool calls from thinking (handles multiline)
+            let thinking = msg.thinking || ''
+            // Match {"tool_call": {...}} including nested braces
+            thinking = thinking.replace(/\{\s*"tool_call"[\s\S]*?\}\s*\}/g, '[Tool execution hidden]')
+            return thinking
+          })()}
         </div>
       )}
                 </div>
