@@ -363,6 +363,7 @@ function AIView() {
       const supportsToolCalling = 'chatWithTools' in provider && provider.supportsNativeFunctionCalling?.()
       // Check if provider supports streaming with thinking
       const supportsThinking = 'streamChatWithThinking' in provider
+      console.log('[AIView] Provider:', provider.name, 'supportsThinking:', supportsThinking, 'supportsToolCalling:', supportsToolCalling)
       
       if (supportsToolCalling && mcpTools.length > 0) {
         // Use native function calling (for OpenAI, Anthropic, etc.)
