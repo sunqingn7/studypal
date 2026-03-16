@@ -18,7 +18,6 @@ import { ChatMessage, AIProviderType } from '../../../../domain/models/ai-contex
 import { updateAIConfig, updateProviderConfigs } from '../../../../application/services/session-manager'
 import { getAllMCPTools, executeMCPTool } from '../../../../infrastructure/ai-providers/mcp-utils'
 import { buildToolPrompt, parseToolCalls, extractFinalResponse } from '../../../../infrastructure/ai-providers/tool-calling'
-import type { ExtractResult } from '../../../../infrastructure/ai-providers/tool-calling'
 import './AIView.css'
 
 const FONT_SIZES = [12, 14, 16, 18, 20, 22, 24, 28, 32]
@@ -362,6 +361,8 @@ function AIView() {
       
       // Check if provider supports native function calling
       const supportsToolCalling = 'chatWithTools' in provider && provider.supportsNativeFunctionCalling?.()
+      // Check if provider supports streaming with thinking
+      const supportsThinking = 'streamChatWithThinking' in provider
       
       if (supportsToolCalling && mcpTools.length > 0) {
         // Use native function calling (for OpenAI, Anthropic, etc.)
@@ -377,6 +378,42 @@ function AIView() {
             flushSync(() => setStreamingContent(localContent))
           }
         )
+      } else if (supportsThinking) {
+        // Use streamChatWithThinking for models that return thinking
+        console.log('[AIView] Using streamChatWithThinking')
+        
+        await provider.streamChatWithThinking!(
+          messagesWithTools,
+          config,
+          (chunk: string) => {
+            localContent += chunk
+            flushSync(() => setStreamingContent(localContent))
+          },
+          (thinking: string) => {
+            localThinking += thinking
+            flushSync(() => setStreamingThinking(localThinking))
+          }
+        )
+
+        // Parse tool calls from response
+        const toolCalls = parseToolCalls(localContent)
+        
+        if (toolCalls.length > 0) {
+          console.log('[AIView] Found tool calls:', toolCalls)
+          
+          // Execute tool calls and get results
+          for (const toolCall of toolCalls) {
+            const result = await executeTool(toolCall.name, toolCall.arguments)
+            
+            // Add tool result to display
+            const toolResultText = `\n\n[Used tool: ${toolCall.name}]\n${result.success ? JSON.stringify(result.data) : result.error}`
+            localContent += toolResultText
+            flushSync(() => setStreamingContent(localContent))
+          }
+          
+          // Get final response
+          localContent = extractFinalResponse(localContent, toolCalls).content
+        }
       } else {
         // Use prompt-based tool calling (fallback for llama.cpp, vLLM, etc.)
         console.log('[AIView] Using prompt-based tool calling')
@@ -398,18 +435,8 @@ function AIView() {
           console.log('[AIView] Found tool calls:', toolCalls)
           
           // Execute tool calls and get results
-          let currentMessages = [...messagesWithTools]
-          
           for (const toolCall of toolCalls) {
             const result = await executeTool(toolCall.name, toolCall.arguments)
-            
-            // Add tool result to messages
-            currentMessages.push({
-              id: crypto.randomUUID(),
-              role: 'system',
-              content: `[Tool: ${toolCall.name}] Result: ${JSON.stringify(result)}`,
-              timestamp: Date.now()
-            })
             
             // Add tool result to display
             const toolResultText = `\n\n[Used tool: ${toolCall.name}]\n${result.success ? JSON.stringify(result.data) : result.error}`
@@ -417,19 +444,11 @@ function AIView() {
             flushSync(() => setStreamingContent(localContent))
           }
           
-          // Get final response incorporating tool results
-          const extracted1: ExtractResult = extractFinalResponse(localContent, toolCalls)
-          localContent = extracted1.content
-          if (extracted1.thinking && !localThinking) {
-            localThinking = extracted1.thinking
-          }
+          // Get final response
+          localContent = extractFinalResponse(localContent, toolCalls).content
         } else {
-          // No tool calls, but model might still output JSON format - extract content
-          const extracted2: ExtractResult = extractFinalResponse(localContent, [])
-          localContent = extracted2.content
-          if (extracted2.thinking && !localThinking) {
-            localThinking = extracted2.thinking
-          }
+          // No tool calls, but model might still output JSON format
+          localContent = extractFinalResponse(localContent, []).content
         }
       }
       

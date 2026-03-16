@@ -138,13 +138,28 @@ export class CustomProvider implements AIProvider {
       try {
         const parsed = JSON.parse(response)
         if (parsed.thinking) {
-          console.log('[custom-provider] Found thinking content:', parsed.thinking.slice(0, 50))
-          await onThinking(parsed.thinking)
-          await new Promise(r => setTimeout(r, 100))
-        }
-        if (parsed.content) {
-          const content = parsed.content
-          const chunks = content.split(/(?=\s+)/)
+          console.log('[custom-provider] Streaming thinking first:', parsed.thinking.slice(0, 50))
+          // Stream thinking first
+          const thinkingChunks = parsed.thinking.split(/(?=\s+)/)
+          for (const chunk of thinkingChunks) {
+            if (chunk.trim()) {
+              await onThinking(chunk)
+              await new Promise(r => setTimeout(r, 5))
+            }
+          }
+          // Then stream content
+          if (parsed.content) {
+            const contentChunks = parsed.content.split(/(?=\s+)/)
+            for (const chunk of contentChunks) {
+              if (chunk.trim()) {
+                await onChunk(chunk)
+                await new Promise(r => setTimeout(r, 10))
+              }
+            }
+          }
+        } else if (parsed.content) {
+          // No thinking, just stream content
+          const chunks = parsed.content.split(/(?=\s+)/)
           for (const chunk of chunks) {
             if (chunk.trim()) {
               await onChunk(chunk)
