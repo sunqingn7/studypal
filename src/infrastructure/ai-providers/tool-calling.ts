@@ -40,44 +40,72 @@ IMPORTANT RULES:
 
 export function parseToolCalls(response: string): ToolCall[] {
   console.log('[parseToolCalls] Input:', response.slice(0, 200))
-  // Match multiline JSON tool calls
-  const toolCallRegex = /\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g;
-  const matches = response.match(toolCallRegex);
-  console.log('[parseToolCalls] Regex matches:', matches ? matches.length : 0, matches)
-
-  if (!matches) return [];
-
+  
+  // Simple approach: find {"tool_call": and try to parse from there
   const toolCalls: ToolCall[] = [];
-
-  for (const match of matches) {
-    console.log('[parseToolCalls] Raw match length:', match.length)
-    console.log('[parseToolCalls] Raw match:', match)
-    // Try to unescape if needed
-    let jsonStr = match
-    if (match.includes('\\"')) {
-      console.log('[parseToolCalls] Unescaping match...')
-      jsonStr = match.replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+  let searchStart = 0;
+  
+  while (true) {
+    const startIdx = response.indexOf('{"tool_call":', searchStart);
+    if (startIdx === -1) break;
+    
+    // Find the matching closing brace
+    let braceCount = 0;
+    let inString = false;
+    let escapeNext = false;
+    let endIdx = startIdx;
+    
+    for (let i = startIdx; i < response.length; i++) {
+      const char = response[i];
+      
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+      
+      if (char === '\\') {
+        escapeNext = true;
+        continue;
+      }
+      
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+      
+      if (inString) continue;
+      
+      if (char === '{') braceCount++;
+      else if (char === '}') {
+        braceCount--;
+        if (braceCount === 0) {
+          endIdx = i + 1;
+          break;
+        }
+      }
     }
-    console.log('[parseToolCalls] JSON string to parse:', jsonStr)
+    
+    const jsonStr = response.slice(startIdx, endIdx);
+    console.log('[parseToolCalls] Extracted JSON:', jsonStr.slice(0, 100))
+    
     try {
       const parsed = JSON.parse(jsonStr);
-      console.log('[parseToolCalls] Parsed JSON:', parsed)
+      console.log('[parseToolCalls] Parsed:', parsed)
       if (parsed.tool_call && parsed.tool_call.name) {
-        console.log('[parseToolCalls] Found tool_call.name:', parsed.tool_call.name)
         toolCalls.push({
           name: parsed.tool_call.name,
           arguments: parsed.tool_call.parameters || {}
         });
-      } else {
-        console.log('[parseToolCalls] No tool_call.name found in parsed:', parsed)
+        console.log('[parseToolCalls] Added tool:', parsed.tool_call.name)
       }
-    } catch {
-      // Skip invalid JSON
-      console.log('[parseToolCalls] JSON parse error')
-      continue;
+    } catch (e) {
+      console.log('[parseToolCalls] Parse error:', e)
     }
+    
+    searchStart = endIdx;
   }
-
+  
+  console.log('[parseToolCalls] Total tools found:', toolCalls.length)
   return toolCalls;
 }
 
