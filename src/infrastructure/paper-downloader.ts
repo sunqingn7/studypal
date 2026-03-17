@@ -50,9 +50,10 @@ const PAPER_PATTERNS = [
     buildPdfUrl: null // ACM requires access
   },
   {
-    regex: /\.pdf$/i,
+    // Match any URL containing .pdf (more flexible)
+    regex: /\/([^\/\s]*\.pdf)/i,
     source: 'other' as const,
-    extractId: () => '',
+    extractId: (match: RegExpMatchArray) => match[1],
     buildPdfUrl: (url: string) => url
   }
 ];
@@ -62,10 +63,13 @@ export function detectPaperUrl(url: string): PaperMetadata | null {
     const match = url.match(pattern.regex);
     if (match) {
       const id = pattern.extractId(match);
+      const pdfUrl = pattern.buildPdfUrl 
+        ? (pattern.source === 'other' ? url : pattern.buildPdfUrl(id))
+        : undefined;
       return {
         url,
         source: pattern.source,
-        pdfUrl: pattern.buildPdfUrl ? pattern.buildPdfUrl(id) : undefined
+        pdfUrl
       };
     }
   }

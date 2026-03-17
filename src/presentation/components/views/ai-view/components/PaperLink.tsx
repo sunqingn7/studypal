@@ -35,7 +35,8 @@ export function PaperLink({ href, children }: PaperLinkProps) {
     try {
       const result = await downloadPaper(href);
       
-      if (result.success) {
+      // Rust returns path on success (no success field)
+      if (result.path) {
         // Open the downloaded file
         setCurrentFile({
           id: result.path,
