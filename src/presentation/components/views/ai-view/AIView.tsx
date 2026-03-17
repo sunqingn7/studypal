@@ -497,7 +497,10 @@ function AIView() {
       }
       
       // Add the final assistant message to the chat
-      addMessage(activeTabId, 'assistant', localContent, localThinking || undefined)
+      // Filter out any remaining JSON tool calls from final message
+      const finalContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
+      const finalThinking = localThinking?.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
+      addMessage(activeTabId, 'assistant', finalContent, finalThinking || undefined)
 
       // Clear local streaming state
       setStreamingContent('')
