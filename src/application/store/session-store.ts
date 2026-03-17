@@ -84,8 +84,8 @@ interface SessionStore {
   clearSessionData: () => void
 }
 
-// Simple storage - use localStorage directly
-const sessionStorage = {
+// Simple storage wrapper using localStorage
+const storageWrapper = {
   getItem: (name: string): string | null => {
     const value = localStorage.getItem(name)
     console.log('[SessionStorage] getItem:', name, value ? 'found' : 'not found')
@@ -97,6 +97,7 @@ const sessionStorage = {
   },
   removeItem: (name: string): void => {
     localStorage.removeItem(name)
+    console.log('[SessionStorage] removeItem:', name)
   },
 }
 
@@ -246,7 +247,7 @@ export const useSessionStore = create<SessionStore>()(
     }),
     {
       name: 'studypal-session',
-      storage: createJSONStorage(() => sessionStorage),
+      storage: createJSONStorage(() => storageWrapper),
     }
   )
 )
