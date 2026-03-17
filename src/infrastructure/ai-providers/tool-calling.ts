@@ -39,9 +39,11 @@ IMPORTANT RULES:
 }
 
 export function parseToolCalls(response: string): ToolCall[] {
+  console.log('[parseToolCalls] Input:', response.slice(0, 200))
   // Match multiline JSON tool calls
   const toolCallRegex = /\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g;
   const matches = response.match(toolCallRegex);
+  console.log('[parseToolCalls] Regex matches:', matches ? matches.length : 0, matches)
 
   if (!matches) return [];
 
