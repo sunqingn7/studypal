@@ -432,6 +432,7 @@ function AIView() {
 
       // Parse tool calls from response
       const toolCalls = parseToolCalls(localContent)
+      console.log('[AIView] toolCalls found:', toolCalls.length, toolCalls)
 
       if (toolCalls.length > 0) {
         console.log('[AIView] Found tool calls:', toolCalls)
@@ -441,7 +442,9 @@ function AIView() {
 
         // Execute tool calls and get results
         for (const toolCall of toolCalls) {
+          console.log('[AIView] Executing tool:', toolCall.name, toolCall.arguments)
           const result = await executeTool(toolCall.name, toolCall.arguments)
+          console.log('[AIView] Tool result:', result.success ? 'success' : 'error', result.data)
 
           // Add tool result to display
           const toolResultText = `\n\n[Used tool: ${toolCall.name}]\n${result.success ? JSON.stringify(result.data) : result.error}`
@@ -498,7 +501,9 @@ function AIView() {
       
       // Add the final assistant message to the chat
       // Filter out any remaining JSON tool calls from final message
+      console.log('[AIView] localContent before filter:', localContent.slice(0, 200))
       const finalContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
+      console.log('[AIView] finalContent after filter:', finalContent.slice(0, 200))
       const finalThinking = localThinking?.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
       addMessage(activeTabId, 'assistant', finalContent, finalThinking || undefined)
 
