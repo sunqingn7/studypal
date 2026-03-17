@@ -50,16 +50,22 @@ export function parseToolCalls(response: string): ToolCall[] {
   const toolCalls: ToolCall[] = [];
 
   for (const match of matches) {
+    console.log('[parseToolCalls] Processing match:', match.slice(0, 100))
     try {
       const parsed = JSON.parse(match);
+      console.log('[parseToolCalls] Parsed JSON:', parsed)
       if (parsed.tool_call && parsed.tool_call.name) {
+        console.log('[parseToolCalls] Found tool_call.name:', parsed.tool_call.name)
         toolCalls.push({
           name: parsed.tool_call.name,
           arguments: parsed.tool_call.parameters || {}
         });
+      } else {
+        console.log('[parseToolCalls] No tool_call.name found in parsed:', parsed)
       }
     } catch {
       // Skip invalid JSON
+      console.log('[parseToolCalls] JSON parse error')
       continue;
     }
   }
