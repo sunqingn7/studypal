@@ -28,11 +28,26 @@ StudyPal combines document viewing, rich text note-taking, and AI chat in a flex
   - `whole file` — entire document
   - `selected text` — highlighted selection
   - `topic notes` — topic-related notes
+- **Web Search**: Supports Tavily, DuckDuckGo, Brave, and Serper with clickable results
+- **Paper Discovery**: Search academic papers with direct download links
+
+### 🌐 Web Search
+- **Providers**: DuckDuckGo (official API), Tavily, Brave, Serper
+- **Features**: 
+  - Clickable search results that download and open files
+  - Academic paper search with PDF download links
+  - Paper metadata extraction (arxiv, IEEE, ACM)
+
+### 📋 History & Sessions
+- **File History**: Automatically tracks recently opened files (sorted by open time, latest first)
+- **Sidebar Tabs**: Switch between EXPLORER (folder view) and HISTORY views
+- **New Session**: Create empty session that clears file/notes/chat while preserving window state
 
 ### 🎨 Interface
-- **Resizable 3-Pane Layout**: File browser, document viewer, AI/notes panels
+- **Resizable 3-Pane Layout**: Sidebar, document viewer, AI/notes panels
+- **Sidebar Tabs**: EXPLORER and HISTORY tabs for file browsing
 - **Theme Support**: Dark/light mode following system preferences
-- **Session Persistence**: Window size, panel layout, and open files restored on restart
+- **Session Persistence**: Window size, panel layout, file history, and open files restored on restart
 
 ### 🔌 Plugin System
 - **View Plugins**: Custom view components
@@ -120,9 +135,9 @@ src-tauri/
 ```
 ┌───────────┬──────────────────┬──────────────┐
 │           │                  │ ┌──────────┐ │
-│  File     │   Document       │ │   AI     │ │
-│  Browser  │   Viewer         │ │   Chat   │ │
-│           │                  │ └──────────┘ │
+│  Sidebar  │   Document       │ │   AI     │ │
+│ (Explorer/│   Viewer         │ │   Chat   │ │
+│  History) │                  │ └──────────┘ │
 │           │                  │              │
 │           │                  │ ┌──────────┐ │
 │           │                  │ │  Notes   │ │
@@ -216,6 +231,10 @@ const myPlugin: ViewPlugin = {
 - [x] AI context triggers
 - [x] Plugin system
 - [x] EPUB, HTML, LaTeX support
+- [x] File history tracking
+- [x] Sidebar with Explorer/History tabs
+- [x] Web search with clickable results
+- [x] Academic paper search with PDF download
 - [ ] Translation plugin
 - [ ] Collaborative notes
 - [ ] Cloud sync

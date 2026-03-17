@@ -9,7 +9,7 @@ import { useSessionStore } from '../../application/store/session-store'
 import { useAIStore } from '../../application/store/ai-store'
 import { initializeSession, updateAIConfig } from '../../application/services/session-manager'
 import { pluginRegistry } from '../../infrastructure/plugins/plugin-registry'
-import { FileBrowserView } from '../../plugins/file-browser-view/FileBrowserView'
+import { SidebarTabs } from '../../plugins/file-browser-view/SidebarTabs'
 import FileView from '../components/views/file-view/FileView'
 import NoteView from '../components/views/note-view/NoteView'
 import AIView from '../components/views/ai-view/AIView'
@@ -20,7 +20,7 @@ import { SettingsView } from '../components/views/settings-view/SettingsView'
 function MainLayout() {
   const { currentFile } = useFileStore()
   const { theme, toggleTheme } = useThemeStore()
-  const { session, setPanelSize, setShowFileBrowser: setSessionShowBrowser, setTheme: setSessionTheme } = useSessionStore()
+  const { session, setPanelSize, setShowFileBrowser: setSessionShowBrowser, setTheme: setSessionTheme, addToFileHistory } = useSessionStore()
   const [showFileBrowser, setShowFileBrowser] = useState(session.showFileBrowser)
   const [hasFileBrowser, setHasFileBrowser] = useState(false)
   const [isHydrated, setIsHydrated] = useState(false)
@@ -271,6 +271,7 @@ function MainLayout() {
     if (currentFile && isHydrated) {
       console.log('[MainLayout] Saving file to session:', currentFile.path)
       useSessionStore.getState().setCurrentFile(currentFile.id, currentFile.path, currentPage, 0)
+      addToFileHistory(currentFile.id, currentFile.path, currentFile.name)
       
       // Save previous file's notes/chat and load new file's notes/chat
       if (previousFileRef.current && previousFileRef.current.id !== currentFile.id) {
@@ -282,7 +283,7 @@ function MainLayout() {
       }
       previousFileRef.current = currentFile
     }
-  }, [currentFile, currentPage, isHydrated])
+  }, [currentFile, currentPage, isHydrated, addToFileHistory])
 
   // Save AI config to Rust backend when it changes
   const aiConfig = useAIChatStore((state) => state.config)
@@ -347,7 +348,7 @@ function MainLayout() {
           minSize={5}
           className="sidebar-panel"
         >
-        {showFileBrowser && hasFileBrowser && <FileBrowserView context={pluginContext} />}
+        {showFileBrowser && hasFileBrowser && <SidebarTabs context={pluginContext} />}
         {showFileBrowser && !hasFileBrowser && (
           <div className="flex items-center justify-center h-full text-[var(--sidebar-fg)] opacity-50 p-4">
             <p>Loading file browser...</p>

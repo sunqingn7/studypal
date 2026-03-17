@@ -85,6 +85,117 @@ export class WebSearchMCPServerPlugin implements MCPServerPlugin {
     return 'web-search-mcp';
   }
 
+  private parseResultsByProvider(results: string, provider: SearchProvider): SearchResult[] {
+    try {
+      const parsed = JSON.parse(results);
+      
+      switch (provider) {
+        case 'tavily':
+          return this.parseTavilyResults(parsed);
+        case 'brave':
+          return this.parseBraveResults(parsed);
+        case 'serper':
+          return this.parseSerperResults(parsed);
+        case 'duckduckgo':
+        default:
+          return this.parseDuckDuckGoResults(parsed);
+      }
+    } catch {
+      console.error('[WebSearchMCP] Failed to parse search results');
+      return [];
+    }
+  }
+
+  private parseTavilyResults(parsed: any): SearchResult[] {
+    if (Array.isArray(parsed)) {
+      return parsed.map((item: any) => ({
+        title: item.title || '',
+        url: item.url || item.href || '',
+        snippet: item.snippet || item.content || item.description || '',
+        publishedDate: item.published_date || item.date || undefined,
+        isPdf: item.isPdf || item.url?.includes('.pdf') || false
+      }));
+    }
+    if (parsed.results) {
+      return parsed.results.map((item: any) => ({
+        title: item.title || '',
+        url: item.url || item.href || '',
+        snippet: item.snippet || item.content || item.description || '',
+        publishedDate: item.published_date || item.date || undefined,
+        isPdf: item.isPdf || item.url?.includes('.pdf') || false
+      }));
+    }
+    return [];
+  }
+
+  private parseBraveResults(parsed: any): SearchResult[] {
+    if (parsed.web && Array.isArray(parsed.web.results)) {
+      return parsed.web.results.map((item: any) => ({
+        title: item.title || '',
+        url: item.url || item.href || '',
+        snippet: item.description || item.snippet || '',
+        publishedDate: item.age || item.date || undefined,
+        isPdf: item.url?.includes('.pdf') || false
+      }));
+    }
+    if (Array.isArray(parsed)) {
+      return parsed.map((item: any) => ({
+        title: item.title || '',
+        url: item.url || item.href || '',
+        snippet: item.description || item.snippet || '',
+        publishedDate: item.age || item.date || undefined,
+        isPdf: item.url?.includes('.pdf') || false
+      }));
+    }
+    return [];
+  }
+
+  private parseSerperResults(parsed: any): SearchResult[] {
+    if (parsed.organic && Array.isArray(parsed.organic)) {
+      return parsed.organic.map((item: any) => ({
+        title: item.title || '',
+        url: item.link || item.url || '',
+        snippet: item.snippet || item.description || '',
+        publishedDate: item.date || undefined,
+        isPdf: item.link?.includes('.pdf') || false
+      }));
+    }
+    if (Array.isArray(parsed)) {
+      return parsed.map((item: any) => ({
+        title: item.title || '',
+        url: item.link || item.url || '',
+        snippet: item.snippet || item.description || '',
+        publishedDate: item.date || undefined,
+        isPdf: item.link?.includes('.pdf') || false
+      }));
+    }
+    return [];
+  }
+
+  private parseDuckDuckGoResults(parsed: any): SearchResult[] {
+    if (Array.isArray(parsed)) {
+      return parsed.map((item: any) => ({
+        title: item.title || '',
+        url: item.url || item.href || '',
+        snippet: item.snippet || item.body || item.description || '',
+        publishedDate: item.date || undefined,
+        isPdf: item.url?.includes('.pdf') || false
+      }));
+    }
+    if (parsed.RelatedTopics && Array.isArray(parsed.RelatedTopics)) {
+      return parsed.RelatedTopics
+        .filter((item: any) => item.URL || item.url)
+        .map((item: any) => ({
+          title: item.Text || item.text || '',
+          url: item.URL || item.url || '',
+          snippet: item.Text || item.text || '',
+          publishedDate: undefined,
+          isPdf: (item.URL || item.url)?.includes('.pdf') || false
+        }));
+    }
+    return [];
+  }
+
   getTools(): MCPTool[] {
     return [
       {
@@ -153,25 +264,6 @@ export class WebSearchMCPServerPlugin implements MCPServerPlugin {
     }
   }
 
-  private processResults(results: string): SearchResult[] {
-    try {
-      const parsed = JSON.parse(results);
-      if (Array.isArray(parsed)) {
-        return parsed.map((item: any) => ({
-          title: item.title || '',
-          url: item.url || item.href || '',
-          snippet: item.snippet || item.body || item.description || '',
-          publishedDate: item.publishedDate || item.date || item.age,
-          isPdf: item.isPdf || item.is_pdf || false
-        }));
-      }
-      return [];
-    } catch {
-      console.error('[WebSearchMCP] Failed to parse search results');
-      return [];
-    }
-  }
-
   async executeTool(toolName: string, params: Record<string, unknown>): Promise<MCPToolResult> {
     try {
       const config = this.getSearchConfig();
@@ -202,7 +294,7 @@ export class WebSearchMCPServerPlugin implements MCPServerPlugin {
             pdfOnly
           });
 
-          const searchResults = this.processResults(result);
+          const searchResults = this.parseResultsByProvider(result, config.provider);
 
           return {
             success: true,
@@ -239,7 +331,7 @@ export class WebSearchMCPServerPlugin implements MCPServerPlugin {
             pdfOnly: includePdfs
           });
 
-          const searchResults = this.processResults(result);
+          const searchResults = this.parseResultsByProvider(result, config.provider);
           
           // Prioritize PDF results
           const papers = searchResults

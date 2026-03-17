@@ -25,8 +25,8 @@ export class FileBrowserViewPlugin implements ViewPlugin {
     return FileBrowserView;
   }
 
-  canHandle(context: PluginContext): boolean {
-    return !!context.filePath;
+  canHandle(_context: PluginContext): boolean {
+    return true;
   }
 
   getViewName(): string {

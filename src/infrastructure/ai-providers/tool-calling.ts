@@ -41,68 +41,74 @@ IMPORTANT RULES:
 export function parseToolCalls(response: string): ToolCall[] {
   console.log('[parseToolCalls] Input:', response.slice(0, 200))
   
-  // Simple approach: find {"tool_call": and try to parse from there
   const toolCalls: ToolCall[] = [];
-  let searchStart = 0;
   
-  while (true) {
-    const startIdx = response.indexOf('{"tool_call":', searchStart);
-    if (startIdx === -1) break;
+  // Find tool call JSON in response - handle nested braces properly
+  const toolCallMatch = response.match(/\{\s*"tool_call"\s*:/);
+  
+  if (!toolCallMatch) {
+    console.log('[parseToolCalls] No tool call found')
+    return toolCalls;
+  }
+  
+  const startIdx = toolCallMatch.index || 0;
+  
+  // Find the matching closing brace by counting braces
+  let braceCount = 0;
+  let inString = false;
+  let escapeNext = false;
+  let endIdx = -1;
+  
+  for (let i = startIdx; i < response.length; i++) {
+    const char = response[i];
     
-    // Find the matching closing brace
-    let braceCount = 0;
-    let inString = false;
-    let escapeNext = false;
-    let endIdx = startIdx;
-    
-    for (let i = startIdx; i < response.length; i++) {
-      const char = response[i];
-      
-      if (escapeNext) {
-        escapeNext = false;
-        continue;
-      }
-      
-      if (char === '\\') {
-        escapeNext = true;
-        continue;
-      }
-      
-      if (char === '"') {
-        inString = !inString;
-        continue;
-      }
-      
-      if (inString) continue;
-      
-      if (char === '{') braceCount++;
-      else if (char === '}') {
-        braceCount--;
-        if (braceCount === 0) {
-          endIdx = i + 1;
-          break;
-        }
-      }
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
     }
     
-    const jsonStr = response.slice(startIdx, endIdx);
-    console.log('[parseToolCalls] Extracted JSON:', jsonStr.slice(0, 100))
-    
-    try {
-      const parsed = JSON.parse(jsonStr);
-      console.log('[parseToolCalls] Parsed:', parsed)
-      if (parsed.tool_call && parsed.tool_call.name) {
-        toolCalls.push({
-          name: parsed.tool_call.name,
-          arguments: parsed.tool_call.parameters || {}
-        });
-        console.log('[parseToolCalls] Added tool:', parsed.tool_call.name)
-      }
-    } catch (e) {
-      console.log('[parseToolCalls] Parse error:', e)
+    if (char === '\\') {
+      escapeNext = true;
+      continue;
     }
     
-    searchStart = endIdx;
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    
+    if (inString) continue;
+    
+    if (char === '{') braceCount++;
+    else if (char === '}') {
+      braceCount--;
+      if (braceCount === 0) {
+        endIdx = i + 1;
+        break;
+      }
+    }
+  }
+  
+  if (endIdx === -1) {
+    console.log('[parseToolCalls] Could not find matching closing brace')
+    return toolCalls;
+  }
+  
+  const jsonStr = response.slice(startIdx, endIdx);
+  console.log('[parseToolCalls] Extracted JSON:', jsonStr.slice(0, 100))
+  
+  try {
+    const parsed = JSON.parse(jsonStr);
+    console.log('[parseToolCalls] Parsed:', parsed)
+    if (parsed.tool_call && parsed.tool_call.name) {
+      toolCalls.push({
+        name: parsed.tool_call.name,
+        arguments: parsed.tool_call.parameters || {}
+      });
+      console.log('[parseToolCalls] Added tool:', parsed.tool_call.name)
+    }
+  } catch (e) {
+    console.log('[parseToolCalls] Parse error:', e)
   }
   
   console.log('[parseToolCalls] Total tools found:', toolCalls.length)

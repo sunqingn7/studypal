@@ -10,7 +10,7 @@ pub async fn search(
     println!("[RUST] DuckDuckGo search called");
     
     let search_url = format!(
-        "https://ddg-api.vercel.app/search?q={}&max_results={}",
+        "https://api.duckduckgo.com/?q={}&format=json&no_html=1&skip_disambig=1&limit={}",
         urlencoding::encode(query),
         max_results
     );
@@ -33,27 +33,38 @@ pub async fn search(
     
     let body = response.text().await.map_err(|e| e.to_string())?;
     
-    // Parse DuckDuckGo response
     if let Ok(json) = serde_json::from_str::<Value>(&body) {
-        if let Some(arr) = json.as_array() {
-            let results: Vec<SearchResult> = arr
-                .iter()
-                .map(|item| SearchResult {
-                    title: item.get("title").and_then(|t| t.as_str()).unwrap_or("").to_string(),
-                    url: item.get("href").and_then(|h| h.as_str()).unwrap_or(
-                        item.get("url").and_then(|u| u.as_str()).unwrap_or("")
-                    ).to_string(),
-                    snippet: item.get("body").and_then(|b| b.as_str()).unwrap_or(
-                        item.get("snippet").and_then(|s| s.as_str()).unwrap_or("")
-                    ).to_string(),
-                    published_date: item.get("date").and_then(|d| d.as_str()).map(|s| s.to_string()),
-                    is_pdf: Some(false), // DuckDuckGo doesn't provide this info directly
-                })
-                .collect();
-            
-            println!("[RUST] DuckDuckGo returned {} results", results.len());
-            return Ok(results);
+        let results: Vec<SearchResult> = json
+            .get("RelatedTopics")
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| {
+                        let url = item.get("URL").or(item.get("url")).and_then(|u| u.as_str())?;
+                        if url.is_empty() {
+                            return None;
+                        }
+                        Some(SearchResult {
+                            title: item.get("Text").or(item.get("text")).and_then(|t| t.as_str()).unwrap_or("").to_string(),
+                            url: url.to_string(),
+                            snippet: item.get("Text").or(item.get("text")).and_then(|t| t.as_str()).unwrap_or("").to_string(),
+                            published_date: None,
+                            is_pdf: Some(false),
+                        })
+                    })
+                    .take(max_results as usize)
+                    .collect()
+            })
+            .unwrap_or_default();
+        
+        println!("[RUST] DuckDuckGo returned {} results", results.len());
+        
+        if results.is_empty() {
+            return Err("No results found".to_string());
         }
+        
+        return Ok(results);
     }
     
     Err("Failed to parse DuckDuckGo response".to_string())

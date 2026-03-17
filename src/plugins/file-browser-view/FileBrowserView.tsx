@@ -85,7 +85,8 @@ export const FileBrowserView: React.FC<FileBrowserViewProps> = ({ context }) => 
   useEffect(() => {
     const initialize = async () => {
       if (!context.filePath) {
-        setError('No file opened');
+        setTreeData([]);
+        setError(null);
         return;
       }
 
@@ -297,6 +298,15 @@ const renderTreeNode = (node: TreeNode, index: number, depth: number = 0, parent
 
   
 
+  if (error && !context.filePath) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-[var(--sidebar-fg)] p-4 bg-[var(--sidebar-bg)]" style={{ fontSize: '14px' }}>
+        <p className="opacity-50">No file opened</p>
+        <p className="text-xs opacity-50 mt-1">Open a file to see its folder</p>
+      </div>
+    );
+  }
+
   if (error) {
     return (
       <div className="flex items-center justify-center h-full text-[var(--sidebar-fg)] p-4 bg-[var(--sidebar-bg)]" style={{ fontSize: '14px' }}>
@@ -308,8 +318,8 @@ const renderTreeNode = (node: TreeNode, index: number, depth: number = 0, parent
   return (
     <div className="h-full flex flex-col bg-[var(--sidebar-bg)]">
       {/* Header */}
-      <div className="flex items-center justify-between h-[28px] px-1 bg-[var(--sidebar-bg)] text-[var(--sidebar-fg)]">
-        <span className="text-[11px] font-semibold px-2 select-none">
+      <div className="flex items-center justify-between h-[28px] px-1 bg-[var(--sidebar-bg)] border-b border-[var(--sidebar-border)]">
+        <span className="text-[11px] font-semibold px-2 select-none text-[var(--sidebar-fg)]">
           EXPLORER
         </span>
         <button

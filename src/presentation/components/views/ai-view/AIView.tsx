@@ -445,6 +445,53 @@ function AIView() {
             } catch (e) {
               toolResultText = '\n\n[Tool result: ' + JSON.stringify(result.data) + ']'
             }
+          } else if (result.success && toolCall.name === 'web_search') {
+            // Parse search results from web_search
+            try {
+              const data = result.data as any
+              const results = data?.results || []
+              if (results.length > 0) {
+                toolResultText = '\n\n**Search Results:**\n\n'
+                results.forEach((item: any, idx: number) => {
+                  toolResultText += `${idx + 1}. [${item.title}](${item.url})\n`
+                  if (item.snippet) {
+                    toolResultText += `   _${item.snippet.slice(0, 150)}_` + '\n\n'
+                  }
+                })
+                toolResultText += '\n*Click a link to open in file view*'
+              } else {
+                toolResultText = '\n\n[No results found]'
+              }
+            } catch (e) {
+              toolResultText = '\n\n[Tool result: ' + JSON.stringify(result.data) + ']'
+            }
+          } else if (result.success && toolCall.name === 'get_paper_metadata') {
+            // Format paper metadata with clickable download link
+            try {
+              const data = result.data as any
+              const url = data?.url || ''
+              const title = data?.title || 'Unknown Paper'
+              const source = data?.source || ''
+              const id = data?.id || ''
+              
+              // Convert arxiv URL to PDF URL
+              let downloadUrl = url
+              if (url.includes('arxiv.org/abs/')) {
+                downloadUrl = url.replace('/abs/', '/pdf/') + '.pdf'
+              } else if (url.includes('arxiv.org/pdf/')) {
+                downloadUrl = url
+              }
+              
+              toolResultText = `\n\n**Paper Found:**\n\n[${title}](${downloadUrl})\n\n`
+              if (source) {
+                toolResultText += `*Source: ${source}`
+                if (id) toolResultText += ` | ID: ${id}`
+                toolResultText += '*\n'
+              }
+              toolResultText += '\n*Click the link to download and open in file view*'
+            } catch (e) {
+              toolResultText = '\n\n[Tool result: ' + JSON.stringify(result.data) + ']'
+            }
           } else {
             toolResultText = `\n\n[Used tool: ${toolCall.name}]\n${result.success ? JSON.stringify(result.data) : result.error}`
           }
