@@ -116,6 +116,12 @@ function AIView() {
   }, [editor])
 
   useEffect(() => {
+    // Don't auto-create tabs if no file is open (system state handles it)
+    const currentFile = useFileStore.getState().currentFile;
+    if (!currentFile && tabs.length === 0) {
+      // System state will be loaded, don't create default tabs here
+      return;
+    }
     if (tabs.length === 0) {
       addTab()
     }

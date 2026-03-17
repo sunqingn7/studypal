@@ -4,6 +4,7 @@ import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { useNoteStore } from '../../../../application/store/note-store'
 import { useTopicStore } from '../../../../application/store/topic-store'
+import { useFileStore } from '../../../../application/store/file-store'
 import './NoteView.css'
 
 const FONT_SIZES = [12, 14, 16, 18, 20, 22, 24, 28, 32]
@@ -62,6 +63,12 @@ function NoteView() {
   }, [editor, activeNote?.id, activeNote?.content])
 
   useEffect(() => {
+    // Don't auto-create tabs if no file is open (system state handles it)
+    const currentFile = useFileStore.getState().currentFile;
+    if (!currentFile && tabs.length === 0) {
+      // System state will be loaded, don't create default tabs here
+      return;
+    }
     if (tabs.length === 0) {
       addTab(activeTopicId)
     }
