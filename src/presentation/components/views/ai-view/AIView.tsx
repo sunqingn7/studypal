@@ -16,7 +16,7 @@ import { getCurrentPageText, getAllPagesText } from '../../../../infrastructure/
 import { ChatMessage, AIProviderType } from '../../../../domain/models/ai-context'
 import { updateAIConfig, updateProviderConfigs } from '../../../../application/services/session-manager'
 import { getAllMCPTools, executeMCPTool } from '../../../../infrastructure/ai-providers/mcp-utils'
-import { buildToolPrompt, parseToolCalls, extractFinalResponse } from '../../../../infrastructure/ai-providers/tool-calling'
+import { buildToolPrompt, parseToolCalls } from '../../../../infrastructure/ai-providers/tool-calling'
 import { PaperLink } from './components/PaperLink'
 import './AIView.css'
 
@@ -368,142 +368,69 @@ function AIView() {
       if (supportsToolCalling && mcpTools.length > 0) {
         // Use native function calling (for OpenAI, Anthropic, etc.)
         console.log('[AIView] Using native function calling')
-        
-    // For now, we'll use the standard streamChat and parse for tool calls
-    // Native function calling will be fully implemented in later phases
-    await provider.streamChat(
-      messagesWithTools,
-      config,
-      (chunk: string) => {
-        // Accumulate raw content (don't filter during streaming)
-        localContent += chunk
-        // Filter JSON for display only
-        const displayContent = localContent.replace(/\{[\s\S]*"tool_call"[\s\S]*\}\s*\}/g, '')
-        setStreamingContent(displayContent)
-      }
-    )
-  } else if (supportsThinking) {
-      // Use streamChatWithThinking for models that return thinking
-      console.log('[AIView] Using streamChatWithThinking')
-
-      await provider.streamChatWithThinking!(
-        messagesWithTools,
-        config,
-      (chunk: string) => {
-        // Accumulate raw content (don't filter during streaming)
-        localContent += chunk
-        // Filter JSON for display only
-        const displayContent = localContent.replace(/\{[\s\S]*"tool_call"[\s\S]*\}\s*\}/g, '')
-        setStreamingContent(displayContent)
-      },
-        (thinking: string) => {
-          // Filter out JSON tool calls from thinking
-          const filteredThinking = thinking.replace(/\{[\s\S]*"tool_call"[\s\S]*\}\s*\}/g, '')
-          if (filteredThinking) {
-            localThinking += filteredThinking
-            setStreamingThinking(localThinking)
+        await provider.streamChat(
+          messagesWithTools,
+          config,
+          (chunk: string) => {
+            localContent += chunk
+            const displayContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
+            setStreamingContent(displayContent)
           }
-        }
-      )
-  } else if (supportsThinking) {
+        )
+      } else if (supportsThinking) {
         // Use streamChatWithThinking for models that return thinking
         console.log('[AIView] Using streamChatWithThinking')
-        
-      await provider.streamChatWithThinking!(
-        messagesWithTools,
-        config,
-      (chunk: string) => {
-        // Filter out JSON tool calls from display
-        const filteredChunk = chunk.replace(/\{[\s\S]*"tool_call"[\s\S]*\}\s*\}/g, '')
-          if (filteredChunk) {
-            localContent += filteredChunk
-            setStreamingContent(localContent)
+        await provider.streamChatWithThinking!(
+          messagesWithTools,
+          config,
+          (chunk: string) => {
+            localContent += chunk
+            const displayContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
+            setStreamingContent(displayContent)
+          },
+          (thinking: string) => {
+            const filteredThinking = thinking.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
+            if (filteredThinking) {
+              localThinking += filteredThinking
+              setStreamingThinking(localThinking)
+            }
           }
-        },
-        (thinking: string) => {
-          // Filter out JSON tool calls from thinking
-          const filteredThinking = thinking.replace(/\{[\s\S]*"tool_call"[\s\S]*\}\s*\}/g, '')
-          if (filteredThinking) {
-            localThinking += filteredThinking
-            setStreamingThinking(localThinking)
+        )
+      } else {
+        // Fallback for llama.cpp, vLLM, etc.
+        console.log('[AIView] Using prompt-based tool calling')
+        await provider.streamChat(
+          messagesWithTools,
+          config,
+          (chunk: string) => {
+            localContent += chunk
+            const displayContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
+            setStreamingContent(displayContent)
           }
-        }
-      )
+        )
+      }
 
       console.log('[AIView] Stream complete, checking for tool calls...')
-      // Parse tool calls from response
       const toolCalls = parseToolCalls(localContent)
-      console.log('[AIView] toolCalls found:', toolCalls.length, toolCalls)
+      console.log('[AIView] toolCalls found:', toolCalls.length)
 
       if (toolCalls.length > 0) {
-        console.log('[AIView] Found tool calls:', toolCalls)
-
-        // Clear streaming content before executing tools (don't show raw JSON)
+        console.log('[AIView] Found tool calls, executing...')
         setStreamingContent('Processing tools...')
 
-        // Execute tool calls and get results
         for (const toolCall of toolCalls) {
           console.log('[AIView] Executing tool:', toolCall.name, toolCall.arguments)
           const result = await executeTool(toolCall.name, toolCall.arguments)
-          console.log('[AIView] Tool result:', result.success ? 'success' : 'error', result.data)
+          console.log('[AIView] Tool result:', result.success ? 'success' : 'error')
 
-          // Add tool result to display
           const toolResultText = `\n\n[Used tool: ${toolCall.name}]\n${result.success ? JSON.stringify(result.data) : result.error}`
           localContent += toolResultText
           setStreamingContent(localContent)
         }
-
-        // Don't call extractFinalResponse - the tool result IS the final response
-        // localContent already contains the tool results
       }
-    } else {
-        // Use prompt-based tool calling (fallback for llama.cpp, vLLM, etc.)
-        console.log('[AIView] Using prompt-based tool calling')
-        
-      // First call: get response with potential tool calls
-      await provider.streamChat(
-        messagesWithTools,
-        config,
-      (chunk: string) => {
-        // Accumulate raw content (don't filter during streaming)
-        localContent += chunk
-        // Filter JSON for display only
-        const displayContent = localContent.replace(/\{[\s\S]*"tool_call"[\s\S]*\}\s*\}/g, '')
-        setStreamingContent(displayContent)
-      }
-      )
 
-        // Parse tool calls from response
-        const toolCalls = parseToolCalls(localContent)
-        
-      if (toolCalls.length > 0) {
-        console.log('[AIView] Found tool calls:', toolCalls)
-
-        // Clear streaming content before executing tools (don't show raw JSON)
-        setStreamingContent('Processing tools...')
-
-        // Execute tool calls and get results
-        for (const toolCall of toolCalls) {
-            const result = await executeTool(toolCall.name, toolCall.arguments)
-            
-            // Add tool result to display
-            const toolResultText = `\n\n[Used tool: ${toolCall.name}]\n${result.success ? JSON.stringify(result.data) : result.error}`
-            localContent += toolResultText
-            setStreamingContent(localContent)
-          }
-
-          // Don't call extractFinalResponse - the tool result IS the final response
-        } else {
-          // No tool calls, but model might still output JSON format
-          localContent = extractFinalResponse(localContent, []).content
-        }
-      }
-      
-      // Add the final assistant message to the chat
-      // Filter out any remaining JSON tool calls from final message
-      console.log('[AIView] localContent before filter:', localContent.slice(0, 200))
+      // Add final message
       const finalContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
-      console.log('[AIView] finalContent after filter:', finalContent.slice(0, 200))
       const finalThinking = localThinking?.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
       addMessage(activeTabId, 'assistant', finalContent, finalThinking || undefined)
 
