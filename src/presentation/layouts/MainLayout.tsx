@@ -267,6 +267,24 @@ function MainLayout() {
   
   const previousFileRef = useRef<FileMetadata | null>(null)
 
+  // Handle system state when no file is open
+  useEffect(() => {
+    if (!isHydrated) return;
+    
+    const fileStore = useFileStore.getState();
+    
+    if (!currentFile) {
+      // No file open - load system state
+      console.log('[MainLayout] No file open, loading system state');
+      fileStore.loadSystemState(useNoteStore.getState(), useAIChatStore.getState());
+    } else if (previousFileRef.current === null && currentFile) {
+      // First file loaded - save system state first if it exists, then load file state
+      console.log('[MainLayout] First file loaded, saving system state first');
+      fileStore.saveSystemState(useNoteStore.getState(), useAIChatStore.getState());
+      fileStore.loadDocumentState(currentFile.path, useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState());
+    }
+  }, [currentFile, isHydrated]);
+
   useEffect(() => {
     if (currentFile && isHydrated) {
       console.log('[MainLayout] Saving file to session:', currentFile.path)

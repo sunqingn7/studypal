@@ -124,18 +124,16 @@ export const HistoryView: React.FC = () => {
     
     // Use setTimeout to ensure this happens after the dialog closes
     setTimeout(() => {
-      // Get stores and clear after user confirms
       const fileStore = useFileStore.getState();
       const noteStoreActions = useNoteStore.getState();
       const aiChatStoreActions = useAIChatStore.getState();
       const sessionStore = useSessionStore.getState();
       
-      // Clear current file
-      fileStore.setCurrentFile(null);
+      // Save current notes/chat as system state before clearing
+      fileStore.saveSystemState(noteStoreActions, aiChatStoreActions);
       
-      // Clear all notes and chats
-      noteStoreActions.clear();
-      aiChatStoreActions.clear();
+      // Clear current file (this will trigger loadSystemState in the useEffect)
+      fileStore.setCurrentFile(null);
       
       // Clear current file in session (keep history)
       sessionStore.setCurrentFile(null, null, 1, 0);

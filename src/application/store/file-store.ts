@@ -20,7 +20,13 @@ import { useDocumentMetadataStore } from './document-metadata-store'
  * Backup: sessionStorage (temporary, for migration only)
  * - Not used for primary storage
  * - Only used during migration from old version
+ * 
+ * SYSTEM DOCUMENT: "__system__"
+ * - Used when no file is open to persist system/default notes and chat
  */
+
+// System document ID for default notes/chat when no file is open
+const SYSTEM_DOCUMENT_ID = '__system__'
 
 interface FileStore extends FileState {
   currentPage: number
@@ -32,6 +38,8 @@ interface FileStore extends FileState {
   updateFileMetadata: (fileId: string, updates: Partial<FileMetadata>) => void
   saveCurrentDocumentState: (noteStore: any, aiChatStore: any, sessionStore: any, fileToSave?: { path: string }) => void
   loadDocumentState: (documentId: string, noteStore: any, aiChatStore: any, sessionStore?: any) => void
+  saveSystemState: (noteStore: any, aiChatStore: any) => Promise<void>
+  loadSystemState: (noteStore: any, aiChatStore: any) => Promise<void>
   saveDocumentMetadata: (documentPath: string, metadata: Partial<import('./document-metadata-store').DocumentMetadata>) => Promise<void>
   loadDocumentMetadata: (documentPath: string) => Promise<import('./document-metadata-store').DocumentMetadata | null>
 }
@@ -454,7 +462,127 @@ export const useFileStore = create<FileStore>((set, get) => ({
       }
     },
 
-setCurrentFile: async (file, preservePage = false) => {
+  saveSystemState: async (_noteStore, _aiChatStore) => {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      
+      // Get notes from store
+      const noteStoreActions = useNoteStore.getState();
+      const { globalNotes, topicNotes } = noteStoreActions;
+      const allNotes: any[] = [...globalNotes];
+      topicNotes.forEach((notes: any[]) => {
+        allNotes.push(...notes);
+      });
+
+      // Get chat data from store
+      const aiChatStoreActions = useAIChatStore.getState();
+      const chatState = aiChatStoreActions.serialize();
+      const chatTabs: any[] = chatState.tabs.map((tab: any) => ({
+        id: tab.id,
+        title: tab.title,
+        messages: tab.messages,
+        isActive: tab.isActive
+      }));
+
+      // Save chats to database with system ID
+      await invoke('save_chats', {
+        documentPath: SYSTEM_DOCUMENT_ID,
+        tabs: chatTabs
+      });
+      console.log('[FileStore] ✅ Saved', chatTabs.length, 'system chat tabs');
+
+      // Save notes to markdown files in a system folder
+      if (allNotes.length > 0) {
+        const systemNotesPath = SYSTEM_DOCUMENT_ID;
+        for (const note of allNotes) {
+          try {
+            await invoke('save_note_to_markdown', {
+              documentPath: systemNotesPath,
+              noteId: note.id,
+              title: note.title,
+              content: note.content,
+              noteType: note.type || 'note',
+              topicId: note.topicId || null
+            });
+          } catch (e) {
+            console.error('[FileStore] Error saving system note:', note.id, e);
+          }
+        }
+        console.log('[FileStore] ✅ Saved', allNotes.length, 'system notes');
+      }
+    } catch (e) {
+      console.error('[FileStore] Error saving system state:', e);
+    }
+  },
+
+  loadSystemState: async (_noteStore, _aiChatStore) => {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      
+      // Load chats from database
+      let chatData: any[] = [];
+      try {
+        chatData = await invoke('load_chats', { documentPath: SYSTEM_DOCUMENT_ID });
+        console.log('[FileStore] ✅ Loaded', chatData.length, 'system chat tabs from database');
+      } catch (e) {
+        console.log('[FileStore] No system chats found in database');
+        chatData = [];
+      }
+
+      // Load notes from markdown files
+      let notesFromFiles: any[] = [];
+      try {
+        notesFromFiles = await invoke('load_all_notes_from_markdown', { documentPath: SYSTEM_DOCUMENT_ID });
+        console.log('[FileStore] ✅ Loaded', notesFromFiles.length, 'system notes from markdown files');
+      } catch (e) {
+        console.log('[FileStore] No system notes found');
+        notesFromFiles = [];
+      }
+
+      // Apply to stores
+      if (chatData.length > 0) {
+        const aiChatStoreActions = useAIChatStore.getState();
+        aiChatStoreActions.deserialize({ tabs: chatData });
+        console.log('[FileStore] ✅ Loaded system chats into store');
+      } else {
+        // Create default system chat if none exists
+        const aiChatStoreActions = useAIChatStore.getState();
+        if (aiChatStoreActions.tabs.length === 0) {
+          aiChatStoreActions.addTab('System Chat');
+          console.log('[FileStore] ✅ Created default system chat');
+        }
+      }
+
+      if (notesFromFiles.length > 0) {
+        const noteStoreActions = useNoteStore.getState();
+        const topicNotesMap = new Map<string, any[]>();
+        
+        noteStoreActions.deserialize({
+          tabs: [],
+          globalNotes: notesFromFiles,
+          topicNotes: Array.from(topicNotesMap.entries()),
+        });
+
+        // Create tabs for each note
+        notesFromFiles.forEach((note: any) => {
+          noteStoreActions.createTabForNote(note.id, note.title);
+        });
+        console.log('[FileStore] ✅ Loaded system notes into store');
+      } else {
+        // Create default system note if none exists
+        const noteStoreActions = useNoteStore.getState();
+        if (noteStoreActions.globalNotes.length === 0) {
+          noteStoreActions.createNote(null, 'System Note', 'note');
+          noteStoreActions.addTab(null, 'System Note');
+          console.log('[FileStore] ✅ Created default system note');
+        }
+      }
+    } catch (e) {
+      console.error('[FileStore] Error loading system state:', e);
+    }
+  },
+
+  setCurrentFile: async (file, preservePage = false) => {
     const prevFile = get().currentFile
 
     // Save metadata for previous file before switching
