@@ -430,6 +430,7 @@ function AIView() {
         }
       )
 
+      console.log('[AIView] Stream complete, checking for tool calls...')
       // Parse tool calls from response
       const toolCalls = parseToolCalls(localContent)
       console.log('[AIView] toolCalls found:', toolCalls.length, toolCalls)
