@@ -50,8 +50,7 @@ function MainLayout() {
             await saveCurrentDocumentState(useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState());
           }
 
-          const session = useSessionStore.getState().getSession();
-          localStorage.setItem('studypal-session', JSON.stringify(session));
+          // Session is auto-saved by zustand persist, no manual save needed
           console.log('[MainLayout] State saved, closing window...');
         });
         
@@ -70,9 +69,7 @@ function MainLayout() {
       if (currentFile) {
         saveCurrentDocumentState(useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState());
       }
-
-      const session = useSessionStore.getState().getSession();
-      localStorage.setItem('studypal-session', JSON.stringify(session));
+      // Session is auto-saved by zustand persist, no manual save needed
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
