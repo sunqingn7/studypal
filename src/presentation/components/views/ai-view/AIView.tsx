@@ -374,30 +374,28 @@ function AIView() {
     await provider.streamChat(
       messagesWithTools,
       config,
-        (chunk: string) => {
-          // Filter out JSON tool calls from display
-          const filteredChunk = chunk.replace(/\{[\s\S]*"tool_call"[\s\S]*\}\s*\}/g, '')
-          if (filteredChunk) {
-            localContent += filteredChunk
-            setStreamingContent(localContent)
-          }
-        }
-      )
-    } else if (supportsThinking) {
+      (chunk: string) => {
+        // Accumulate raw content (don't filter during streaming)
+        localContent += chunk
+        // Filter JSON for display only
+        const displayContent = localContent.replace(/\{[\s\S]*"tool_call"[\s\S]*\}\s*\}/g, '')
+        setStreamingContent(displayContent)
+      }
+    )
+  } else if (supportsThinking) {
       // Use streamChatWithThinking for models that return thinking
       console.log('[AIView] Using streamChatWithThinking')
 
       await provider.streamChatWithThinking!(
         messagesWithTools,
         config,
-        (chunk: string) => {
-          // Filter out JSON tool calls from display
-          const filteredChunk = chunk.replace(/\{[\s\S]*"tool_call"[\s\S]*\}\s*\}/g, '')
-          if (filteredChunk) {
-            localContent += filteredChunk
-            setStreamingContent(localContent)
-          }
-        },
+      (chunk: string) => {
+        // Accumulate raw content (don't filter during streaming)
+        localContent += chunk
+        // Filter JSON for display only
+        const displayContent = localContent.replace(/\{[\s\S]*"tool_call"[\s\S]*\}\s*\}/g, '')
+        setStreamingContent(displayContent)
+      },
         (thinking: string) => {
           // Filter out JSON tool calls from thinking
           const filteredThinking = thinking.replace(/\{[\s\S]*"tool_call"[\s\S]*\}\s*\}/g, '')
@@ -414,9 +412,9 @@ function AIView() {
       await provider.streamChatWithThinking!(
         messagesWithTools,
         config,
-        (chunk: string) => {
-          // Filter out JSON tool calls from display
-          const filteredChunk = chunk.replace(/\{"tool_call":\s*\{[^}]+\}\}/g, '')
+      (chunk: string) => {
+        // Filter out JSON tool calls from display
+        const filteredChunk = chunk.replace(/\{[\s\S]*"tool_call"[\s\S]*\}\s*\}/g, '')
           if (filteredChunk) {
             localContent += filteredChunk
             setStreamingContent(localContent)
@@ -462,14 +460,13 @@ function AIView() {
       await provider.streamChat(
         messagesWithTools,
         config,
-        (chunk: string) => {
-          // Filter out JSON tool calls from display
-          const filteredChunk = chunk.replace(/\{[\s\S]*"tool_call"[\s\S]*\}\s*\}/g, '')
-          if (filteredChunk) {
-            localContent += filteredChunk
-            setStreamingContent(localContent)
-          }
-        }
+      (chunk: string) => {
+        // Accumulate raw content (don't filter during streaming)
+        localContent += chunk
+        // Filter JSON for display only
+        const displayContent = localContent.replace(/\{[\s\S]*"tool_call"[\s\S]*\}\s*\}/g, '')
+        setStreamingContent(displayContent)
+      }
       )
 
         // Parse tool calls from response

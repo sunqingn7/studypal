@@ -39,13 +39,14 @@ IMPORTANT RULES:
 }
 
 export function parseToolCalls(response: string): ToolCall[] {
-  const toolCallRegex = /\{"tool_call":\s*\{[^}]+\}\}/g;
+  // Match multiline JSON tool calls
+  const toolCallRegex = /\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g;
   const matches = response.match(toolCallRegex);
-  
+
   if (!matches) return [];
-  
+
   const toolCalls: ToolCall[] = [];
-  
+
   for (const match of matches) {
     try {
       const parsed = JSON.parse(match);
@@ -60,7 +61,7 @@ export function parseToolCalls(response: string): ToolCall[] {
       continue;
     }
   }
-  
+
   return toolCalls;
 }
 
@@ -87,8 +88,8 @@ export function extractFinalResponse(response: string, _toolCalls: ToolCall[]): 
     // Not JSON, continue with normal processing
   }
   
-  // Remove tool call JSON from the response (handles multiline)
-  const toolCallRegex = /\{[\s\S]*?"tool_call"[\s\S]*?\}\s*\}/g;
+  // Remove tool call JSON from the response (handles multiline and whitespace)
+  const toolCallRegex = /\{\s*"tool_call"[\s\S]*?\}\s*\}/g;
   finalResponse = finalResponse.replace(toolCallRegex, '').trim();
   
   // If response is empty after removing tool calls, provide a default
