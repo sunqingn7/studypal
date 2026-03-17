@@ -137,11 +137,13 @@ export const HistoryView: React.FC = () => {
       noteStoreActions.clear();
       aiChatStoreActions.clear();
       
-      // Clear file history and current file in session
-      sessionStore.clearFileHistory();
+      // Clear current file in session (keep history)
       sessionStore.setCurrentFile(null, null, 1, 0);
       
-      setFileHistory([]);
+      // Refresh history display from store
+      const history = sessionStore.getFileHistory();
+      setFileHistory([...history].sort((a, b) => b.lastOpened - a.lastOpened));
+      
       isProcessingRef.current = false;
     }, 100);
   };
