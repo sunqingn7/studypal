@@ -6,6 +6,7 @@ import { useNoteStore } from '../../application/store/note-store'
 import { useAIChatStore } from '../../application/store/ai-chat-store'
 import { useThemeStore } from '../../application/store/theme-store'
 import { useSessionStore } from '../../application/store/session-store'
+import { useSettingsStore } from '../../application/store/settings-store'
 import { useAIStore } from '../../application/store/ai-store'
 import { initializeSession, updateAIConfig } from '../../application/services/session-manager'
 import { pluginRegistry } from '../../infrastructure/plugins/plugin-registry'
@@ -21,6 +22,7 @@ function MainLayout() {
   const { currentFile } = useFileStore()
   const { theme, toggleTheme } = useThemeStore()
   const { session, setPanelSize, setShowFileBrowser: setSessionShowBrowser, setTheme: setSessionTheme, addToFileHistory } = useSessionStore()
+  const { updateGlobal } = useSettingsStore()
   const [showFileBrowser, setShowFileBrowser] = useState(session.showFileBrowser)
   const [hasFileBrowser, setHasFileBrowser] = useState(false)
   const [isHydrated, setIsHydrated] = useState(false)
@@ -327,8 +329,10 @@ function MainLayout() {
   }
 
   const handleThemeToggle = () => {
+    const newTheme = theme === 'light' ? 'dark' : 'light'
     toggleTheme()
-    setSessionTheme(theme === 'light' ? 'dark' : 'light')
+    setSessionTheme(newTheme)
+    updateGlobal({ theme: newTheme })
   }
 
   // Handle layout changes from the Group - only fires after user releases drag
