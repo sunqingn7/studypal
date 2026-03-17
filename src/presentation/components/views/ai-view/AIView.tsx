@@ -423,15 +423,71 @@ function AIView() {
           const result = await executeTool(toolCall.name, toolCall.arguments)
           console.log('[AIView] Tool result:', result.success ? 'success' : 'error')
 
-          const toolResultText = `\n\n[Used tool: ${toolCall.name}]\n${result.success ? JSON.stringify(result.data) : result.error}`
+          // Format tool result with clickable paper links if it's search_papers
+          let toolResultText = ''
+          if (result.success && toolCall.name === 'search_papers') {
+            // Parse papers from result
+            try {
+              const data = result.data as any
+              const papers = data?.papers || []
+              if (papers.length > 0) {
+                toolResultText = '\n\n**Found ' + papers.length + ' papers:**\n\n'
+                papers.forEach((paper: any, idx: number) => {
+                  toolResultText += `${idx + 1}. [${paper.title}](${paper.url})\n`
+                  if (paper.snippet) {
+                    toolResultText += `   _${paper.snippet.slice(0, 150)}..._\n\n`
+                  }
+                })
+                toolResultText += '\n*Click a link to download and open in file view*'
+              } else {
+                toolResultText = '\n\n[No papers found]'
+              }
+            } catch (e) {
+              toolResultText = '\n\n[Tool result: ' + JSON.stringify(result.data) + ']'
+            }
+          } else {
+            toolResultText = `\n\n[Used tool: ${toolCall.name}]\n${result.success ? JSON.stringify(result.data) : result.error}`
+          }
+          
           localContent += toolResultText
           setStreamingContent(localContent)
         }
       }
 
-      // Add final message
-      const finalContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
-      const finalThinking = localThinking?.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
+      // Add final message - filter out any remaining tool call JSON
+      const filterToolCalls = (text: string): string => {
+        let result = '';
+        let searchStart = 0;
+        while (true) {
+          const startIdx = text.indexOf('{"tool_call":', searchStart);
+          if (startIdx === -1) {
+            result += text.slice(searchStart);
+            break;
+          }
+          result += text.slice(searchStart, startIdx);
+          
+          // Find matching closing brace
+          let braceCount = 0;
+          let inString = false;
+          let endIdx = startIdx;
+          for (let i = startIdx; i < text.length; i++) {
+            const char = text[i];
+            if (char === '\\') { i++; continue; }
+            if (char === '"') { inString = !inString; continue; }
+            if (inString) continue;
+            if (char === '{') braceCount++;
+            else if (char === '}') {
+              braceCount--;
+              if (braceCount === 0) { endIdx = i + 1; break; }
+            }
+          }
+          searchStart = endIdx;
+        }
+        return result.trim();
+      }
+      
+      const finalContent = filterToolCalls(localContent)
+      const finalThinking = filterToolCalls(localThinking || '')
       addMessage(activeTabId, 'assistant', finalContent, finalThinking || undefined)
 
       // Clear local streaming state
