@@ -50,9 +50,17 @@ export function parseToolCalls(response: string): ToolCall[] {
   const toolCalls: ToolCall[] = [];
 
   for (const match of matches) {
-    console.log('[parseToolCalls] Processing match:', match.slice(0, 100))
+    console.log('[parseToolCalls] Raw match length:', match.length)
+    console.log('[parseToolCalls] Raw match:', match)
+    // Try to unescape if needed
+    let jsonStr = match
+    if (match.includes('\\"')) {
+      console.log('[parseToolCalls] Unescaping match...')
+      jsonStr = match.replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+    }
+    console.log('[parseToolCalls] JSON string to parse:', jsonStr)
     try {
-      const parsed = JSON.parse(match);
+      const parsed = JSON.parse(jsonStr);
       console.log('[parseToolCalls] Parsed JSON:', parsed)
       if (parsed.tool_call && parsed.tool_call.name) {
         console.log('[parseToolCalls] Found tool_call.name:', parsed.tool_call.name)
