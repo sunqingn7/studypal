@@ -374,15 +374,39 @@ function AIView() {
     await provider.streamChat(
       messagesWithTools,
       config,
-      (chunk: string) => {
-        // Filter out JSON tool calls from display
-        const filteredChunk = chunk.replace(/\{"tool_call":\s*\{[^}]+\}\}/g, '')
-        if (filteredChunk) {
-          localContent += filteredChunk
-          setStreamingContent(localContent)
+        (chunk: string) => {
+          // Filter out JSON tool calls from display
+          const filteredChunk = chunk.replace(/\{[\s\S]*"tool_call"[\s\S]*\}\s*\}/g, '')
+          if (filteredChunk) {
+            localContent += filteredChunk
+            setStreamingContent(localContent)
+          }
         }
-      }
-    )
+      )
+    } else if (supportsThinking) {
+      // Use streamChatWithThinking for models that return thinking
+      console.log('[AIView] Using streamChatWithThinking')
+
+      await provider.streamChatWithThinking!(
+        messagesWithTools,
+        config,
+        (chunk: string) => {
+          // Filter out JSON tool calls from display
+          const filteredChunk = chunk.replace(/\{[\s\S]*"tool_call"[\s\S]*\}\s*\}/g, '')
+          if (filteredChunk) {
+            localContent += filteredChunk
+            setStreamingContent(localContent)
+          }
+        },
+        (thinking: string) => {
+          // Filter out JSON tool calls from thinking
+          const filteredThinking = thinking.replace(/\{[\s\S]*"tool_call"[\s\S]*\}\s*\}/g, '')
+          if (filteredThinking) {
+            localThinking += filteredThinking
+            setStreamingThinking(localThinking)
+          }
+        }
+      )
   } else if (supportsThinking) {
         // Use streamChatWithThinking for models that return thinking
         console.log('[AIView] Using streamChatWithThinking')
@@ -400,7 +424,7 @@ function AIView() {
         },
         (thinking: string) => {
           // Filter out JSON tool calls from thinking
-          const filteredThinking = thinking.replace(/\{"tool_call":\s*\{[^}]+\}\}/g, '')
+          const filteredThinking = thinking.replace(/\{[\s\S]*"tool_call"[\s\S]*\}\s*\}/g, '')
           if (filteredThinking) {
             localThinking += filteredThinking
             setStreamingThinking(localThinking)
@@ -440,7 +464,7 @@ function AIView() {
         config,
         (chunk: string) => {
           // Filter out JSON tool calls from display
-          const filteredChunk = chunk.replace(/\{"tool_call":\s*\{[^}]+\}\}/g, '')
+          const filteredChunk = chunk.replace(/\{[\s\S]*"tool_call"[\s\S]*\}\s*\}/g, '')
           if (filteredChunk) {
             localContent += filteredChunk
             setStreamingContent(localContent)
