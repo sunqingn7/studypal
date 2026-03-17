@@ -62,7 +62,13 @@ function NoteView() {
     }
   }, [editor, activeNote?.id, activeNote?.content])
 
+  // Track if we've initialized tabs to prevent duplicates
+  const initializedRef = useRef(false)
+
   useEffect(() => {
+    // Skip if already initialized
+    if (initializedRef.current) return;
+
     // Don't auto-create tabs if no file is open (system state handles it)
     const currentFile = useFileStore.getState().currentFile;
     if (!currentFile && tabs.length === 0) {
@@ -70,9 +76,19 @@ function NoteView() {
       return;
     }
     if (tabs.length === 0) {
+      initializedRef.current = true;
       addTab(activeTopicId)
     }
   }, [])
+
+  // Also handle when system state gets loaded
+  useEffect(() => {
+    const currentFile = useFileStore.getState().currentFile;
+    if (!currentFile && tabs.length > 0) {
+      // System state loaded tabs, mark as initialized
+      initializedRef.current = true;
+    }
+  }, [tabs.length]);
 
   const handleAddTab = useCallback(() => {
     addTab(activeTopicId)
