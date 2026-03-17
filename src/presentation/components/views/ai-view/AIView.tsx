@@ -452,8 +452,8 @@ function AIView() {
           setStreamingContent(localContent)
         }
 
-        // Get final response
-        localContent = extractFinalResponse(localContent, toolCalls).content
+        // Don't call extractFinalResponse - the tool result IS the final response
+        // localContent already contains the tool results
       }
     } else {
         // Use prompt-based tool calling (fallback for llama.cpp, vLLM, etc.)
@@ -490,9 +490,8 @@ function AIView() {
             localContent += toolResultText
             setStreamingContent(localContent)
           }
-          
-          // Get final response
-          localContent = extractFinalResponse(localContent, toolCalls).content
+
+          // Don't call extractFinalResponse - the tool result IS the final response
         } else {
           // No tool calls, but model might still output JSON format
           localContent = extractFinalResponse(localContent, []).content
