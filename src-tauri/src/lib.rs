@@ -1589,6 +1589,15 @@ async fn fetch_models(request: FetchModelsRequest) -> Result<Vec<ModelInfo>, Str
     // Determine the URL based on endpoint format
     let url = if request.endpoint.ends_with("/v1/models") {
         request.endpoint.clone()
+    } else if request.endpoint.contains("generativelanguage.googleapis.com") {
+        // Gemini uses v1beta for models
+        if request.endpoint.ends_with("/v1beta") {
+            format!("{}/models", request.endpoint)
+        } else if request.endpoint.ends_with("/v1beta/models") {
+            request.endpoint.clone()
+        } else {
+            format!("{}/v1beta/models", request.endpoint)
+        }
     } else if request.endpoint.ends_with("/v1") {
         format!("{}/models", request.endpoint)
     } else {
@@ -1668,7 +1677,9 @@ async fn fetch_models(request: FetchModelsRequest) -> Result<Vec<ModelInfo>, Str
     }
   } else if let Some(models_array) = data.get("models").and_then(|m| m.as_array()) {
     // Some providers use { models: [...] }
+    // Also handle Gemini format: { models: [{ name: "models/...", displayName: "...", inputTokenLimit: ..., outputTokenLimit: ... }] }
     for model in models_array {
+      // Try id field first
       if let Some(id) = model.get("id").and_then(|i| i.as_str()) {
         let context_window = model.get("context_window").and_then(extract_number)
           .or_else(|| model.get("context_length").and_then(extract_number))
@@ -1684,6 +1695,23 @@ async fn fetch_models(request: FetchModelsRequest) -> Result<Vec<ModelInfo>, Str
           description: model.get("description").and_then(|d| d.as_str()).map(|s| s.to_string()),
           context_window,
           max_tokens,
+        });
+      } else if let Some(name) = model.get("name").and_then(|n| n.as_str()) {
+        // Gemini format: name is "models/gemini-1.5-flash"
+        let display_name = model.get("displayName").and_then(|d| d.as_str()).map(|s| s.to_string());
+        let description = model.get("description").and_then(|d| d.as_str()).map(|s| s.to_string());
+        let input_limit = model.get("inputTokenLimit").and_then(extract_number);
+        let output_limit = model.get("outputTokenLimit").and_then(extract_number);
+
+        // Extract model id from name (e.g., "models/gemini-1.5-flash" -> "gemini-1.5-flash")
+        let model_id = name.strip_prefix("models/").unwrap_or(name).to_string();
+
+        models.push(ModelInfo {
+          id: model_id,
+          name: display_name,
+          description,
+          context_window: input_limit,
+          max_tokens: output_limit,
         });
       }
     }
