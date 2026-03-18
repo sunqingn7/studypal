@@ -78,7 +78,7 @@ export async function checkAllProvidersHealth(
 export function startHealthCheckLoop(
   getProviders: () => PoolProvider[],
   onHealthUpdate: (result: HealthCheckResult) => void,
-  intervalMs: number = 30000
+  intervalMs?: number
 ): () => void {
   let intervalId: ReturnType<typeof setInterval>
   let isRunning = true

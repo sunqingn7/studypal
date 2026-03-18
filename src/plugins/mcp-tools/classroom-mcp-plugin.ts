@@ -7,6 +7,7 @@ export class ClassroomMCPServerPlugin implements MCPServerPlugin {
 
   private startHealthChecks() {
     if (this.healthCheckInterval) return;
+    const { config } = useLLMPoolStore.getState();
     this.healthCheckInterval = setInterval(() => {
       const { providers, setProviderHealth } = useLLMPoolStore.getState();
       providers.forEach(async (provider) => {
@@ -19,7 +20,7 @@ export class ClassroomMCPServerPlugin implements MCPServerPlugin {
           setProviderHealth(provider.id, false, undefined, String(e));
         }
       });
-    }, 30000);
+    }, config.healthCheckInterval);
   }
 
   private stopHealthChecks() {
