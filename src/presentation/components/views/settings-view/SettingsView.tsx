@@ -561,6 +561,7 @@ function LLMPoolTab() {
               <option value="vllm">vLLM</option>
               <option value="nvidia">NVIDIA NIM</option>
               <option value="openrouter">OpenRouter</option>
+              <option value="gemini">Google Gemini</option>
               <option value="custom">Custom</option>
               </select>
             </div>
@@ -585,7 +586,7 @@ function LLMPoolTab() {
               />
             </div>
           </div>
-          {(newProviderType === 'openai' || newProviderType === 'anthropic' || newProviderType === 'custom') && (
+          {(newProviderType === 'openai' || newProviderType === 'anthropic' || newProviderType === 'nvidia' || newProviderType === 'openrouter' || newProviderType === 'gemini' || newProviderType === 'custom') && (
             <div className="form-group">
               <label>API Key (optional)</label>
               <input

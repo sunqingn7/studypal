@@ -7,6 +7,7 @@ import { ollamaProvider } from './ollama-provider'
 import { vllmProvider } from './vllm-provider'
 import { nvidiaProvider } from './nvidia-provider'
 import { openrouterProvider } from './openrouter-provider'
+import { geminiProvider } from './gemini-provider'
 import { customProvider } from './custom-provider'
 
 const providers: Record<AIProviderType, AIProvider> = {
@@ -17,6 +18,7 @@ const providers: Record<AIProviderType, AIProvider> = {
   vllm: vllmProvider,
   nvidia: nvidiaProvider,
   openrouter: openrouterProvider,
+  gemini: geminiProvider,
   custom: customProvider,
 }
 
@@ -67,6 +69,18 @@ export const AVAILABLE_PROVIDERS: { type: AIProviderType; name: string; descript
     type: 'nvidia',
     name: 'NVIDIA NIM',
     description: 'NVIDIA NIM API (Llama, Mistral, and other models)',
+    requiresApiKey: true,
+  },
+  {
+    type: 'openrouter',
+    name: 'OpenRouter',
+    description: 'OpenRouter API (100+ models unified)',
+    requiresApiKey: true,
+  },
+  {
+    type: 'gemini',
+    name: 'Google Gemini',
+    description: 'Google AI Studio / Gemini API',
     requiresApiKey: true,
   },
   {

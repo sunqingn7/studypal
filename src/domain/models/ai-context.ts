@@ -1,4 +1,4 @@
-export type AIProviderType = 'llamacpp' | 'ollama' | 'openai' | 'anthropic' | 'vllm' | 'nvidia' | 'openrouter' | 'custom'
+export type AIProviderType = 'llamacpp' | 'ollama' | 'openai' | 'anthropic' | 'vllm' | 'nvidia' | 'openrouter' | 'gemini' | 'custom'
 
 export type ContextSource = 'file' | 'note' | 'ai-note' | 'global-note' | 'topic'
 
@@ -65,6 +65,10 @@ export const PROVIDER_DEFAULTS: Record<AIProviderType, Partial<AIConfig>> = {
   openrouter: {
     endpoint: 'https://openrouter.ai/api/v1',
     model: 'meta-llama/llama-3.1-8b-instruct',
+  },
+  gemini: {
+    endpoint: 'https://generativelanguage.googleapis.com/v1beta',
+    model: 'gemini-1.5-flash',
   },
   custom: {
     endpoint: 'http://localhost:8080/v1',
