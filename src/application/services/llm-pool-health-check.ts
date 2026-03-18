@@ -2,8 +2,8 @@ import { PoolProvider, HealthCheckResult } from '../../domain/models/llm-pool'
 import { getProvider } from '../../infrastructure/ai-providers/provider-factory'
 
 // Simple health check - try to generate a response
-const HEALTH_CHECK_PROMPT = 'Hello, are you there? Please respond with "OK" and nothing else.'
-const HEALTH_CHECK_TIMEOUT = 10000 // 10 seconds
+const HEALTH_CHECK_PROMPT = 'Say "OK" if you are working.'
+const HEALTH_CHECK_TIMEOUT = 15000 // 15 seconds
 
 export async function checkProviderHealth(provider: PoolProvider): Promise<HealthCheckResult> {
   const startTime = Date.now()
@@ -24,13 +24,13 @@ export async function checkProviderHealth(provider: PoolProvider): Promise<Healt
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT)
 
-    // Try a simple completion
+    // Try a simple completion with more tokens for complex models
     const messageContent = await Promise.race([
       aiProvider.chat(
         [{ id: 'health-check', role: 'user', content: HEALTH_CHECK_PROMPT, timestamp: Date.now() }],
         {
           ...provider.config,
-          maxTokens: 10,
+          maxTokens: 100, // Increased from 10 to support models that need more tokens
           temperature: 0,
         }
       ),
@@ -50,7 +50,7 @@ export async function checkProviderHealth(provider: PoolProvider): Promise<Healt
       providerId: provider.id,
       isHealthy,
       latency,
-      error: isHealthy ? undefined : 'Unexpected response',
+      error: isHealthy ? undefined : `Unexpected response: ${messageContent.slice(0, 100)}`,
       timestamp: Date.now(),
     }
   } catch (error) {
