@@ -136,8 +136,8 @@ export async function generateQuizQuestions(
       if (documentPath.endsWith('.pdf')) {
         content = await getCurrentPageText(documentPath, currentPage);
       } else {
-        const fullContent = await getDocumentContent(documentPath);
-        const pages = fullContent.split(/\n\n+/).filter((p) => p.trim());
+        const fullContent = await FileReadingService.readTextFile(documentPath);
+        const pages = fullContent.split(/\n\n+/).filter((p: string) => p.trim());
         content = pages[currentPage - 1] || fullContent;
       }
     } else {
@@ -252,8 +252,8 @@ export async function generateSummary(
       if (documentPath.endsWith('.pdf')) {
         content = await getCurrentPageText(documentPath, currentPage);
       } else {
-        const fullContent = await getDocumentContent(documentPath);
-        const pages = fullContent.split(/\n\n+/).filter((p) => p.trim());
+        const fullContent = await FileReadingService.readTextFile(documentPath);
+        const pages = fullContent.split(/\n\n+/).filter((p: string) => p.trim());
         content = pages[currentPage - 1] || fullContent;
       }
     } else if (scope === 'entire_document') {
@@ -406,8 +406,8 @@ export async function generateFlashcards(
       if (documentPath.endsWith('.pdf')) {
         content = await getCurrentPageText(documentPath, currentPage);
       } else {
-        const fullContent = await getDocumentContent(documentPath);
-        const pages = fullContent.split(/\n\n+/).filter((p) => p.trim());
+        const fullContent = await FileReadingService.readTextFile(documentPath);
+        const pages = fullContent.split(/\n\n+/).filter((p: string) => p.trim());
         content = pages[currentPage - 1] || fullContent;
       }
     } else {

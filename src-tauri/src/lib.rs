@@ -312,7 +312,8 @@ async fn chat_with_provider(
 
     match provider.as_str() {
         "anthropic" => chat_with_anthropic(&client, &request).await,
-        "openai" | "vllm" | "llamacpp" | "ollama" => {
+        "gemini" => chat_with_gemini(&client, &request).await,
+        "openai" | "vllm" | "llamacpp" | "ollama" | "nvidia" | "openrouter" => {
             // These providers use OpenAI-compatible format
             chat_with_openai_compatible(&client, &request).await
         }
@@ -335,7 +336,8 @@ async fn stream_chat_with_provider(
 
     let result = match provider.as_str() {
         "anthropic" => stream_chat_with_anthropic(&app_handle, &client, &request).await,
-        "openai" | "vllm" | "llamacpp" | "ollama" => {
+        "gemini" => stream_chat_with_gemini(&app_handle, &client, &request).await,
+        "openai" | "vllm" | "llamacpp" | "ollama" | "nvidia" | "openrouter" => {
             stream_chat_with_openai_compatible(&app_handle, &client, &request).await
         }
         _ => Err(format!("Unknown provider: {}", provider)),
@@ -495,6 +497,126 @@ async fn chat_with_anthropic(
 
     println!("[RUST] Returning error: no valid response");
     Err("No valid response from Anthropic".to_string())
+}
+
+async fn chat_with_gemini(
+    client: &reqwest::Client,
+    request: &ProviderChatRequest,
+) -> Result<String, String> {
+    println!("[RUST] Using Gemini API");
+
+    // Gemini uses a different endpoint format: /models/{model}:generateContent
+    let url = format!("{}/models/{}:generateContent", request.endpoint, request.model);
+    println!("[RUST] URL: {}", url);
+
+    // Convert messages to Gemini format
+    let mut contents: Vec<serde_json::Value> = vec![];
+
+    for msg in &request.messages {
+        if msg.role == "system" {
+            // System messages go to systemInstruction
+            continue;
+        }
+        
+        let role = if msg.role == "assistant" { "model" } else { "user" };
+        contents.push(serde_json::json!({
+            "role": role,
+            "parts": [{ "text": msg.content }]
+        }));
+    }
+
+    let mut payload = serde_json::Map::new();
+    payload.insert("contents".to_string(), serde_json::json!(contents));
+
+    // Generation config
+    let mut generation_config = serde_json::Map::new();
+    generation_config.insert("temperature".to_string(), serde_json::json!(request.temperature.unwrap_or(0.7)));
+    generation_config.insert("maxOutputTokens".to_string(), serde_json::json!(request.max_tokens.unwrap_or(2048)));
+    generation_config.insert("topP".to_string(), serde_json::json!(request.top_p.unwrap_or(0.9)));
+    generation_config.insert("topK".to_string(), serde_json::json!(40));
+    payload.insert("generationConfig".to_string(), serde_json::json!(generation_config));
+
+    println!("[RUST] Sending request to Gemini...");
+
+    let mut request_builder = client
+        .post(&url)
+        .header("Content-Type", "application/json");
+
+    // Add API key - Gemini uses query parameter or x-goog-api-key header
+    if let Some(api_key) = &request.api_key {
+        request_builder = request_builder.header("x-goog-api-key", api_key);
+        println!("[RUST] Using provided API key");
+    }
+
+    // Add extra headers
+    if let Some(headers) = &request.extra_headers {
+        for (key, value) in headers {
+            if let Some(val_str) = value.as_str() {
+                request_builder = request_builder.header(key, val_str);
+            }
+        }
+    }
+
+    let response = match request_builder.json(&payload).send().await {
+        Ok(resp) => {
+            println!("[RUST] Got response with status: {}", resp.status());
+            resp
+        }
+        Err(e) => {
+            println!("[RUST] Request failed: {}", e);
+            log::error!("Request failed: {}", e);
+            return Err(format!("Request failed: {}", e));
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_default();
+        println!("[RUST] HTTP error: {} - {}", status, error_text);
+        return Err(format!("HTTP error: {} - {}", status, error_text));
+    }
+
+    println!("[RUST] Parsing JSON response...");
+    let data: serde_json::Value = match response.json().await {
+        Ok(json) => json,
+        Err(e) => {
+            println!("[RUST] JSON parse error: {}", e);
+            return Err(format!("JSON parse error: {}", e));
+        }
+    };
+
+    // Debug: Print response keys
+    if let Some(obj) = data.as_object() {
+        println!("[RUST] Response keys: {:?}", obj.keys().collect::<Vec<_>>());
+    }
+
+    // Parse Gemini response format
+    if let Some(candidates) = data.get("candidates").and_then(|c| c.as_array()) {
+        if let Some(first_candidate) = candidates.first() {
+            if let Some(content) = first_candidate.get("content") {
+                if let Some(parts) = content.get("parts").and_then(|p| p.as_array()) {
+                    let mut full_text = String::new();
+                    for part in parts {
+                        if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
+                            full_text.push_str(text);
+                        }
+                    }
+                    if !full_text.is_empty() {
+                        return Ok(full_text);
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(error) = data.get("error") {
+        let error_msg = error.to_string();
+        println!("[RUST] API error: {}", error_msg);
+        return Err(format!("Gemini API error: {}", error_msg));
+    }
+
+    println!("[RUST] Returning error: no valid response");
+    Err("No valid response from Gemini".to_string())
 }
 
 async fn chat_with_openai_compatible(
@@ -886,6 +1008,134 @@ async fn stream_chat_with_anthropic(
                                     return Ok(());
                                 }
                                 _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                return Err(format!("Stream error: {}", e));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn stream_chat_with_gemini(
+    app_handle: &tauri::AppHandle,
+    client: &reqwest::Client,
+    request: &ProviderChatRequest,
+) -> Result<(), String> {
+    println!("[RUST] Using Gemini Streaming API");
+
+    // Gemini uses a different endpoint format for streaming: /models/{model}:streamGenerateContent
+    let url = format!("{}/models/{}:streamGenerateContent?alt=sse", request.endpoint, request.model);
+    println!("[RUST] Streaming URL: {}", url);
+
+    // Convert messages to Gemini format
+    let mut contents: Vec<serde_json::Value> = vec![];
+
+    for msg in &request.messages {
+        if msg.role == "system" {
+            continue;
+        }
+        
+        let role = if msg.role == "assistant" { "model" } else { "user" };
+        contents.push(serde_json::json!({
+            "role": role,
+            "parts": [{ "text": msg.content }]
+        }));
+    }
+
+    let mut payload = serde_json::Map::new();
+    payload.insert("contents".to_string(), serde_json::json!(contents));
+
+    // Generation config
+    let mut generation_config = serde_json::Map::new();
+    generation_config.insert("temperature".to_string(), serde_json::json!(request.temperature.unwrap_or(0.7)));
+    generation_config.insert("maxOutputTokens".to_string(), serde_json::json!(request.max_tokens.unwrap_or(2048)));
+    generation_config.insert("topP".to_string(), serde_json::json!(request.top_p.unwrap_or(0.9)));
+    generation_config.insert("topK".to_string(), serde_json::json!(40));
+    payload.insert("generationConfig".to_string(), serde_json::json!(generation_config));
+
+    let mut request_builder = client
+        .post(&url)
+        .header("Content-Type", "application/json");
+
+    // Add API key
+    if let Some(api_key) = &request.api_key {
+        request_builder = request_builder.header("x-goog-api-key", api_key);
+    }
+
+    // Add extra headers
+    if let Some(headers) = &request.extra_headers {
+        for (key, value) in headers {
+            if let Some(val_str) = value.as_str() {
+                request_builder = request_builder.header(key, val_str);
+            }
+        }
+    }
+
+    let response = request_builder
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(format!("HTTP error: {} - {}", status, error_text));
+    }
+
+    let mut buffer = String::new();
+    let mut stream = response.bytes_stream();
+
+    while let Some(item) = stream.next().await {
+        match item {
+            Ok(bytes) => {
+                let text = String::from_utf8_lossy(&bytes);
+                buffer.push_str(&text);
+                
+                // Process complete SSE lines
+                while let Some(pos) = buffer.find('\n') {
+                    let line = buffer[..pos].to_string();
+                    buffer = buffer[pos + 1..].to_string();
+                    
+                    if line.starts_with("data: ") {
+                        let data = &line[6..];
+                        
+                        // Try to parse the JSON
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                            // Gemini streaming format
+                            if let Some(candidates) = json.get("candidates").and_then(|c| c.as_array()) {
+                                if let Some(first) = candidates.first() {
+                                    if let Some(content) = first.get("content") {
+                                        if let Some(parts) = content.get("parts").and_then(|p| p.as_array()) {
+                                            for part in parts {
+                                                if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
+                                                    let _ = app_handle.emit("chat-stream-chunk", StreamChunk {
+                                                        content: text.to_string(),
+                                                        thinking: None,
+                                                        done: false,
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // Check for done
+                            if let Some(finish_reason) = json.get("candidates")
+                                .and_then(|c| c.as_array())
+                                .and_then(|c| c.first())
+                                .and_then(|c| c.get("finishReason"))
+                            {
+                                if !finish_reason.is_null() {
+                                    return Ok(());
+                                }
                             }
                         }
                     }

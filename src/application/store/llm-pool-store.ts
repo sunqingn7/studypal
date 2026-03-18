@@ -36,7 +36,7 @@ export interface LLMPoolState {
   setProviderHealth: (id: string, isHealthy: boolean, latency?: number, error?: string) => void
 
   // Task management
-  submitTask: (task: Omit<LLMTask, 'id' | 'retryCount' | 'createdAt'>) => string
+  submitTask: (task: Omit<LLMTask, 'id' | 'retryCount' | 'createdAt' | 'maxRetries'>) => string
   assignTask: (taskId: string, providerId: string) => void
   completeTask: (taskId: string, result: TaskResult) => void
   failTask: (taskId: string, error: string) => void

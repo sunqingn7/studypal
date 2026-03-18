@@ -49,6 +49,9 @@ const createDefaultProviderConfigs = (): ProviderConfigs => ({
   openai: { ...DEFAULT_AI_CONFIG, provider: 'openai', ...PROVIDER_DEFAULTS.openai },
   anthropic: { ...DEFAULT_AI_CONFIG, provider: 'anthropic', ...PROVIDER_DEFAULTS.anthropic },
   vllm: { ...DEFAULT_AI_CONFIG, provider: 'vllm', ...PROVIDER_DEFAULTS.vllm },
+  nvidia: { ...DEFAULT_AI_CONFIG, provider: 'nvidia', ...PROVIDER_DEFAULTS.nvidia },
+  openrouter: { ...DEFAULT_AI_CONFIG, provider: 'openrouter', ...PROVIDER_DEFAULTS.openrouter },
+  gemini: { ...DEFAULT_AI_CONFIG, provider: 'gemini', ...PROVIDER_DEFAULTS.gemini },
   custom: { ...DEFAULT_AI_CONFIG, provider: 'custom', ...PROVIDER_DEFAULTS.custom },
 })
 
