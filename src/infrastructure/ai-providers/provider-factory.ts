@@ -5,6 +5,7 @@ import { openaiProvider } from './openai-provider'
 import { anthropicProvider } from './anthropic-provider'
 import { ollamaProvider } from './ollama-provider'
 import { vllmProvider } from './vllm-provider'
+import { nvidiaProvider } from './nvidia-provider'
 import { customProvider } from './custom-provider'
 
 const providers: Record<AIProviderType, AIProvider> = {
@@ -13,6 +14,7 @@ const providers: Record<AIProviderType, AIProvider> = {
   anthropic: anthropicProvider,
   ollama: ollamaProvider,
   vllm: vllmProvider,
+  nvidia: nvidiaProvider,
   custom: customProvider,
 }
 
@@ -57,6 +59,12 @@ export const AVAILABLE_PROVIDERS: { type: AIProviderType; name: string; descript
     type: 'anthropic',
     name: 'Anthropic',
     description: 'Anthropic API (Claude models)',
+    requiresApiKey: true,
+  },
+  {
+    type: 'nvidia',
+    name: 'NVIDIA NIM',
+    description: 'NVIDIA NIM API (Llama, Mistral, and other models)',
     requiresApiKey: true,
   },
   {

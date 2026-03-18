@@ -554,12 +554,13 @@ function LLMPoolTab() {
                 value={newProviderType}
                 onChange={(e) => setNewProviderType(e.target.value as AIProviderType)}
               >
-                <option value="llamacpp">LLama.cpp</option>
-                <option value="ollama">Ollama</option>
-                <option value="openai">OpenAI</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="vllm">vLLM</option>
-                <option value="custom">Custom</option>
+              <option value="llamacpp">LLama.cpp</option>
+              <option value="ollama">Ollama</option>
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="vllm">vLLM</option>
+              <option value="nvidia">NVIDIA NIM</option>
+              <option value="custom">Custom</option>
               </select>
             </div>
           </div>

@@ -1,4 +1,4 @@
-export type AIProviderType = 'llamacpp' | 'ollama' | 'openai' | 'anthropic' | 'vllm' | 'custom'
+export type AIProviderType = 'llamacpp' | 'ollama' | 'openai' | 'anthropic' | 'vllm' | 'nvidia' | 'custom'
 
 export type ContextSource = 'file' | 'note' | 'ai-note' | 'global-note' | 'topic'
 
@@ -57,6 +57,10 @@ export const PROVIDER_DEFAULTS: Record<AIProviderType, Partial<AIConfig>> = {
   vllm: {
     endpoint: 'http://localhost:8000/v1',
     model: 'meta-llama/Llama-3.2-1B-Instruct',
+  },
+  nvidia: {
+    endpoint: 'https://integrate.api.nvidia.com/v1',
+    model: 'meta/llama-3.1-8b-instruct',
   },
   custom: {
     endpoint: 'http://localhost:8080/v1',
