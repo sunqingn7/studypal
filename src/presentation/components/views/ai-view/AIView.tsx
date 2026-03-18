@@ -157,9 +157,15 @@ function AIView() {
     updateProviderConfigs(providerConfigs)
   }, [providerConfigs])
 
+  // Track if initial load is complete
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false)
+
   // Detect models on initial load or when provider changes
   useEffect(() => {
     const detectModels = async () => {
+      // Skip if initial load not complete yet
+      if (!initialLoadComplete) return
+      
       if (!['llamacpp', 'ollama', 'vllm', 'custom'].includes(config.provider)) return
       if (!config.endpoint) return
       
@@ -191,9 +197,17 @@ function AIView() {
       }
     }
     
-    // Only run on mount or when provider changes
+    // Only run after initial load and when provider changes
     detectModels()
-  }, [config.provider])
+  }, [config.provider, initialLoadComplete])
+
+  // Mark initial load complete after first render
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setInitialLoadComplete(true)
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [])
 
   const messagesContainerRef = useRef<HTMLDivElement>(null)
 
