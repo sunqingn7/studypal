@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
-import { flushSync } from 'react-dom'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import ReactMarkdown from 'react-markdown'
@@ -14,9 +13,11 @@ import { useTopicStore } from '../../../../application/store/topic-store'
 import { getProvider, AVAILABLE_PROVIDERS } from '../../../../infrastructure/ai-providers/provider-factory'
 import { fetchAvailableModels, ModelInfo, getModelMaxTokens } from '../../../../infrastructure/ai-providers/model-detector'
 import { getCurrentPageText, getAllPagesText } from '../../../../infrastructure/file-handlers/pdf-utils'
-import { searchWeb, fetchWebContent } from '../../../../infrastructure/web-service'
 import { ChatMessage, AIProviderType } from '../../../../domain/models/ai-context'
 import { updateAIConfig, updateProviderConfigs } from '../../../../application/services/session-manager'
+import { getAllMCPTools, executeMCPTool } from '../../../../infrastructure/ai-providers/mcp-utils'
+import { buildToolPrompt, parseToolCalls } from '../../../../infrastructure/ai-providers/tool-calling'
+import { PaperLink } from './components/PaperLink'
 import './AIView.css'
 
 const FONT_SIZES = [12, 14, 16, 18, 20, 22, 24, 28, 32]
@@ -114,11 +115,33 @@ function AIView() {
     })
   }, [editor])
 
+  // Track if we've initialized tabs to prevent duplicates
+  const initializedRef = useRef(false)
+
   useEffect(() => {
+    // Skip if already initialized
+    if (initializedRef.current) return;
+    
+    // Don't auto-create tabs if no file is open (system state handles it)
+    const currentFile = useFileStore.getState().currentFile;
+    if (!currentFile && tabs.length === 0) {
+      // System state will be loaded, don't create default tabs here
+      return;
+    }
     if (tabs.length === 0) {
+      initializedRef.current = true;
       addTab()
     }
   }, [])
+
+  // Also handle when system state gets loaded
+  useEffect(() => {
+    const currentFile = useFileStore.getState().currentFile;
+    if (!currentFile && tabs.length > 0) {
+      // System state loaded tabs, mark as initialized
+      initializedRef.current = true;
+    }
+  }, [tabs.length]);
 
   useEffect(() => {
     scrollToBottom()
@@ -288,33 +311,15 @@ function AIView() {
     return context
   }, [currentFile, activeTopicId, extractPdfText, extractNoteText])
 
-  const handleWebSearch = async (query: string): Promise<string> => {
-    try {
-      const results = await searchWeb(query)
-      if (results.length === 0) {
-        return 'No search results found.'
-      }
-
-      const formatted = results.map((r, i) =>
-        `${i + 1}. ${r.title}\n ${r.url}\n ${r.snippet}`
-      ).join('\n\n')
-
-      return `[Web Search Results]\n${formatted}`
-    } catch (error) {
-      return `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-    }
+  // Tool calling executor for MCP tools
+  const executeTool = async (toolName: string, params: Record<string, unknown>) => {
+    console.log(`[AIView] Executing tool: ${toolName}`, params)
+    const result = await executeMCPTool(toolName, params)
+    console.log(`[AIView] Tool result:`, result)
+    return result
   }
 
-  const handleFetchUrl = async (url: string): Promise<string> => {
-    try {
-      const content = await fetchWebContent(url)
-      const snippet = content.slice(0, 3000)
-      return `[Web Content from ${url}]\n${snippet}${content.length > 3000 ? '\n...(truncated)' : ''}`
-    } catch (error) {
-      return `Failed to fetch: ${error instanceof Error ? error.message : 'Unknown error'}`
-    }
-  }
-
+  // Handle message with tool calling support
   const handleSend = async () => {
     if (!activeTabId || !editor || isStreaming || isProcessing) return
 
@@ -337,35 +342,38 @@ function AIView() {
     setIsProcessing(true)
 
     try {
+      // Build context from current file and notes
       const context = await buildContext(userMessage)
 
-      const lowerMessage = userMessage.toLowerCase()
-      let additionalContext = ''
+      // Get available MCP tools
+      const mcpTools = getAllMCPTools()
+      const toolPrompt = buildToolPrompt(mcpTools)
 
-      if (lowerMessage.includes('search') || lowerMessage.includes('look up') || lowerMessage.includes('find information')) {
-        const query = userMessage.replace(/(search|look up|find information about)/gi, '').trim()
-        additionalContext = await handleWebSearch(query)
-      } else if (lowerMessage.match(/(https?:\/\/[^\s]+)/)) {
-        const urlMatch = userMessage.match(/(https?:\/\/[^\s]+)/)
-        if (urlMatch) {
-          additionalContext = await handleFetchUrl(urlMatch[1])
-        }
+      // Build messages with tool context
+      const systemMessage: ChatMessage = {
+        id: 'system',
+        role: 'system',
+        content: toolPrompt,
+        timestamp: Date.now()
       }
 
-      const fullMessage = context
-        ? `[Context]\n${context}${additionalContext ? '\n\n' + additionalContext : ''}\n\n[User Question]\n${userMessage}`
-        : additionalContext
-        ? `${additionalContext}\n\n[User Question]\n${userMessage}`
-        : userMessage
+      // Build context message if there's context
+      const contextMessage: ChatMessage | null = context ? {
+        id: 'context',
+        role: 'system',
+        content: `[Context]\n${context}`,
+        timestamp: Date.now()
+      } : null
 
       const previousMessages = activeMessages.slice(0, -1)
-      const currentMessage: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: 'user',
-        content: fullMessage,
-        timestamp: Date.now(),
-      }
-      const messages: ChatMessage[] = [...previousMessages, currentMessage]
+      
+      // Messages for initial call (with tools available)
+      const messagesWithTools: ChatMessage[] = [
+        systemMessage,
+        ...(contextMessage ? [contextMessage] : []),
+        ...previousMessages,
+        { id: crypto.randomUUID(), role: 'user', content: userMessage, timestamp: Date.now() }
+      ]
 
       const provider = getProvider(config.provider)
       
@@ -373,33 +381,183 @@ function AIView() {
       let localContent = ''
       let localThinking = ''
       
-      // Try to use streamChatWithThinking if available
-      if ('streamChatWithThinking' in provider && provider.streamChatWithThinking) {
-        await provider.streamChatWithThinking(
-          messages,
+      // Check if provider supports native function calling
+      const supportsToolCalling = 'chatWithTools' in provider && provider.supportsNativeFunctionCalling?.()
+      // Check if provider supports streaming with thinking
+      const supportsThinking = 'streamChatWithThinking' in provider
+      console.log('[AIView] Provider:', provider.name, 'supportsThinking:', supportsThinking, 'supportsToolCalling:', supportsToolCalling)
+      
+      if (supportsToolCalling && mcpTools.length > 0) {
+        // Use native function calling (for OpenAI, Anthropic, etc.)
+        console.log('[AIView] Using native function calling')
+        await provider.streamChat(
+          messagesWithTools,
           config,
           (chunk: string) => {
             localContent += chunk
-            flushSync(() => setStreamingContent(localContent))
+            const displayContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
+            setStreamingContent(displayContent)
+          }
+        )
+      } else if (supportsThinking) {
+        // Use streamChatWithThinking for models that return thinking
+        console.log('[AIView] Using streamChatWithThinking')
+        await provider.streamChatWithThinking!(
+          messagesWithTools,
+          config,
+          (chunk: string) => {
+            localContent += chunk
+            const displayContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
+            setStreamingContent(displayContent)
           },
           (thinking: string) => {
-            localThinking = thinking
-            flushSync(() => setStreamingThinking(thinking))
+            const filteredThinking = thinking.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
+            if (filteredThinking) {
+              localThinking += filteredThinking
+              setStreamingThinking(localThinking)
+            }
           }
         )
       } else {
+        // Fallback for llama.cpp, vLLM, etc.
+        console.log('[AIView] Using prompt-based tool calling')
         await provider.streamChat(
-          messages,
+          messagesWithTools,
           config,
           (chunk: string) => {
             localContent += chunk
-            flushSync(() => setStreamingContent(localContent))
+            const displayContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
+            setStreamingContent(displayContent)
           }
         )
       }
+
+      console.log('[AIView] Stream complete, checking for tool calls...')
+      const toolCalls = parseToolCalls(localContent)
+      console.log('[AIView] toolCalls found:', toolCalls.length)
+
+      if (toolCalls.length > 0) {
+        console.log('[AIView] Found tool calls, executing...')
+        setStreamingContent('Processing tools...')
+
+        for (const toolCall of toolCalls) {
+          console.log('[AIView] Executing tool:', toolCall.name, toolCall.arguments)
+          const result = await executeTool(toolCall.name, toolCall.arguments)
+          console.log('[AIView] Tool result:', result.success ? 'success' : 'error')
+
+          // Format tool result with clickable paper links if it's search_papers
+          let toolResultText = ''
+          if (result.success && toolCall.name === 'search_papers') {
+            // Parse papers from result
+            try {
+              const data = result.data as any
+              const papers = data?.papers || []
+              if (papers.length > 0) {
+                toolResultText = '\n\n**Found ' + papers.length + ' papers:**\n\n'
+                papers.forEach((paper: any, idx: number) => {
+                  toolResultText += `${idx + 1}. [${paper.title}](${paper.url})\n`
+                  if (paper.snippet) {
+                    toolResultText += `   _${paper.snippet.slice(0, 150)}..._\n\n`
+                  }
+                })
+                toolResultText += '\n*Click a link to download and open in file view*'
+              } else {
+                toolResultText = '\n\n[No papers found]'
+              }
+            } catch (e) {
+              toolResultText = '\n\n[Tool result: ' + JSON.stringify(result.data) + ']'
+            }
+          } else if (result.success && toolCall.name === 'web_search') {
+            // Parse search results from web_search
+            try {
+              const data = result.data as any
+              const results = data?.results || []
+              if (results.length > 0) {
+                toolResultText = '\n\n**Search Results:**\n\n'
+                results.forEach((item: any, idx: number) => {
+                  toolResultText += `${idx + 1}. [${item.title}](${item.url})\n`
+                  if (item.snippet) {
+                    toolResultText += `   _${item.snippet.slice(0, 150)}_` + '\n\n'
+                  }
+                })
+                toolResultText += '\n*Click a link to open in file view*'
+              } else {
+                toolResultText = '\n\n[No results found]'
+              }
+            } catch (e) {
+              toolResultText = '\n\n[Tool result: ' + JSON.stringify(result.data) + ']'
+            }
+          } else if (result.success && toolCall.name === 'get_paper_metadata') {
+            // Format paper metadata with clickable download link
+            try {
+              const data = result.data as any
+              const url = data?.url || ''
+              const title = data?.title || 'Unknown Paper'
+              const source = data?.source || ''
+              const id = data?.id || ''
+              
+              // Convert arxiv URL to PDF URL
+              let downloadUrl = url
+              if (url.includes('arxiv.org/abs/')) {
+                downloadUrl = url.replace('/abs/', '/pdf/') + '.pdf'
+              } else if (url.includes('arxiv.org/pdf/')) {
+                downloadUrl = url
+              }
+              
+              toolResultText = `\n\n**Paper Found:**\n\n[${title}](${downloadUrl})\n\n`
+              if (source) {
+                toolResultText += `*Source: ${source}`
+                if (id) toolResultText += ` | ID: ${id}`
+                toolResultText += '*\n'
+              }
+              toolResultText += '\n*Click the link to download and open in file view*'
+            } catch (e) {
+              toolResultText = '\n\n[Tool result: ' + JSON.stringify(result.data) + ']'
+            }
+          } else {
+            toolResultText = `\n\n[Used tool: ${toolCall.name}]\n${result.success ? JSON.stringify(result.data) : result.error}`
+          }
+          
+          localContent += toolResultText
+          setStreamingContent(localContent)
+        }
+      }
+
+      // Add final message - filter out any remaining tool call JSON
+      const filterToolCalls = (text: string): string => {
+        let result = '';
+        let searchStart = 0;
+        while (true) {
+          const startIdx = text.indexOf('{"tool_call":', searchStart);
+          if (startIdx === -1) {
+            result += text.slice(searchStart);
+            break;
+          }
+          result += text.slice(searchStart, startIdx);
+          
+          // Find matching closing brace
+          let braceCount = 0;
+          let inString = false;
+          let endIdx = startIdx;
+          for (let i = startIdx; i < text.length; i++) {
+            const char = text[i];
+            if (char === '\\') { i++; continue; }
+            if (char === '"') { inString = !inString; continue; }
+            if (inString) continue;
+            if (char === '{') braceCount++;
+            else if (char === '}') {
+              braceCount--;
+              if (braceCount === 0) { endIdx = i + 1; break; }
+            }
+          }
+          searchStart = endIdx;
+        }
+        return result.trim();
+      }
       
-      // Add the final assistant message to the chat
-      addMessage(activeTabId, 'assistant', localContent, localThinking || undefined)
+      const finalContent = filterToolCalls(localContent)
+      const finalThinking = filterToolCalls(localThinking || '')
+      addMessage(activeTabId, 'assistant', finalContent, finalThinking || undefined)
 
       // Clear local streaming state
       setStreamingContent('')
@@ -709,11 +867,17 @@ activeMessages.map((msg) => (
                   >
                     {expandedThinking.has(msg.id) ? '▼' : '▶'} Thinking
                   </button>
-                  {expandedThinking.has(msg.id) && (
-                    <div className="thinking-content">
-                      {msg.thinking}
-                    </div>
-                  )}
+      {expandedThinking.has(msg.id) && (
+        <div className="thinking-content">
+          {(() => {
+            // Remove JSON tool calls from thinking (handles multiline)
+            let thinking = msg.thinking || ''
+            // Match {"tool_call": {...}} including nested braces
+            thinking = thinking.replace(/\{\s*"tool_call"[\s\S]*?\}\s*\}/g, '[Tool execution hidden]')
+            return thinking
+          })()}
+        </div>
+      )}
                 </div>
               )}
               <div className="message-content" style={{ fontSize: `${fontSize}px` }}>
@@ -721,15 +885,20 @@ activeMessages.map((msg) => (
                   // User messages are HTML from TipTap editor
                   <div dangerouslySetInnerHTML={{ __html: msg.content }} />
                 ) : (
-                  // AI messages are Markdown
-                  <div className="markdown-content">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkMath]}
-                      rehypePlugins={[rehypeKatex]}
-                    >
-                      {msg.content}
-                    </ReactMarkdown>
-                  </div>
+              // AI messages are Markdown
+              <div className="markdown-content">
+                <ReactMarkdown
+                  remarkPlugins={[remarkMath]}
+                  rehypePlugins={[rehypeKatex]}
+                  components={{
+                    a: ({ href, children }) => (
+                      <PaperLink href={href || ''}>{children}</PaperLink>
+                    )
+                  }}
+                >
+                  {msg.content}
+                </ReactMarkdown>
+              </div>
                 )}
               </div>
             </div>

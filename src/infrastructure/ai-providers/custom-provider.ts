@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type { AIConfig, ChatMessage } from '../../domain/models/ai-context'
 import type { AIProvider } from './base-provider'
 
@@ -20,6 +21,12 @@ interface ChatRequestPayload {
   topP?: number
   extraHeaders?: Record<string, string>
   extraBody?: Record<string, unknown>
+}
+
+interface StreamChunkData {
+  content: string
+  thinking?: string
+  done: boolean
 }
 
 export class CustomProvider implements AIProvider {
@@ -79,40 +86,53 @@ export class CustomProvider implements AIProvider {
     config: AIConfig,
     onChunk: (chunk: string) => void | Promise<void>
   ): Promise<void> {
-    console.log('[custom-provider] streamChat() called')
+    console.log('[custom-provider] streamChat() called - using true streaming')
+
+    const payload: ChatRequestPayload = {
+      endpoint: config.endpoint,
+      model: config.model,
+      messages: messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      })),
+      apiKey: config.apiKey,
+      temperature: config.temperature,
+      maxTokens: config.maxTokens,
+      topP: config.topP,
+      extraHeaders: {
+        ...(config.extraHeaders || {}),
+        ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
+      },
+      extraBody: config.extraBody,
+    }
+
+    // Set up event listener for streaming chunks
+    let unlisten: UnlistenFn | null = null
+    let fullContent = ''
 
     try {
-      // Tauri WebView doesn't support streaming fetch, use non-streaming and simulate
-      console.log('[custom-provider] Calling chat()...')
-      const response = await this.chat(messages, config)
-      console.log('[custom-provider] Got response from chat(), type:', typeof response)
-      console.log('[custom-provider] Response string:', response)
-
-      if (!response || typeof response !== 'string') {
-        console.error('[custom-provider] Invalid response:', response)
-        throw new Error('Invalid response from chat()')
-      }
-
-      console.log('[custom-provider] Starting to stream chunks...')
-
-      // Simulate streaming by chunking the response
-      const chunks = response.split(/(?=\s+)/)
-      console.log('[custom-provider] Split into', chunks.length, 'chunks')
-
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i]
-        if (chunk.trim()) {
-          console.log(`[custom-provider] Sending chunk ${i}: "${chunk.slice(0, 20)}..."`)
-          await onChunk(chunk)
-          await new Promise(r => setTimeout(r, 10))
+      // Listen for stream chunks from the backend
+      unlisten = await listen<StreamChunkData>('chat-stream-chunk', (event) => {
+        if (event.payload.done) {
+          console.log('[custom-provider] Stream complete, received', fullContent.length, 'chars')
+          return
         }
-      }
-      console.log('[custom-provider] Streaming complete')
+
+        if (event.payload.content) {
+          fullContent += event.payload.content
+          onChunk(event.payload.content)
+        }
+      })
+
+      // Start the streaming request - use 'openai' provider type
+      await invoke<void>('stream_chat_with_provider', { request: payload, provider: 'openai' })
     } catch (error: any) {
       console.error('[custom-provider] streamChat error:', error)
-      console.error('[custom-provider] error name:', error?.name)
-      console.error('[custom-provider] error message:', error?.message)
       throw error
+    } finally {
+      if (unlisten) {
+        unlisten()
+      }
     }
   }
 
@@ -122,49 +142,59 @@ export class CustomProvider implements AIProvider {
     onChunk: (chunk: string) => void | Promise<void>,
     onThinking: (thinking: string) => void | Promise<void>
   ): Promise<void> {
-    console.log('[custom-provider] streamChatWithThinking() called')
+    console.log('[custom-provider] streamChatWithThinking() called - using true streaming')
+
+    const payload: ChatRequestPayload = {
+      endpoint: config.endpoint,
+      model: config.model,
+      messages: messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      })),
+      apiKey: config.apiKey,
+      temperature: config.temperature,
+      maxTokens: config.maxTokens,
+      topP: config.topP,
+      extraHeaders: {
+        ...(config.extraHeaders || {}),
+        ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
+      },
+      extraBody: config.extraBody,
+    }
+
+    // Set up event listener for streaming chunks
+    let unlisten: UnlistenFn | null = null
+    let fullContent = ''
+    let fullThinking = ''
 
     try {
-      console.log('[custom-provider] Calling chat()...')
-      const response = await this.chat(messages, config)
-      console.log('[custom-provider] Got response:', response?.slice(0, 100))
+      // Listen for stream chunks from the backend
+      unlisten = await listen<StreamChunkData>('chat-stream-chunk', (event) => {
+        if (event.payload.done) {
+          console.log('[custom-provider] Stream complete, content:', fullContent.length, 'chars, thinking:', fullThinking.length, 'chars')
+          return
+        }
 
-      if (!response || typeof response !== 'string') {
-        console.error('[custom-provider] Invalid response:', response)
-        throw new Error('Invalid response from chat()')
-      }
+        if (event.payload.thinking) {
+          fullThinking += event.payload.thinking
+          onThinking(event.payload.thinking)
+        }
 
-      // Try to parse as JSON (when Rust returns content + thinking)
-      try {
-        const parsed = JSON.parse(response)
-        if (parsed.thinking) {
-          console.log('[custom-provider] Found thinking content:', parsed.thinking.slice(0, 50))
-          await onThinking(parsed.thinking)
-          await new Promise(r => setTimeout(r, 100))
+        if (event.payload.content) {
+          fullContent += event.payload.content
+          onChunk(event.payload.content)
         }
-        if (parsed.content) {
-          const content = parsed.content
-          const chunks = content.split(/(?=\s+)/)
-          for (const chunk of chunks) {
-            if (chunk.trim()) {
-              await onChunk(chunk)
-              await new Promise(r => setTimeout(r, 10))
-            }
-          }
-        }
-      } catch {
-        // Not JSON, treat as plain content
-        const chunks = response.split(/(?=\s+)/)
-        for (const chunk of chunks) {
-          if (chunk.trim()) {
-            await onChunk(chunk)
-            await new Promise(r => setTimeout(r, 10))
-          }
-        }
-      }
+      })
+
+      // Start the streaming request - use 'openai' provider type
+      await invoke<void>('stream_chat_with_provider', { request: payload, provider: 'openai' })
     } catch (error: any) {
       console.error('[custom-provider] streamChatWithThinking error:', error)
       throw error
+    } finally {
+      if (unlisten) {
+        unlisten()
+      }
     }
   }
 }

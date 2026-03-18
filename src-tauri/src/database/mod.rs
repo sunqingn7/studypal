@@ -747,4 +747,29 @@ impl Database {
         println!("[DB] debug_list_all_metadata: found {} rows", results.len());
         Ok(results)
     }
+
+    pub fn debug_list_all_chats(&self) -> Result<Vec<(String, String)>> {
+        println!("[DB] debug_list_all_chats: fetching all rows");
+        let mut stmt = self
+            .connection
+            .prepare("SELECT document_path, tabs FROM chats")?;
+
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            let (path, tabs_json) = row?;
+            println!(
+                "[DB] debug chats: path={}, tabs_len={}",
+                path,
+                tabs_json.len()
+            );
+            results.push((path, tabs_json));
+        }
+
+        println!("[DB] debug_list_all_chats: found {} rows", results.len());
+        Ok(results)
+    }
 }

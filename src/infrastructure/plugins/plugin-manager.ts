@@ -1,5 +1,6 @@
-import { TypedPlugin, PluginConfig } from '../../domain/models/plugin';
+import { TypedPlugin, PluginConfig, TTSBackendPlugin } from '../../domain/models/plugin';
 import { pluginRegistry } from './plugin-registry';
+import { ttsManager } from '../../infrastructure/tts/tts-manager';
 
 export interface PluginLoadResult {
   success: boolean;
@@ -35,6 +36,10 @@ export class PluginManager {
       
       if (config) {
         this.configs.set(id, config);
+      }
+      
+      if (plugin.type === 'tts-backend') {
+        ttsManager.registerBackend(plugin as TTSBackendPlugin);
       }
       
       return { success: true, pluginId: id };

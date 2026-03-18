@@ -34,6 +34,13 @@ export interface WindowState {
   y: number
 }
 
+export interface FileHistoryItem {
+  id: string
+  path: string
+  name: string
+  lastOpened: number
+}
+
 export interface SessionData {
   window: WindowState
   panels: PanelSizes
@@ -47,6 +54,7 @@ export interface SessionData {
   chatHistory: ChatMessage[]
   documentNotes: Record<string, SerializedNoteState>
   documentChat: Record<string, SerializedChatState>
+  fileHistory: FileHistoryItem[]
   lastUpdated: number
 }
 
@@ -63,6 +71,7 @@ export const DEFAULT_SESSION: SessionData = {
   chatHistory: [],
   documentNotes: {},
   documentChat: {},
+  fileHistory: [],
   lastUpdated: Date.now(),
 }
 
@@ -79,13 +88,16 @@ interface SessionStore {
   getDocumentNotes: (documentId: string) => SerializedNoteState | undefined
   setDocumentChat: (documentId: string, chat: SerializedChatState) => void
   getDocumentChat: (documentId: string) => SerializedChatState | undefined
+  addToFileHistory: (id: string, path: string, name: string) => void
+  getFileHistory: () => FileHistoryItem[]
+  clearFileHistory: () => void
   getSession: () => SessionData
   loadSession: (session: SessionData) => void
   clearSessionData: () => void
 }
 
-// Simple storage - use localStorage directly
-const sessionStorage = {
+// Simple storage wrapper using localStorage
+const storageWrapper = {
   getItem: (name: string): string | null => {
     const value = localStorage.getItem(name)
     console.log('[SessionStorage] getItem:', name, value ? 'found' : 'not found')
@@ -97,6 +109,7 @@ const sessionStorage = {
   },
   removeItem: (name: string): void => {
     localStorage.removeItem(name)
+    console.log('[SessionStorage] removeItem:', name)
   },
 }
 
@@ -225,6 +238,47 @@ export const useSessionStore = create<SessionStore>()(
         return get().session.documentChat?.[documentId]
       },
 
+      addToFileHistory: (id, path, name) => {
+        const history = get().session.fileHistory || []
+        const existingIndex = history.findIndex(item => item.path === path)
+        
+        let newHistory: FileHistoryItem[]
+        if (existingIndex !== -1) {
+          newHistory = [
+            { ...history[existingIndex], lastOpened: Date.now() },
+            ...history.slice(0, existingIndex),
+            ...history.slice(existingIndex + 1)
+          ]
+        } else {
+          newHistory = [
+            { id, path, name, lastOpened: Date.now() },
+            ...history
+          ].slice(0, 50)
+        }
+        
+        set({
+          session: {
+            ...get().session,
+            fileHistory: newHistory,
+            lastUpdated: Date.now(),
+          },
+        })
+      },
+
+      getFileHistory: () => {
+        return get().session.fileHistory || []
+      },
+
+      clearFileHistory: () => {
+        set({
+          session: {
+            ...get().session,
+            fileHistory: [],
+            lastUpdated: Date.now(),
+          },
+        })
+      },
+
       getSession: () => get().session,
 
       loadSession: (session) => {
@@ -246,7 +300,7 @@ export const useSessionStore = create<SessionStore>()(
     }),
     {
       name: 'studypal-session',
-      storage: createJSONStorage(() => sessionStorage),
+      storage: createJSONStorage(() => storageWrapper),
     }
   )
 )

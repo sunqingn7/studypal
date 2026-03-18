@@ -1,4 +1,4 @@
-export type PluginType = 'view' | 'file-handler' | 'action' | 'ai-provider' | 'mcp-server';
+export type PluginType = 'view' | 'file-handler' | 'action' | 'ai-provider' | 'mcp-server' | 'tts-backend';
 
 export interface PluginMetadata {
   id: string;
@@ -106,6 +106,16 @@ export interface MCPServerPlugin {
   executeTool(toolName: string, params: Record<string, unknown>): Promise<MCPToolResult>;
 }
 
+export interface TTSBackendPlugin extends Plugin {
+  type: 'tts-backend';
+  getBackendName(): string;
+  synthesize(text: string, config?: TTSConfig): Promise<AudioData>;
+  streamSynthesize?(text: string, onChunk: (chunk: AudioChunk) => void): Promise<void>;
+  getAvailableVoices?(): VoiceInfo[];
+  getSupportedLanguages?(): string[];
+  canHandle?(config: TTSConfig): boolean;
+}
+
 export interface MCPTool {
   name: string;
   description: string;
@@ -118,12 +128,38 @@ export interface MCPToolParameter {
   description: string;
   required?: boolean;
   enum?: string[];
+  default?: string | number | boolean;
 }
 
 export interface MCPToolResult {
   success: boolean;
   data?: unknown;
   error?: string;
+}
+
+export interface AudioData {
+  format: string;
+  data: string;
+  duration_ms: number;
+}
+
+export interface AudioChunk {
+  data: string;
+  done: boolean;
+}
+
+export interface VoiceInfo {
+  id: string;
+  name: string;
+  language: string;
+  gender: string;
+}
+
+export interface TTSConfig {
+  backend?: string;
+  voice?: string;
+  speed?: number;
+  [key: string]: unknown;
 }
 
 export interface Message {
@@ -148,7 +184,7 @@ export interface Plugin {
   setConfig?(config: Record<string, unknown>): void;
 }
 
-export type TypedPlugin = Plugin & (ViewPlugin | FileHandlerPlugin | ActionPlugin | AIProviderPlugin | MCPServerPlugin);
+export type TypedPlugin = Plugin & (ViewPlugin | FileHandlerPlugin | ActionPlugin | AIProviderPlugin | MCPServerPlugin | TTSBackendPlugin);
 
 export interface PluginConfig {
   enabled: boolean;

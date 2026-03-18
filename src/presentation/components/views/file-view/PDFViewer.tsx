@@ -77,7 +77,7 @@ function PDFViewer({ path, fileData, initialPage = 1 }: PDFViewerProps) {
   }, [metadataStore])
 
   const setCurrentPage = useCallback((page: number | ((prev: number) => number)) => {
-    console.log('[PDFViewer] setCurrentPage called with:', typeof page === 'function' ? '(function)' : page, 'currentPageState:', currentPage)
+    console.log('[PDFViewer] setCurrentPage called with:', typeof page === 'function' ? '(function)' : page)
     if (typeof page === 'function') {
       setCurrentPageState((prev) => {
         const newPage = page(prev)
@@ -90,7 +90,7 @@ function PDFViewer({ path, fileData, initialPage = 1 }: PDFViewerProps) {
       metadataStore.updateMetadata({ currentPage: page })
       setCurrentPageState(page)
     }
-  }, [metadataStore, currentPage])
+  }, [metadataStore])
 
   const getSecondPage = useCallback(() => {
     if (pageMode === 'double' && currentPage < totalPages) {

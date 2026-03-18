@@ -2,9 +2,25 @@ import { useEffect } from 'react'
 import MainLayout from './presentation/layouts/MainLayout'
 import { loadAllPlugins, unloadAllPlugins } from './infrastructure/plugins/plugin-loader'
 import { useThemeStore } from './application/store/theme-store'
+import { useSettingsStore } from './application/store/settings-store'
 
 function App() {
-  const { theme, toggleTheme } = useThemeStore()
+  const { theme, setTheme, toggleTheme } = useThemeStore()
+  const { global } = useSettingsStore()
+
+  // Apply theme from settings store
+  useEffect(() => {
+    let effectiveTheme = global.theme
+    
+    if (effectiveTheme === 'auto') {
+      // Detect system preference
+      effectiveTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    }
+    
+    if (effectiveTheme !== theme) {
+      setTheme(effectiveTheme as 'light' | 'dark')
+    }
+  }, [global.theme, setTheme])
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)

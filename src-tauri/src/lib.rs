@@ -5,6 +5,11 @@ use std::process::Command;
 
 mod session;
 mod database;
+mod tts;
+mod web_search;
+
+use tts::{EdgeTTS, QwenTTS, TTSRequest, TTSResponse};
+use web_search::SearchParams;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ChatMessage {
@@ -141,27 +146,43 @@ async fn fetch_web_content(url: String) -> Result<String, String> {
 
     let body = response.text().await.map_err(|e| e.to_string())?;
 
-    Ok(body)
+Ok(body)
 }
 
 #[tauri::command]
-async fn search_web(query: String) -> Result<String, String> {
-    let client = reqwest::Client::new();
-    let search_url = format!(
-        "https://ddg-api.vercel.app/search?q={}&max_results=5",
-        urlencoding::encode(&query)
-    );
-
-    let response = client
-        .get(&search_url)
-        .header("User-Agent", "Mozilla/5.0")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let body = response.text().await.map_err(|e| e.to_string())?;
-
-    Ok(body)
+async fn search_web(
+    query: String,
+    provider: Option<String>,
+    api_key: Option<String>,
+    max_results: Option<u32>,
+    query_type: Option<String>,
+    year_from: Option<u32>,
+    year_to: Option<u32>,
+    pdf_only: Option<bool>,
+) -> Result<String, String> {
+    println!("[RUST] search_web called with query: {}", query);
+    
+    let params = SearchParams {
+        query,
+        provider: provider.unwrap_or_else(|| "duckduckgo".to_string()),
+        api_key,
+        max_results,
+        query_type,
+        year_from,
+        year_to,
+        pdf_only,
+    };
+    
+    // Perform the search
+    let mut results = web_search::search(params).await?;
+    
+    // Apply academic filters if specified
+    if pdf_only.unwrap_or(false) || year_from.is_some() || year_to.is_some() {
+        results = web_search::filter_academic_results(results, year_from, year_to, pdf_only.unwrap_or(false));
+    }
+    
+    // Convert to JSON string
+    serde_json::to_string(&results).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -305,7 +326,6 @@ async fn stream_chat_with_provider(
     request: ProviderChatRequest,
     provider: String,
 ) -> Result<(), String> {
-    println!("[RUST] stream_chat_with_provider called for provider: {}", provider);
     log::info!("Stream chat request to provider: {}", provider);
     
     let client = reqwest::Client::builder()
@@ -622,7 +642,6 @@ async fn stream_chat_with_openai_compatible(
     client: &reqwest::Client,
     request: &ProviderChatRequest,
 ) -> Result<(), String> {
-    println!("[RUST] Using OpenAI-compatible streaming API");
 
     let url = if request.endpoint.ends_with("/v1/chat/completions") {
         request.endpoint.clone()
@@ -632,7 +651,6 @@ async fn stream_chat_with_openai_compatible(
         format!("{}/v1/chat/completions", request.endpoint)
     };
 
-    println!("[RUST] Streaming URL: {}", url);
 
     let mut payload = serde_json::Map::new();
     payload.insert("model".to_string(), serde_json::json!(request.model));
@@ -663,7 +681,6 @@ async fn stream_chat_with_openai_compatible(
 
     if let Some(api_key) = &request.api_key {
         request_builder = request_builder.header("Authorization", format!("Bearer {}", api_key));
-        println!("[RUST] Using provided API key for streaming");
     }
 
     if let Some(headers) = &request.extra_headers {
@@ -674,10 +691,8 @@ async fn stream_chat_with_openai_compatible(
         }
     }
 
-    println!("[RUST] Sending streaming request...");
     let response = match request_builder.json(&payload).send().await {
         Ok(resp) => {
-            println!("[RUST] Got streaming response with status: {}", resp.status());
             resp
         }
         Err(e) => {
@@ -693,7 +708,6 @@ async fn stream_chat_with_openai_compatible(
         return Err(format!("HTTP error: {} - {}", status, error_text));
     }
 
-    println!("[RUST] Starting to stream chunks...");
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
 
@@ -711,45 +725,48 @@ async fn stream_chat_with_openai_compatible(
                     if line.starts_with("data: ") {
                         let data = &line[6..];
                         if data == "[DONE]" {
-                            println!("[RUST] Stream complete");
                             return Ok(());
                         }
                         
-                        // Parse the SSE data
-                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-                            if let Some(choices) = json.get("choices") {
-                                if let Some(first) = choices.as_array().and_then(|c| c.first()) {
-                                    let content = first.get("delta")
-                                        .and_then(|d| d.get("content"))
-                                        .and_then(|c| c.as_str())
-                                        .unwrap_or("");
-                                    
-                                    let reasoning = first.get("delta")
-                                        .and_then(|d| d.get("reasoning_content"))
-                                        .and_then(|c| c.as_str());
-                                    
-                                    // Emit chunk to frontend
-                                    if !content.is_empty() || reasoning.is_some() {
-                                        let _ = app_handle.emit("chat-stream-chunk", StreamChunk {
-                                            content: content.to_string(),
-                                            thinking: reasoning.map(|s| s.to_string()),
-                                            done: false,
-                                        });
-                                    }
-                                }
-                            }
-                        }
+            // Parse the SSE data
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+              if let Some(choices) = json.get("choices") {
+                if let Some(first) = choices.as_array().and_then(|c| c.first()) {
+                  let content = first.get("delta")
+                    .and_then(|d| d.get("content"))
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("");
+                  
+                  let reasoning = first.get("delta")
+                    .and_then(|d| d.get("reasoning_content"))
+                    .and_then(|c| c.as_str())
+                    .or_else(|| {
+                      // Try alternative field names for reasoning/thinking
+                      first.get("delta")
+                        .and_then(|d| d.get("reasoning"))
+                        .and_then(|c| c.as_str())
+                    });
+                  
+                  // Emit chunk to frontend
+                  if !content.is_empty() || reasoning.is_some() {
+                    let _ = app_handle.emit("chat-stream-chunk", StreamChunk {
+                      content: content.to_string(),
+                      thinking: reasoning.map(|s| s.to_string()),
+                      done: false,
+                    });
+                  }
+                }
+              }
+            }
                     }
                 }
             }
             Err(e) => {
-                println!("[RUST] Stream error: {}", e);
                 return Err(format!("Stream error: {}", e));
             }
         }
     }
 
-    println!("[RUST] Streaming complete");
     Ok(())
 }
 
@@ -758,10 +775,8 @@ async fn stream_chat_with_anthropic(
     client: &reqwest::Client,
     request: &ProviderChatRequest,
 ) -> Result<(), String> {
-    println!("[RUST] Using Anthropic streaming API");
 
     let url = format!("{}/messages", request.endpoint);
-    println!("[RUST] Streaming URL: {}", url);
 
     // Convert messages to Anthropic format
     let mut system_message: Option<String> = None;
@@ -809,7 +824,6 @@ async fn stream_chat_with_anthropic(
 
     if let Some(api_key) = &request.api_key {
         request_builder = request_builder.header("x-api-key", api_key);
-        println!("[RUST] Using provided API key for Anthropic streaming");
     }
 
     if let Some(headers) = &request.extra_headers {
@@ -822,11 +836,9 @@ async fn stream_chat_with_anthropic(
 
     let response = match request_builder.json(&payload).send().await {
         Ok(resp) => {
-            println!("[RUST] Got Anthropic streaming response: {}", resp.status());
             resp
         }
         Err(e) => {
-            println!("[RUST] Anthropic streaming request failed: {}", e);
             return Err(format!("Request failed: {}", e));
         }
     };
@@ -838,7 +850,6 @@ async fn stream_chat_with_anthropic(
         return Err(format!("HTTP error: {} - {}", status, error_text));
     }
 
-    println!("[RUST] Starting Anthropic stream...");
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
 
@@ -872,7 +883,6 @@ async fn stream_chat_with_anthropic(
                                     }
                                 }
                                 "message_stop" => {
-                                    println!("[RUST] Anthropic stream complete");
                                     return Ok(());
                                 }
                                 _ => {}
@@ -882,13 +892,11 @@ async fn stream_chat_with_anthropic(
                 }
             }
             Err(e) => {
-                println!("[RUST] Anthropic stream error: {}", e);
                 return Err(format!("Stream error: {}", e));
             }
         }
     }
 
-    println!("[RUST] Anthropic streaming complete");
     Ok(())
 }
 
@@ -1440,6 +1448,137 @@ async fn fetch_models(request: FetchModelsRequest) -> Result<Vec<ModelInfo>, Str
     Ok(models)
 }
 
+#[tauri::command]
+async fn tts_edge_voices() -> Result<serde_json::Value, String> {
+    let tts = EdgeTTS::new();
+    let voices = tts.get_voices().await?;
+    serde_json::to_value(voices).map_err(|e| format!("Failed to serialize voices: {}", e))
+}
+
+#[tauri::command]
+async fn tts_edge_synth(request: TTSRequest) -> Result<TTSResponse, String> {
+    let tts = EdgeTTS::new();
+    tts.synthesize(request).await
+}
+
+#[tauri::command]
+async fn tts_qwen_health(server_url: Option<String>) -> Result<bool, String> {
+    let tts = QwenTTS::new(server_url);
+    tts.health_check().await
+}
+
+#[tauri::command]
+async fn tts_qwen_voices(server_url: Option<String>) -> Result<serde_json::Value, String> {
+    let tts = QwenTTS::new(server_url);
+    let voices = tts.get_voices().await?;
+    serde_json::to_value(voices).map_err(|e| format!("Failed to serialize voices: {}", e))
+}
+
+#[tauri::command]
+async fn download_and_open_paper(
+    url: String,
+    save_location: Option<String>,
+) -> Result<DownloadResult, String> {
+    println!("[RUST] download_and_open_paper called with url: {}", url);
+    
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| e.to_string())?;
+    
+    // Determine save location
+    let save_path = if let Some(loc) = save_location {
+        loc
+    } else {
+        // Default to ~/StudyMaterials/Papers/
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .map_err(|_| "Could not determine home directory".to_string())?;
+        format!("{}/StudyMaterials/Papers", home)
+    };
+    
+    // Create directory if it doesn't exist
+    std::fs::create_dir_all(&save_path)
+        .map_err(|e| format!("Failed to create directory: {}", e))?;
+    
+    // Extract filename from URL
+    let filename = url.split('/').last()
+        .unwrap_or("paper.pdf")
+        .to_string();
+    
+    // Ensure it has .pdf extension
+    let filename = if filename.ends_with(".pdf") {
+        filename
+    } else {
+        format!("{}.pdf", filename)
+    };
+    
+    let filepath = format!("{}/{}", save_path, filename);
+    
+    // Download the file
+    println!("[RUST] Downloading from: {} to: {}", url, filepath);
+    let response = client
+        .get(&url)
+        .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+        .send()
+        .await
+        .map_err(|e| format!("Download failed: {}", e))?;
+    
+    if !response.status().is_success() {
+        return Err(format!("HTTP error: {}", response.status()));
+    }
+    
+    let bytes = response.bytes().await
+        .map_err(|e| format!("Failed to read response: {}", e))?;
+    
+    // Save to file
+    std::fs::write(&filepath, &bytes)
+        .map_err(|e| format!("Failed to save file: {}", e))?;
+    
+    // Try to extract metadata from arxiv URL
+    let (title, authors, year) = if url.contains("arxiv.org") {
+        let arxiv_id = url.split('/').last()
+            .and_then(|s| s.split('.').next())
+            .unwrap_or("");
+        let year = if arxiv_id.len() >= 2 {
+            arxiv_id[..2].parse::<u32>().ok().map(|y| 2000 + y)
+        } else {
+            None
+        };
+        (Some(format!("Paper {}", arxiv_id)), None, year)
+    } else {
+        (None, None, None)
+    };
+    
+    println!("[RUST] Downloaded {} bytes to {}", bytes.len(), filepath);
+    
+    Ok(DownloadResult {
+        path: filepath,
+        title,
+        authors,
+        year,
+        file_size: bytes.len() as u64,
+    })
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct DownloadResult {
+    path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    authors: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    year: Option<u32>,
+    file_size: u64,
+}
+
+#[tauri::command]
+async fn tts_qwen_synth(request: TTSRequest, server_url: Option<String>) -> Result<TTSResponse, String> {
+    let tts = QwenTTS::new(server_url);
+    tts.synthesize(request).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -1451,10 +1590,11 @@ pub fn run() {
         .level(log::LevelFilter::Info)
         .build(),
     )
-.invoke_handler(tauri::generate_handler![
-            fetch_web_content,
-            search_web,
-            chat_with_ai,
+    .invoke_handler(tauri::generate_handler![
+      fetch_web_content,
+      search_web,
+      download_and_open_paper,
+      chat_with_ai,
             chat_with_provider,
             stream_chat_with_provider,
             fetch_models,
@@ -1466,6 +1606,11 @@ pub fn run() {
             get_file_info,
             open_file_from_browser,
             read_file,
+            tts_edge_voices,
+            tts_edge_synth,
+            tts_qwen_health,
+            tts_qwen_voices,
+            tts_qwen_synth,
         session::load_session,
         session::save_session,
         session::save_chats,
@@ -1482,7 +1627,8 @@ pub fn run() {
       session::save_document_metadata,
       session::load_document_metadata,
       session::get_document_with_context,
-      session::debug_list_all_metadata
+        session::debug_list_all_metadata,
+        session::debug_list_all_chats
         ])
         .setup(|app| {
             let _app_handle = app.handle().clone();

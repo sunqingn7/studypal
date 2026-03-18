@@ -6,24 +6,28 @@ import { useNoteStore } from '../../application/store/note-store'
 import { useAIChatStore } from '../../application/store/ai-chat-store'
 import { useThemeStore } from '../../application/store/theme-store'
 import { useSessionStore } from '../../application/store/session-store'
+import { useSettingsStore } from '../../application/store/settings-store'
 import { useAIStore } from '../../application/store/ai-store'
 import { initializeSession, updateAIConfig } from '../../application/services/session-manager'
 import { pluginRegistry } from '../../infrastructure/plugins/plugin-registry'
-import { FileBrowserView } from '../../plugins/file-browser-view/FileBrowserView'
+import { SidebarTabs } from '../../plugins/file-browser-view/SidebarTabs'
 import FileView from '../components/views/file-view/FileView'
 import NoteView from '../components/views/note-view/NoteView'
 import AIView from '../components/views/ai-view/AIView'
-import { Sun, Moon } from 'lucide-react'
+import { Sun, Moon, Settings } from 'lucide-react'
 import { FileMetadata } from '../../domain/models/file'
+import { SettingsView } from '../components/views/settings-view/SettingsView'
 
 function MainLayout() {
   const { currentFile } = useFileStore()
   const { theme, toggleTheme } = useThemeStore()
-  const { session, setPanelSize, setShowFileBrowser: setSessionShowBrowser, setTheme: setSessionTheme } = useSessionStore()
+  const { session, setPanelSize, setShowFileBrowser: setSessionShowBrowser, setTheme: setSessionTheme, addToFileHistory } = useSessionStore()
+  const { updateGlobal } = useSettingsStore()
   const [showFileBrowser, setShowFileBrowser] = useState(session.showFileBrowser)
   const [hasFileBrowser, setHasFileBrowser] = useState(false)
   const [isHydrated, setIsHydrated] = useState(false)
   const [panelSizesRestored, setPanelSizesRestored] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
 
   const mainGroupRef = useGroupRef()
   const rightGroupRef = useGroupRef()
@@ -33,20 +37,51 @@ function MainLayout() {
   }
 
   useEffect(() => {
-    // Save session before window closes
-    const handleBeforeUnload = () => {
-      // Save current document's notes and chat
-      const { currentFile, saveCurrentDocumentState } = useFileStore.getState()
-      if (currentFile) {
-        saveCurrentDocumentState(useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState())
+    // Save session before window closes using Tauri API
+    let unlistenFn: (() => void) | null = null;
+    
+    const setupCloseHandler = async () => {
+      try {
+        const appWindow = getCurrentWindow();
+        
+        // Use Tauri's onCloseRequested to properly handle async save
+        const unlisten = await appWindow.onCloseRequested(async (_event) => {
+          console.log('[MainLayout] Window close requested, saving state...');
+          const { currentFile, saveCurrentDocumentState } = useFileStore.getState();
+          if (currentFile) {
+            await saveCurrentDocumentState(useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState());
+          }
+
+          // Session is auto-saved by zustand persist, no manual save needed
+          console.log('[MainLayout] State saved, closing window...');
+        });
+        
+        unlistenFn = unlisten;
+      } catch (e) {
+        // Not in Tauri environment, use beforeunload as fallback
+        console.log('[MainLayout] Not in Tauri, using beforeunload fallback');
       }
+    };
+    
+    setupCloseHandler();
+    
+    // Also add beforeunload as fallback (won't wait for async but better than nothing)
+    const handleBeforeUnload = () => {
+      const { currentFile, saveCurrentDocumentState } = useFileStore.getState();
+      if (currentFile) {
+        saveCurrentDocumentState(useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState());
+      }
+      // Session is auto-saved by zustand persist, no manual save needed
+    };
 
-      const session = useSessionStore.getState().getSession()
-      localStorage.setItem('studypal-session', JSON.stringify(session))
-    }
-
-    window.addEventListener('beforeunload', handleBeforeUnload)
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      if (unlistenFn) {
+        unlistenFn();
+      }
+    };
   }, [])
 
   useEffect(() => {
@@ -234,10 +269,29 @@ function MainLayout() {
   
   const previousFileRef = useRef<FileMetadata | null>(null)
 
+  // Handle system state when no file is open
+  useEffect(() => {
+    if (!isHydrated) return;
+    
+    const fileStore = useFileStore.getState();
+    
+    if (!currentFile) {
+      // No file open - load system state
+      console.log('[MainLayout] No file open, loading system state');
+      fileStore.loadSystemState(useNoteStore.getState(), useAIChatStore.getState());
+    } else if (previousFileRef.current === null && currentFile) {
+      // First file loaded - save system state first if it exists, then load file state
+      console.log('[MainLayout] First file loaded, saving system state first');
+      fileStore.saveSystemState(useNoteStore.getState(), useAIChatStore.getState());
+      fileStore.loadDocumentState(currentFile.path, useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState());
+    }
+  }, [currentFile, isHydrated]);
+
   useEffect(() => {
     if (currentFile && isHydrated) {
       console.log('[MainLayout] Saving file to session:', currentFile.path)
       useSessionStore.getState().setCurrentFile(currentFile.id, currentFile.path, currentPage, 0)
+      addToFileHistory(currentFile.id, currentFile.path, currentFile.name)
       
       // Save previous file's notes/chat and load new file's notes/chat
       if (previousFileRef.current && previousFileRef.current.id !== currentFile.id) {
@@ -249,7 +303,7 @@ function MainLayout() {
       }
       previousFileRef.current = currentFile
     }
-  }, [currentFile, currentPage, isHydrated])
+  }, [currentFile, currentPage, isHydrated, addToFileHistory])
 
   // Save AI config to Rust backend when it changes
   const aiConfig = useAIChatStore((state) => state.config)
@@ -275,8 +329,10 @@ function MainLayout() {
   }
 
   const handleThemeToggle = () => {
+    const newTheme = theme === 'light' ? 'dark' : 'light'
     toggleTheme()
-    setSessionTheme(theme === 'light' ? 'dark' : 'light')
+    setSessionTheme(newTheme)
+    updateGlobal({ theme: newTheme })
   }
 
   // Handle layout changes from the Group - only fires after user releases drag
@@ -314,7 +370,7 @@ function MainLayout() {
           minSize={5}
           className="sidebar-panel"
         >
-        {showFileBrowser && hasFileBrowser && <FileBrowserView context={pluginContext} />}
+        {showFileBrowser && hasFileBrowser && <SidebarTabs context={pluginContext} />}
         {showFileBrowser && !hasFileBrowser && (
           <div className="flex items-center justify-center h-full text-[var(--sidebar-fg)] opacity-50 p-4">
             <p>Loading file browser...</p>
@@ -361,14 +417,26 @@ function MainLayout() {
          {showFileBrowser ? '◀' : '▶'}
        </button>
 
-       {/* Theme toggle button */}
-       <button
-         onClick={handleThemeToggle}
-         className="fixed left-2 top-6 z-50 p-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded shadow-md hover:bg-[var(--bg-tertiary)] transition-colors"
-         title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-       >
-         {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-       </button>
+      {/* Theme toggle button */}
+      <button
+        onClick={handleThemeToggle}
+        className="fixed left-2 top-4 z-50 p-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded shadow-md hover:bg-[var(--bg-tertiary)] transition-colors"
+        title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+      >
+        {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+      </button>
+
+      {/* Settings button */}
+      <button
+        onClick={() => setShowSettings(true)}
+        className="fixed left-2 top-12 z-50 p-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded shadow-md hover:bg-[var(--bg-tertiary)] transition-colors"
+        title="Open Settings"
+      >
+        <Settings className="w-4 h-4" />
+      </button>
+
+      {/* Settings Modal */}
+      <SettingsView isOpen={showSettings} onClose={() => setShowSettings(false)} />
     </div>
   )
 }

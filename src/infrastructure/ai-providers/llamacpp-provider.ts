@@ -3,9 +3,6 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type { AIConfig, ChatMessage } from '../../domain/models/ai-context'
 import type { AIProvider } from './base-provider'
 
-// Log when module loads
-console.log('[llamacpp-provider] Module loading, invoke function:', typeof invoke)
-
 interface LlamaCppMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
@@ -37,12 +34,6 @@ export class LlamaCppProvider implements AIProvider {
   }
 
   async chat(messages: ChatMessage[], config: AIConfig): Promise<string> {
-    console.log('[llamacpp-provider] chat() called with:', {
-      endpoint: config.endpoint,
-      model: config.model,
-      messageCount: messages.length
-    })
-
     const payload: ChatRequestPayload = {
       endpoint: config.endpoint,
       model: config.model,
@@ -58,24 +49,11 @@ export class LlamaCppProvider implements AIProvider {
       extraBody: config.extraBody,
     }
 
-    console.log('[llamacpp-provider] Calling invoke with payload:', JSON.stringify(payload, null, 2))
-
     try {
-      console.log('[llamacpp-provider] About to call invoke...')
       const result = await invoke<string>('chat_with_provider', { request: payload, provider: 'llamacpp' })
-      console.log('[llamacpp-provider] invoke returned!')
-      console.log('[llamacpp-provider] result type:', typeof result)
-      console.log('[llamacpp-provider] result:', result)
-
-      // Force convert to string if needed
-      const resultStr = String(result)
-      console.log('[llamacpp-provider] converted to string, length:', resultStr.length)
-      return resultStr
+      return String(result)
     } catch (error: any) {
-      console.error('[llamacpp-provider] invoke failed with error:', error)
-      console.error('[llamacpp-provider] error name:', error?.name)
-      console.error('[llamacpp-provider] error message:', error?.message)
-      console.error('[llamacpp-provider] error stack:', error?.stack)
+      console.error('[llamacpp-provider] Chat failed:', error?.message || error)
       throw error
     }
   }
@@ -85,8 +63,6 @@ export class LlamaCppProvider implements AIProvider {
     config: AIConfig,
     onChunk: (chunk: string) => void | Promise<void>
   ): Promise<void> {
-    console.log('[llamacpp-provider] streamChat() called - using true streaming')
-
     const payload: ChatRequestPayload = {
       endpoint: config.endpoint,
       model: config.model,
@@ -110,7 +86,6 @@ export class LlamaCppProvider implements AIProvider {
       // Listen for stream chunks from the backend
       unlisten = await listen<StreamChunkData>('chat-stream-chunk', (event) => {
         if (event.payload.done) {
-          console.log('[llamacpp-provider] Stream complete, received', fullContent.length, 'chars')
           return
         }
 
@@ -123,7 +98,7 @@ export class LlamaCppProvider implements AIProvider {
       // Start the streaming request
       await invoke<void>('stream_chat_with_provider', { request: payload, provider: 'llamacpp' })
     } catch (error: any) {
-      console.error('[llamacpp-provider] streamChat error:', error)
+      console.error('[llamacpp-provider] Stream error:', error?.message || error)
       throw error
     } finally {
       if (unlisten) {
