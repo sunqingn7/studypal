@@ -1608,10 +1608,24 @@ async fn fetch_models(request: FetchModelsRequest) -> Result<Vec<ModelInfo>, Str
 
     let mut request_builder = client.get(&url);
 
+    // Check if this is a Gemini endpoint
+    let is_gemini = url.contains("generativelanguage.googleapis.com");
+    
     // Add authorization header if API key is provided
     if let Some(api_key) = &request.api_key {
-        request_builder = request_builder.header("Authorization", format!("Bearer {}", api_key));
-        println!("[RUST] Using provided API key");
+        if is_gemini {
+            // Gemini uses x-goog-api-key header
+            request_builder = request_builder.header("x-goog-api-key", api_key);
+            println!("[RUST] Using x-goog-api-key for Gemini");
+        } else if url.contains("openrouter.ai") {
+            // OpenRouter uses Authorization: Bearer
+            request_builder = request_builder.header("Authorization", format!("Bearer {}", api_key));
+            println!("[RUST] Using Bearer token for OpenRouter");
+        } else {
+            // Default: Authorization: Bearer
+            request_builder = request_builder.header("Authorization", format!("Bearer {}", api_key));
+            println!("[RUST] Using Bearer token");
+        }
     }
 
     let response = match request_builder.send().await {
