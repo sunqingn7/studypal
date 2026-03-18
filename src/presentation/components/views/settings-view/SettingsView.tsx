@@ -560,6 +560,7 @@ function LLMPoolTab() {
               <option value="anthropic">Anthropic</option>
               <option value="vllm">vLLM</option>
               <option value="nvidia">NVIDIA NIM</option>
+              <option value="openrouter">OpenRouter</option>
               <option value="custom">Custom</option>
               </select>
             </div>

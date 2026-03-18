@@ -6,6 +6,7 @@ import { anthropicProvider } from './anthropic-provider'
 import { ollamaProvider } from './ollama-provider'
 import { vllmProvider } from './vllm-provider'
 import { nvidiaProvider } from './nvidia-provider'
+import { openrouterProvider } from './openrouter-provider'
 import { customProvider } from './custom-provider'
 
 const providers: Record<AIProviderType, AIProvider> = {
@@ -15,6 +16,7 @@ const providers: Record<AIProviderType, AIProvider> = {
   ollama: ollamaProvider,
   vllm: vllmProvider,
   nvidia: nvidiaProvider,
+  openrouter: openrouterProvider,
   custom: customProvider,
 }
 
