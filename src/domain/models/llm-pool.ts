@@ -87,7 +87,7 @@ export interface PoolConfig {
 }
 
 export const DEFAULT_POOL_CONFIG: PoolConfig = {
-  healthCheckInterval: 30000, // 30 seconds
+  healthCheckInterval: 600000, // 10 minutes
   taskTimeout: 60000, // 60 seconds
   maxRetries: 2,
   enableLoadBalancing: true,
