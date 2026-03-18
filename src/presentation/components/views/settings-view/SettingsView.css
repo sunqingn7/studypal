@@ -733,4 +733,57 @@
   .pool-stats {
     grid-template-columns: repeat(3, 1fr);
   }
+
+  .fetch-error {
+    font-size: 12px;
+    color: #dc2626;
+    margin-top: 6px;
+  }
+
+  .model-input-with-fetch {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .model-input-with-fetch input {
+    flex: 1;
+  }
+
+  .model-input-with-fetch .icon-button {
+    flex-shrink: 0;
+  }
+
+  .inline-icon {
+    display: inline-block;
+    vertical-align: middle;
+  }
+
+  .icon-button.small {
+    width: 28px;
+    height: 28px;
+  }
+
+  .form-group select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 14px;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+  }
+
+  .form-group select:focus {
+    outline: none;
+    border-color: var(--accent-color);
+  }
+
+  .form-group select option {
+    padding: 8px;
+  }
+
+  .form-group label .inline-icon {
+    color: var(--text-secondary);
+  }
 }

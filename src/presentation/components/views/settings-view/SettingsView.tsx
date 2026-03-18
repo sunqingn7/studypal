@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { useSettingsStore, SearchProvider } from '../../../../application/store/settings-store';
 import { useLLMPoolStore } from '../../../../application/store/llm-pool-store';
 import { checkProviderHealth } from '../../../../application/services/llm-pool-health-check';
-import { AIConfig, AIProviderType } from '../../../../domain/models/ai-context';
-import { X, Globe, Search, Key, Filter, BookOpen, Server, Plus, Trash2, RefreshCw, CheckCircle, XCircle } from 'lucide-react';
+import { AIConfig, AIProviderType, PROVIDER_DEFAULTS } from '../../../../domain/models/ai-context';
+import { fetchAvailableModels, ModelInfo } from '../../../../infrastructure/ai-providers/model-detector';
+import { X, Globe, Search, Key, Filter, BookOpen, Server, Plus, Trash2, RefreshCw, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import './SettingsView.css';
 
 interface SettingsViewProps {
@@ -380,7 +381,56 @@ function LLMPoolTab() {
   const [newProviderModel, setNewProviderModel] = useState('');
   const [newProviderApiKey, setNewProviderApiKey] = useState('');
   const [isCheckingHealth, setIsCheckingHealth] = useState<string | null>(null);
+  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
+  const [isFetchingModels, setIsFetchingModels] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const stats = getStatistics();
+
+  // Auto-fill defaults when provider type changes
+  useEffect(() => {
+    const defaults = PROVIDER_DEFAULTS[newProviderType];
+    if (defaults) {
+      setNewProviderEndpoint(defaults.endpoint || '');
+      setNewProviderModel(defaults.model || '');
+      setNewProviderApiKey('');
+      setAvailableModels([]);
+      setFetchError(null);
+    }
+  }, [newProviderType]);
+
+  // Fetch models when endpoint or API key changes (with debounce)
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (newProviderEndpoint && (newProviderType === 'llamacpp' || newProviderType === 'ollama' || newProviderType === 'vllm' || newProviderApiKey)) {
+        fetchModels();
+      }
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [newProviderEndpoint, newProviderApiKey, newProviderType]);
+
+  const fetchModels = async () => {
+    if (!newProviderEndpoint) return;
+
+    setIsFetchingModels(true);
+    setFetchError(null);
+
+    try {
+      const models = await fetchAvailableModels(newProviderEndpoint, newProviderApiKey || undefined);
+      setAvailableModels(models);
+
+      // If no model selected and we have models, auto-select first one
+      if (!newProviderModel && models.length > 0) {
+        setNewProviderModel(models[0].id);
+      }
+    } catch (error) {
+      console.error('Failed to fetch models:', error);
+      setFetchError(error instanceof Error ? error.message : 'Failed to fetch models');
+      setAvailableModels([]);
+    } finally {
+      setIsFetchingModels(false);
+    }
+  };
 
   const handleAddProvider = () => {
     if (!newProviderName.trim() || !newProviderEndpoint.trim()) return;
@@ -577,13 +627,45 @@ function LLMPoolTab() {
               />
             </div>
             <div className="form-group">
-              <label>Model</label>
-              <input
-                type="text"
-                value={newProviderModel}
-                onChange={(e) => setNewProviderModel(e.target.value)}
-                placeholder="model name"
-              />
+              <label>
+                Model
+                {isFetchingModels && <Loader2 size={14} className="spinning inline-icon" style={{ marginLeft: '8px' }} />}
+              </label>
+              {availableModels.length > 0 ? (
+                <select
+                  value={newProviderModel}
+                  onChange={(e) => setNewProviderModel(e.target.value)}
+                >
+                  <option value="">Select a model...</option>
+                  {availableModels.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name || model.id}
+                      {model.description && ` - ${model.description.slice(0, 50)}`}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="model-input-with-fetch">
+                  <input
+                    type="text"
+                    value={newProviderModel}
+                    onChange={(e) => setNewProviderModel(e.target.value)}
+                    placeholder={isFetchingModels ? 'Fetching models...' : fetchError ? 'Failed to fetch models' : 'Enter model name'}
+                    disabled={isFetchingModels}
+                  />
+                  <button
+                    className="icon-button small"
+                    onClick={fetchModels}
+                    disabled={isFetchingModels || !newProviderEndpoint}
+                    title="Fetch available models"
+                  >
+                    <RefreshCw size={14} className={isFetchingModels ? 'spinning' : ''} />
+                  </button>
+                </div>
+              )}
+              {fetchError && (
+                <div className="fetch-error">{fetchError}</div>
+              )}
             </div>
           </div>
           {(newProviderType === 'openai' || newProviderType === 'anthropic' || newProviderType === 'nvidia' || newProviderType === 'openrouter' || newProviderType === 'gemini' || newProviderType === 'custom') && (
