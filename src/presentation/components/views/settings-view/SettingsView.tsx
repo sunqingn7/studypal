@@ -4,7 +4,7 @@ import { useLLMPoolStore } from '../../../../application/store/llm-pool-store';
 import { checkProviderHealth } from '../../../../application/services/llm-pool-health-check';
 import { AIConfig, AIProviderType, PROVIDER_DEFAULTS } from '../../../../domain/models/ai-context';
 import { fetchAvailableModels, ModelInfo } from '../../../../infrastructure/ai-providers/model-detector';
-import { X, Globe, Search, Key, Filter, BookOpen, Server, Plus, Trash2, RefreshCw, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { X, Globe, Search, Key, Filter, BookOpen, Server, Plus, Trash2, RefreshCw, CheckCircle, XCircle, Loader2, Edit3 } from 'lucide-react';
 import './SettingsView.css';
 
 interface SettingsViewProps {
@@ -371,10 +371,12 @@ function LLMPoolTab() {
     setProviderHealth,
     getStatistics,
     updateConfig,
+    updateProvider,
     config: poolConfig,
   } = useLLMPoolStore();
 
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [newProviderName, setNewProviderName] = useState('');
   const [newProviderType, setNewProviderType] = useState<AIProviderType>('llamacpp');
   const [newProviderEndpoint, setNewProviderEndpoint] = useState('');
@@ -442,14 +444,46 @@ function LLMPoolTab() {
       apiKey: newProviderApiKey || undefined,
     };
 
-    addProvider(newProviderName.trim(), providerConfig);
+    if (editingProviderId) {
+      // Update existing provider
+      updateProvider(editingProviderId, {
+        name: newProviderName.trim(),
+        config: providerConfig,
+      });
+    } else {
+      // Add new provider
+      addProvider(newProviderName.trim(), providerConfig);
+    }
 
     // Reset form
+    resetForm();
+  };
+
+  const resetForm = () => {
     setNewProviderName('');
     setNewProviderEndpoint('');
     setNewProviderModel('');
     setNewProviderApiKey('');
+    setNewProviderType('llamacpp');
+    setEditingProviderId(null);
     setShowAddForm(false);
+  };
+
+  const handleEditProvider = (providerId: string) => {
+    const provider = providers.find((p) => p.id === providerId);
+    if (!provider) return;
+
+    setEditingProviderId(providerId);
+    setNewProviderName(provider.name);
+    setNewProviderType(provider.config.provider);
+    setNewProviderEndpoint(provider.config.endpoint);
+    setNewProviderModel(provider.config.model);
+    setNewProviderApiKey(provider.config.apiKey || '');
+    setShowAddForm(true);
+  };
+
+  const handleCancelEdit = () => {
+    resetForm();
   };
 
   const handleHealthCheck = async (providerId: string) => {
@@ -579,15 +613,18 @@ function LLMPoolTab() {
           <button className="icon-button" onClick={handleCheckAllHealth} title="Check All Health">
             <RefreshCw size={16} />
           </button>
-          <button className="icon-button primary" onClick={() => setShowAddForm(true)} title="Add Provider">
+          <button className="icon-button primary" onClick={() => { resetForm(); setShowAddForm(true); }} title="Add Provider">
             <Plus size={16} />
           </button>
         </div>
       </div>
 
-      {/* Add Provider Form */}
+      {/* Add/Edit Provider Form */}
       {showAddForm && (
         <div className="add-provider-form">
+          <div className="form-header">
+            <h4>{editingProviderId ? 'Edit Provider' : 'Add Provider'}</h4>
+          </div>
           <div className="form-row">
             <div className="form-group">
               <label>Name</label>
@@ -680,11 +717,11 @@ function LLMPoolTab() {
             </div>
           )}
           <div className="form-actions">
-            <button className="button secondary" onClick={() => setShowAddForm(false)}>
+            <button className="button secondary" onClick={handleCancelEdit}>
               Cancel
             </button>
             <button className="button primary" onClick={handleAddProvider}>
-              Add to Pool
+              {editingProviderId ? 'Save Changes' : 'Add to Pool'}
             </button>
           </div>
         </div>
@@ -716,6 +753,13 @@ function LLMPoolTab() {
                   </div>
                 </div>
                 <div className="provider-actions">
+                  <button
+                    className="icon-button"
+                    onClick={() => handleEditProvider(provider.id)}
+                    title="Edit Provider"
+                  >
+                    <Edit3 size={14} />
+                  </button>
                   <button
                     className="icon-button"
                     onClick={() => handleHealthCheck(provider.id)}
