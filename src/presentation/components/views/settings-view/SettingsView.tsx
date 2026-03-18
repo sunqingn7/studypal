@@ -388,8 +388,12 @@ function LLMPoolTab() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const stats = getStatistics();
 
-  // Auto-fill defaults when provider type changes
+  // Auto-fill defaults when provider type changes (only when NOT editing)
   useEffect(() => {
+    if (editingProviderId) {
+      // Don't overwrite existing values when editing
+      return;
+    }
     const defaults = PROVIDER_DEFAULTS[newProviderType];
     if (defaults) {
       setNewProviderEndpoint(defaults.endpoint || '');
@@ -398,7 +402,7 @@ function LLMPoolTab() {
       setAvailableModels([]);
       setFetchError(null);
     }
-  }, [newProviderType]);
+  }, [newProviderType, editingProviderId]);
 
   // Fetch models when endpoint or API key changes (with debounce)
   useEffect(() => {
