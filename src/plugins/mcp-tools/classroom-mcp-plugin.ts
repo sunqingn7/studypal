@@ -1,7 +1,33 @@
 import { MCPServerPlugin, MCPTool, MCPToolResult, PluginMetadata } from '../../domain/models/plugin';
 import { useClassroomStore } from '../../application/store/classroom-store';
+import { useLLMPoolStore } from '../../application/store/llm-pool-store';
 
 export class ClassroomMCPServerPlugin implements MCPServerPlugin {
+  private healthCheckInterval?: ReturnType<typeof setInterval>;
+
+  private startHealthChecks() {
+    if (this.healthCheckInterval) return;
+    this.healthCheckInterval = setInterval(() => {
+      const { providers, setProviderHealth } = useLLMPoolStore.getState();
+      providers.forEach(async (provider) => {
+        if (!provider.isEnabled) return;
+        try {
+          const { checkProviderHealth } = await import('../../application/services/llm-pool-health-check');
+          const result = await checkProviderHealth(provider);
+          setProviderHealth(provider.id, result.isHealthy, result.latency, result.error);
+        } catch (e) {
+          setProviderHealth(provider.id, false, undefined, String(e));
+        }
+      });
+    }, 30000);
+  }
+
+  private stopHealthChecks() {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = undefined;
+    }
+  }
   metadata: PluginMetadata = {
     id: 'mcp-classroom',
     name: 'Classroom MCP Server',
@@ -21,10 +47,14 @@ export class ClassroomMCPServerPlugin implements MCPServerPlugin {
     if (config?.autoSummary !== undefined) {
       this.autoSummary = config.autoSummary as boolean;
     }
+    // Start health checks for LLM pool providers
+    this.startHealthChecks();
     console.log('Classroom MCP plugin initialized');
   }
 
   async destroy(): Promise<void> {
+    // Stop health checks
+    this.stopHealthChecks();
     console.log('Classroom MCP plugin destroyed');
   }
 
@@ -165,21 +195,36 @@ export class ClassroomMCPServerPlugin implements MCPServerPlugin {
           };
         }
 
-        case 'generate_ppt_slide': {
-          const pageNumber = params.page_number as number;
-          const sectionTitle = params.section_title as string;
-          const maxKeyPoints = (params.max_key_points as number) || 5;
-          
+      case 'generate_ppt_slide': {
+        const pageNumber = params.page_number as number;
+        const sectionTitle = params.section_title as string;
+        const maxKeyPoints = (params.max_key_points as number) || 5;
+
+        // Generate slide using LLM pool
+        try {
+          const { generateSlideContent } = await import('../../application/services/classroom-generation-service');
+          const slide = await generateSlideContent(pageNumber, sectionTitle, maxKeyPoints);
+
+          // Store the generated slide
+          store.generateSlide(pageNumber, slide.title, slide.keyPoints, slide.content);
+
           return {
             success: true,
             data: {
               pageNumber,
-              sectionTitle,
-              maxKeyPoints,
-              message: 'Slide generation requested. AI will generate content.'
+              title: slide.title,
+              keyPoints: slide.keyPoints,
+              content: slide.content,
+              message: 'Slide generated successfully'
             }
           };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to generate slide'
+          };
         }
+      }
 
         case 'classroom_control': {
           const action = params.action as string;
@@ -220,93 +265,185 @@ export class ClassroomMCPServerPlugin implements MCPServerPlugin {
           };
         }
 
-        case 'generate_summary': {
-          const scope = params.scope as string;
-          const summaryType = (params.summary_type as string) || 'key_points';
-          const maxLength = (params.max_length as number) || 500;
-          
+      case 'generate_summary': {
+        const scope = params.scope as 'current_page' | 'section' | 'entire_document';
+        const summaryType = (params.summary_type as 'brief' | 'detailed' | 'key_points') || 'key_points';
+        const maxLength = (params.max_length as number) || 500;
+
+        try {
+          const { generateSummary } = await import('../../application/services/classroom-generation-service');
+          const summary = await generateSummary(scope, summaryType, maxLength);
+
+          // Store summary in classroom store
+          store.generateSummary(store.currentPage, summary);
+
           return {
             success: true,
             data: {
               scope,
               summaryType,
-              maxLength,
-              message: 'Summary generation requested. AI will generate content.'
+              summary,
+              message: 'Summary generated successfully'
             }
           };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to generate summary'
+          };
         }
+      }
 
-        case 'generate_quiz': {
-          const numQuestions = params.num_questions as number;
-          const difficulty = params.difficulty as 'easy' | 'medium' | 'hard' | 'mixed';
-          const scope = params.scope as 'current_page' | 'entire_document';
-          
-          store.generateQuiz({
-            numQuestions,
-            difficulty,
-            scope,
-            useWebSearch: (params.use_web_search as boolean) ?? true,
-            questionTypes: ((params.question_types as string[]) || ['multiple_choice']) as ('multiple_choice' | 'short_answer' | 'essay')[]
-          });
-          
+      case 'generate_quiz': {
+        const numQuestions = params.num_questions as number;
+        const difficulty = params.difficulty as 'easy' | 'medium' | 'hard' | 'mixed';
+        const scope = params.scope as 'current_page' | 'entire_document';
+        const questionTypes = ((params.question_types as string[]) || ['multiple_choice']) as ('multiple_choice' | 'short_answer' | 'essay')[];
+
+        try {
+          const { generateQuizQuestions } = await import('../../application/services/classroom-generation-service');
+          const questions = await generateQuizQuestions(numQuestions, difficulty, scope, questionTypes);
+
+        // Store questions in classroom store
+        store.setQuizQuestions(questions);
+
           return {
             success: true,
             data: {
-              numQuestions,
+              numQuestions: questions.length,
               difficulty,
               scope,
-              message: 'Quiz generation requested. AI will generate questions.'
+              questions,
+              message: 'Quiz generated successfully'
             }
           };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to generate quiz'
+          };
         }
+      }
 
-        case 'generate_examples': {
-          const concept = params.concept as string;
-          const exampleType = params.example_type as string;
-          const numExamples = (params.num_examples as number) || 3;
-          
+      case 'generate_examples': {
+        const concept = params.concept as string;
+        const exampleType = params.example_type as 'real_world' | 'code' | 'math' | 'analogy';
+        const numExamples = (params.num_examples as number) || 3;
+
+        try {
+          const { generateExamples } = await import('../../application/services/classroom-generation-service');
+          const examples = await generateExamples(concept, exampleType, numExamples);
+
           return {
             success: true,
             data: {
               concept,
               exampleType,
-              numExamples,
-              message: 'Examples generation requested. AI will generate content.'
+              examples,
+              message: 'Examples generated successfully'
             }
           };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to generate examples'
+          };
         }
+      }
 
-        case 'generate_discussion_prompts': {
-          const topic = params.topic as string;
-          const numPrompts = (params.num_prompts as number) || 3;
-          const depth = (params.depth as string) || 'intermediate';
-          
+      case 'generate_discussion_prompts': {
+        const topic = params.topic as string;
+        const numPrompts = (params.num_prompts as number) || 3;
+        const depth = (params.depth as 'basic' | 'intermediate' | 'advanced') || 'intermediate';
+
+        try {
+          const { generateDiscussionPrompts } = await import('../../application/services/classroom-generation-service');
+          const prompts = await generateDiscussionPrompts(topic, numPrompts, depth);
+
           return {
             success: true,
             data: {
               topic,
               numPrompts,
               depth,
-              message: 'Discussion prompts generation requested. AI will generate content.'
+              prompts,
+              message: 'Discussion prompts generated successfully'
             }
           };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to generate discussion prompts'
+          };
         }
+      }
 
-        case 'generate_flashcards': {
-          const scope = params.scope as string;
-          const numCards = (params.num_cards as number) || 10;
-          const format = (params.format as string) || 'question_answer';
-          
+      case 'generate_flashcards': {
+        const scope = params.scope as 'current_page' | 'entire_document';
+        const numCards = (params.num_cards as number) || 10;
+        const format = (params.format as 'question_answer' | 'term_definition') || 'question_answer';
+
+        try {
+          const { generateFlashcards } = await import('../../application/services/classroom-generation-service');
+          const flashcards = await generateFlashcards(scope, numCards, format);
+
           return {
             success: true,
             data: {
               scope,
               numCards,
               format,
-              message: 'Flashcards generation requested. AI will generate content.'
+              flashcards,
+              message: 'Flashcards generated successfully'
             }
           };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to generate flashcards'
+          };
         }
+      }
+
+      case 'evaluate_quiz': {
+        const quizId = params.quiz_id as string;
+        const answers = params.answers as Record<string, string>;
+
+        try {
+          const { evaluateQuiz } = await import('../../application/services/classroom-generation-service');
+
+          // Get current quiz questions from store - map to service format
+          const questions = store.quizQuestions.map(q => ({
+            id: q.id,
+            question: q.question,
+            type: q.type,
+            options: q.options,
+            expectedAnswer: q.expectedAnswer,
+            difficulty: q.difficulty,
+          }));
+
+          const result = await evaluateQuiz(questions, answers);
+
+          // Update store with results
+          store.updateUserPerformance(result);
+
+          return {
+            success: true,
+            data: {
+              quizId,
+              score: result.score,
+              totalQuestions: result.totalQuestions,
+              results: result.results,
+              message: 'Quiz evaluated successfully'
+            }
+          };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to evaluate quiz'
+          };
+        }
+      }
 
         default:
           return {

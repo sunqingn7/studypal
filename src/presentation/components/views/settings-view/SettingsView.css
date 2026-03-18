@@ -371,6 +371,331 @@
   color: var(--text-secondary);
 }
 
+/* LLM Pool Styles */
+
+.pool-stats {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+  padding: 16px;
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.pool-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.pool-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.icon-button:hover {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.icon-button.primary {
+  background-color: var(--accent-color);
+  border-color: var(--accent-color);
+  color: white;
+}
+
+.icon-button.primary:hover {
+  opacity: 0.9;
+}
+
+.icon-button.danger:hover {
+  background-color: #fee2e2;
+  border-color: #dc2626;
+  color: #dc2626;
+}
+
+.icon-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.icon-button .spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Add Provider Form */
+.add-provider-form {
+  padding: 20px;
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  margin-bottom: 20px;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-group label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.form-group input,
+.form-group select {
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 14px;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--accent-color);
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.button {
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.button.primary {
+  background-color: var(--accent-color);
+  color: white;
+}
+
+.button.primary:hover {
+  opacity: 0.9;
+}
+
+.button.secondary {
+  background-color: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.button.secondary:hover {
+  background-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+/* Provider List */
+.provider-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.empty-providers {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-secondary);
+  font-style: italic;
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.provider-item {
+  padding: 12px 16px;
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  border-left: 4px solid transparent;
+  transition: all 0.2s;
+}
+
+.provider-item.healthy {
+  border-left-color: #22c55e;
+}
+
+.provider-item.unhealthy {
+  border-left-color: #dc2626;
+}
+
+.provider-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.provider-status {
+  flex-shrink: 0;
+}
+
+.status-healthy {
+  color: #22c55e;
+}
+
+.status-unhealthy {
+  color: #dc2626;
+}
+
+.provider-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.provider-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.provider-details {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.provider-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Toggle Switch */
+.toggle.small {
+  width: 36px;
+  height: 20px;
+}
+
+.toggle.small .toggle-slider:before {
+  height: 14px;
+  width: 14px;
+  left: 3px;
+  bottom: 3px;
+}
+
+.toggle.small input:checked + .toggle-slider:before {
+  transform: translateX(16px);
+}
+
+/* Task List */
+.task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.task-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background-color: var(--bg-primary);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.task-item.running {
+  border-left: 3px solid var(--accent-color);
+}
+
+.task-item.pending {
+  border-left: 3px solid var(--text-secondary);
+}
+
+.task-type {
+  font-weight: 500;
+  color: var(--text-primary);
+  min-width: 120px;
+}
+
+.task-status {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background-color: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.task-provider {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.task-more {
+  text-align: center;
+  padding: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
 /* Responsive */
 @media (max-width: 600px) {
   .settings-modal {
@@ -379,11 +704,11 @@
     max-height: 100vh;
     border-radius: 0;
   }
-  
+
   .settings-content {
     flex-direction: column;
   }
-  
+
   .settings-sidebar {
     width: 100%;
     flex-direction: row;
@@ -392,12 +717,20 @@
     border-right: none;
     border-bottom: 1px solid var(--border-color);
   }
-  
+
   .tab-button {
     white-space: nowrap;
   }
-  
+
   .setting-row {
     grid-template-columns: 1fr;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .pool-stats {
+    grid-template-columns: repeat(3, 1fr);
   }
 }

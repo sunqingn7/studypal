@@ -93,6 +93,7 @@ export interface ClassroomState {
   addTranscript: (text: string) => void
 
   generateQuiz: (config: QuizGenerationConfig) => void
+  setQuizQuestions: (questions: QuizQuestion[]) => void
   submitAnswer: (questionId: string, answer: string) => void
   submitQuiz: () => void
   exitQuiz: () => void
@@ -247,6 +248,12 @@ export const useClassroomStore = create<ClassroomState>((set, get) => ({
 
   generateQuiz: () => {
     set({ isQuizActive: true, quizQuestions: [], quizAnswers: {}, quizResult: null })
+  },
+
+  setQuizQuestions: (questions: QuizQuestion[]) => {
+    set((state) => ({
+      quizQuestions: [...state.quizQuestions, ...questions],
+    }))
   },
 
   submitAnswer: (questionId: string, answer: string) => {
