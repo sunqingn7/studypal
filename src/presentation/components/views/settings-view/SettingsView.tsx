@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSettingsStore, SearchProvider } from '../../../../application/store/settings-store';
 import { useLLMPoolStore } from '../../../../application/store/llm-pool-store';
 import { checkProviderHealth } from '../../../../application/services/llm-pool-health-check';
@@ -404,29 +404,45 @@ function LLMPoolTab() {
     }
   }, [newProviderType, editingProviderId]);
 
+  // Track form interaction state to prevent unnecessary fetches
+  const formInitializedRef = useRef(false);
+
   // Fetch models when endpoint or API key changes significantly (only after user interaction)
   useEffect(() => {
-    // Don't auto-fetch on initial render or when editing
-    if (!showAddForm || editingProviderId) return;
-    
+    // Don't auto-fetch if form not shown, or if editing existing provider
+    if (!showAddForm || editingProviderId) {
+      formInitializedRef.current = false;
+      return;
+    }
+
+    // Set initialized flag after first render
+    if (!formInitializedRef.current) {
+      formInitializedRef.current = true;
+      return;
+    }
+
     const timeoutId = setTimeout(() => {
       // Only auto-fetch for local providers that don't need API keys
-      // and only if endpoint has been explicitly set by user
-      if (newProviderEndpoint && 
-          !newProviderEndpoint.includes('generativelanguage.googleapis.com') &&
-          !newProviderEndpoint.includes('openrouter.ai') &&
-          !newProviderEndpoint.includes('api.openai.com') &&
-          !newProviderEndpoint.includes('api.anthropic.com') &&
-          (newProviderType === 'llamacpp' || newProviderType === 'ollama' || newProviderType === 'vllm')) {
-        // Only fetch if endpoint looks valid (not empty defaults)
-        if (newProviderEndpoint.startsWith('http')) {
-          fetchModels();
-        }
+      const isLocalProvider = newProviderType === 'llamacpp' || newProviderType === 'ollama' || newProviderType === 'vllm';
+      const needsExplicitFetch = newProviderApiKey || 
+        newProviderEndpoint.includes('generativelanguage.googleapis.com') ||
+        newProviderEndpoint.includes('openrouter.ai') ||
+        newProviderEndpoint.includes('api.openai.com') ||
+        newProviderEndpoint.includes('api.anthropic.com');
+
+      // Skip auto-fetch for local providers without API key
+      if (isLocalProvider && !needsExplicitFetch) {
+        return;
+      }
+
+      // Only fetch if endpoint looks valid
+      if (newProviderEndpoint && newProviderEndpoint.startsWith('http')) {
+        fetchModels();
       }
     }, 1000);
 
     return () => clearTimeout(timeoutId);
-  }, [newProviderEndpoint, newProviderApiKey]);
+  }, [showAddForm, editingProviderId, newProviderEndpoint, newProviderApiKey, newProviderType]);
 
   const fetchModels = async () => {
     if (!newProviderEndpoint) return;

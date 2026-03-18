@@ -585,29 +585,60 @@ async fn chat_with_gemini(
         }
     };
 
-    // Debug: Print response keys
-    if let Some(obj) = data.as_object() {
-        println!("[RUST] Response keys: {:?}", obj.keys().collect::<Vec<_>>());
+    // Debug: Print full response
+    println!("[RUST] Full Gemini response: {}", data);
+    println!("[RUST] Response type: {}", data);
+
+    // Check for error in response first
+    if let Some(error_obj) = data.get("error") {
+        println!("[RUST] Gemini API error: {}", error_obj);
+        let error_msg = error_obj.get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("Unknown error");
+        return Err(format!("Gemini API error: {}", error_msg));
     }
 
-    // Parse Gemini response format
+    // Parse Gemini response format - try multiple possible paths
+    let mut full_text = String::new();
+    
+    // Path 1: candidates[0].content.parts[].text
     if let Some(candidates) = data.get("candidates").and_then(|c| c.as_array()) {
         if let Some(first_candidate) = candidates.first() {
+            println!("[RUST] Found candidate: {:?}", first_candidate);
             if let Some(content) = first_candidate.get("content") {
                 if let Some(parts) = content.get("parts").and_then(|p| p.as_array()) {
-                    let mut full_text = String::new();
                     for part in parts {
                         if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
                             full_text.push_str(text);
                         }
                     }
-                    if !full_text.is_empty() {
-                        return Ok(full_text);
-                    }
                 }
             }
         }
     }
+    
+    if !full_text.is_empty() {
+        return Ok(full_text);
+    }
+    
+    // Path 2: candidates[0].text (some responses use this)
+    if let Some(candidates) = data.get("candidates").and_then(|c| c.as_array()) {
+        if let Some(first_candidate) = candidates.first() {
+            if let Some(text) = first_candidate.get("text").and_then(|t| t.as_str()) {
+                return Ok(text.to_string());
+            }
+        }
+    }
+    
+    // Path 3: promptFeedback (model generated no content)
+    if data.get("promptFeedback").is_some() {
+        println!("[RUST] Prompt was blocked or filtered");
+        return Err("Prompt was blocked or content was filtered".to_string());
+    }
+    
+    // If we get here, we couldn't parse the response
+    println!("[RUST] Could not extract text from Gemini response");
+    println!("[RUST] Available keys: {:?}", data.as_object().map(|o| o.keys().collect::<Vec<_>>()));
 
     if let Some(error) = data.get("error") {
         let error_msg = error.to_string();
