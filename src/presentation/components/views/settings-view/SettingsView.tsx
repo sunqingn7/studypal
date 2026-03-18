@@ -404,16 +404,29 @@ function LLMPoolTab() {
     }
   }, [newProviderType, editingProviderId]);
 
-  // Fetch models when endpoint or API key changes (with debounce)
+  // Fetch models when endpoint or API key changes significantly (only after user interaction)
   useEffect(() => {
+    // Don't auto-fetch on initial render or when editing
+    if (!showAddForm || editingProviderId) return;
+    
     const timeoutId = setTimeout(() => {
-      if (newProviderEndpoint && (newProviderType === 'llamacpp' || newProviderType === 'ollama' || newProviderType === 'vllm' || newProviderApiKey)) {
-        fetchModels();
+      // Only auto-fetch for local providers that don't need API keys
+      // and only if endpoint has been explicitly set by user
+      if (newProviderEndpoint && 
+          !newProviderEndpoint.includes('generativelanguage.googleapis.com') &&
+          !newProviderEndpoint.includes('openrouter.ai') &&
+          !newProviderEndpoint.includes('api.openai.com') &&
+          !newProviderEndpoint.includes('api.anthropic.com') &&
+          (newProviderType === 'llamacpp' || newProviderType === 'ollama' || newProviderType === 'vllm')) {
+        // Only fetch if endpoint looks valid (not empty defaults)
+        if (newProviderEndpoint.startsWith('http')) {
+          fetchModels();
+        }
       }
-    }, 500);
+    }, 1000);
 
     return () => clearTimeout(timeoutId);
-  }, [newProviderEndpoint, newProviderApiKey, newProviderType]);
+  }, [newProviderEndpoint, newProviderApiKey]);
 
   const fetchModels = async () => {
     if (!newProviderEndpoint) return;
