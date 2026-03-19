@@ -351,8 +351,9 @@ function AIView() {
     // Parse routing from message
     const { parseChatMessage } = await import('../../../../application/services/chat-routing-service')
     const { useLLMPoolStore } = await import('../../../../application/store/llm-pool-store')
-    const { getPrimaryProvider } = useLLMPoolStore.getState()
-    const providers = useLLMPoolStore.getState().providers
+    const poolStore = useLLMPoolStore.getState()
+    const { getPrimaryProvider } = poolStore
+    const providers = poolStore.providers
     
     const routing = parseChatMessage(userMessage, providers)
     
@@ -424,7 +425,7 @@ function AIView() {
       ]
 
     // Handle discuss mode (multiple providers) vs single provider mode
-    if (routing.mode === 'discuss' && targetProviders.length > 1) {
+    if (routing.mode === 'discuss') {
       // Discuss mode: Send to all providers in parallel
       console.log('[AIView] Discuss mode: Sending to', targetProviders.length, 'providers')
       
@@ -530,7 +531,7 @@ function AIView() {
         console.log('[AIView] Using streamChatWithThinking')
         await provider.streamChatWithThinking!(
           messagesWithTools,
-          config,
+          providerConfig,
           (chunk: string) => {
             localContent += chunk
             const displayContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
@@ -549,7 +550,7 @@ function AIView() {
         console.log('[AIView] Using prompt-based tool calling')
         await provider.streamChat(
           messagesWithTools,
-          config,
+          providerConfig,
           (chunk: string) => {
             localContent += chunk
             const displayContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
