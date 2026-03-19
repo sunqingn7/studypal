@@ -34,6 +34,7 @@ function AIView() {
     setActiveTab,
     renameTab,
     addMessage,
+    updateMessage,
     deleteMessage,
     clearChat,
     getActiveMessages,
@@ -57,6 +58,9 @@ function AIView() {
   // Local state for real streaming (bypasses zustand batching)
   const [streamingContent, setStreamingContent] = useState('')
   const [streamingThinking, setStreamingThinking] = useState('')
+
+  // Track discuss mode for visual grouping
+  const [isDiscussMode, setIsDiscussMode] = useState(false)
 
   const activeMessages = getActiveMessages()
   
@@ -424,74 +428,177 @@ function AIView() {
         { id: crypto.randomUUID(), role: 'user', content: userMessage, timestamp: Date.now() }
       ]
 
+    // Set discuss mode for UI
+    setIsDiscussMode(routing.mode === 'discuss')
+
     // Handle discuss mode (multiple providers) vs single provider mode
     if (routing.mode === 'discuss') {
-      // Discuss mode: Send to all providers in parallel
+      // Discuss mode: Send to all providers in parallel with streaming
       console.log('[AIView] Discuss mode: Sending to', targetProviders.length, 'providers')
-      
+
       // Add a header message
       addMessage(activeTabId, 'assistant', 
         `**Discuss Mode**: Starting discussion with ${targetProviders.length} providers...`,
         undefined,
         { providerId: 'system', nickname: 'System' }
       )
-      
-      // Process all providers in parallel
+
+      // Create a map to track message IDs for each provider (for streaming updates)
+      const providerMessageIds = new Map<string, string>()
+      const providerStreamingContent = new Map<string, string>()
+      const providerStreamingThinking = new Map<string, string>()
+
+      // Initialize placeholder messages for each provider
+      for (const targetProvider of targetProviders) {
+        const placeholderMessage = {
+          id: crypto.randomUUID(),
+          role: 'assistant' as const,
+          content: '',
+          timestamp: Date.now(),
+          providerId: targetProvider.id,
+          providerNickname: targetProvider.nickname || targetProvider.name,
+        }
+        providerMessageIds.set(targetProvider.id, placeholderMessage.id)
+        providerStreamingContent.set(targetProvider.id, '')
+        providerStreamingThinking.set(targetProvider.id, '')
+        
+        // Add placeholder to chat
+        addMessage(activeTabId, 'assistant', '', undefined, {
+          providerId: targetProvider.id,
+          nickname: targetProvider.nickname || targetProvider.name,
+        })
+      }
+
+      // Process all providers in parallel with streaming
       const providerPromises = targetProviders.map(async (targetProvider) => {
         const providerConfig = targetProvider.config
         const provider = getProvider(providerConfig.provider)
-        
+        const messageId = providerMessageIds.get(targetProvider.id)
+
+        if (!messageId) {
+          console.error('[AIView] No message ID found for provider:', targetProvider.name)
+          return { provider: targetProvider, content: 'Error: No message ID', thinking: '', success: false }
+        }
+
         let localContent = ''
         let localThinking = ''
-        
+
         try {
           const supportsToolCalling = 'chatWithTools' in provider && provider.supportsNativeFunctionCalling?.()
           const supportsThinking = 'streamChatWithThinking' in provider
-          
+
           if (supportsToolCalling && mcpTools.length > 0) {
             await provider.streamChat(
               messagesWithTools,
               providerConfig,
-              (chunk: string) => { localContent += chunk }
+              (chunk: string) => {
+                localContent += chunk
+                // Update streaming content map
+                providerStreamingContent.set(targetProvider.id, localContent)
+                // Update the message in real-time
+                updateMessage(activeTabId, messageId, localContent, undefined)
+              }
             )
           } else if (supportsThinking) {
             await provider.streamChatWithThinking!(
               messagesWithTools,
               providerConfig,
-              (chunk: string) => { localContent += chunk },
-              (thinking: string) => { localThinking += thinking }
+              (chunk: string) => {
+                localContent += chunk
+                const displayContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
+                providerStreamingContent.set(targetProvider.id, displayContent)
+                updateMessage(activeTabId, messageId, displayContent, undefined)
+              },
+              (thinking: string) => {
+                const filteredThinking = thinking.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
+                if (filteredThinking) {
+                  localThinking += filteredThinking
+                  providerStreamingThinking.set(targetProvider.id, localThinking)
+                  updateMessage(activeTabId, messageId, undefined, localThinking)
+                }
+              }
             )
           } else {
             await provider.streamChat(
               messagesWithTools,
               providerConfig,
-              (chunk: string) => { localContent += chunk }
+              (chunk: string) => {
+                localContent += chunk
+                const displayContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
+                providerStreamingContent.set(targetProvider.id, displayContent)
+                updateMessage(activeTabId, messageId, displayContent, undefined)
+              }
             )
           }
-          
+
+          // Handle tool calls after streaming
+          const toolCalls = parseToolCalls(localContent)
+          if (toolCalls.length > 0) {
+            console.log(`[AIView] Provider ${targetProvider.name}: Found ${toolCalls.length} tool calls`)
+            let toolResultText = ''
+            
+            for (const toolCall of toolCalls) {
+              const result = await executeTool(toolCall.name, toolCall.arguments)
+              if (result.success && toolCall.name === 'search_papers') {
+                try {
+                  const data = result.data as any
+                  const papers = data?.papers || []
+                  if (papers.length > 0) {
+                    toolResultText += '\n\n**Found ' + papers.length + ' papers:**\n\n'
+                    papers.forEach((paper: any, idx: number) => {
+                      toolResultText += `${idx + 1}. [${paper.title}](${paper.url})\n`
+                      if (paper.snippet) {
+                        toolResultText += ` _${paper.snippet.slice(0, 150)}..._\n\n`
+                      }
+                    })
+                    toolResultText += '\n*Click a link to download and open in file view*'
+                  }
+                } catch (e) {
+                  toolResultText += '\n\n[Tool result: ' + JSON.stringify(result.data) + ']'
+                }
+              } else if (result.success && toolCall.name === 'web_search') {
+                try {
+                  const data = result.data as any
+                  const results = data?.results || []
+                  if (results.length > 0) {
+                    toolResultText += '\n\n**Search Results:**\n\n'
+                    results.forEach((item: any, idx: number) => {
+                      toolResultText += `${idx + 1}. [${item.title}](${item.url})\n`
+                      if (item.snippet) {
+                        toolResultText += ` _${item.snippet.slice(0, 150)}_\n\n`
+                      }
+                    })
+                    toolResultText += '\n*Click a link to open in file view*'
+                  }
+                } catch (e) {
+                  toolResultText += '\n\n[Tool result: ' + JSON.stringify(result.data) + ']'
+                }
+              } else {
+                toolResultText += `\n\n[Used tool: ${toolCall.name}]\n${result.success ? JSON.stringify(result.data) : result.error}`
+              }
+            }
+            
+            localContent += toolResultText
+            updateMessage(activeTabId, messageId, localContent, localThinking || undefined)
+          }
+
           return { provider: targetProvider, content: localContent, thinking: localThinking, success: true }
         } catch (error) {
           console.error(`[AIView] Error from provider ${targetProvider.name}:`, error)
+          const errorContent = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
+          updateMessage(activeTabId, messageId, errorContent, undefined)
           return { 
             provider: targetProvider, 
-            content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`, 
+            content: errorContent, 
             thinking: '', 
             success: false 
           }
         }
       })
-      
-      // Wait for all providers to respond
-      const results = await Promise.all(providerPromises)
-      
-      // Add responses from each provider
-      for (const result of results) {
-        addMessage(activeTabId, 'assistant', result.content, result.thinking || undefined, {
-          providerId: result.provider.id,
-          nickname: result.provider.nickname || result.provider.name,
-        })
-      }
-      
+
+      // Wait for all providers to finish
+      await Promise.all(providerPromises)
+
       setStreamingContent('')
       setStreamingThinking('')
       setStreaming(false)
@@ -954,7 +1061,7 @@ function AIView() {
         </div>
       )}
 
-      <div className="view-content ai-view-content">
+      <div className={`view-content ai-view-content ${isDiscussMode ? 'discuss-mode' : ''}`}>
         <div className="chat-messages" ref={messagesContainerRef}>
           {activeMessages.length === 0 ? (
             <div className="chat-empty">
