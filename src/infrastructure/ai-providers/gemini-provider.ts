@@ -60,6 +60,24 @@ export class GeminiProvider implements AIProvider {
       return resultStr
     } catch (error: any) {
       console.error('[gemini-provider] invoke failed with error:', error)
+      // Check for specific Gemini errors
+      const errorStr = String(error)
+      if (errorStr.includes('404') || errorStr.includes('not_found')) {
+        throw new Error(
+          `Gemini: Model "${config.model}" not found. ` +
+          'Please check your model ID is correct (e.g., "gemini-1.5-flash", "gemini-1.5-pro").'
+        )
+      }
+      if (errorStr.includes('401') || errorStr.includes('Unauthorized')) {
+        throw new Error(
+          'Gemini: Authentication failed. Please check your API key is valid and has access to the model.'
+        )
+      }
+      if (errorStr.includes('403')) {
+        throw new Error(
+          'Gemini: Permission denied. Your API key may not have access to this model or region.'
+        )
+      }
       throw error
     }
   }
@@ -105,6 +123,24 @@ export class GeminiProvider implements AIProvider {
       await invoke<void>('stream_chat_with_provider', { request: payload, provider: 'gemini' })
     } catch (error: any) {
       console.error('[gemini-provider] streamChat error:', error)
+      // Check for specific Gemini errors
+      const errorStr = String(error)
+      if (errorStr.includes('404') || errorStr.includes('not_found')) {
+        throw new Error(
+          `Gemini: Model "${config.model}" not found. ` +
+          'Please check your model ID is correct (e.g., "gemini-1.5-flash", "gemini-1.5-pro").'
+        )
+      }
+      if (errorStr.includes('401') || errorStr.includes('Unauthorized')) {
+        throw new Error(
+          'Gemini: Authentication failed. Please check your API key is valid and has access to the model.'
+        )
+      }
+      if (errorStr.includes('403')) {
+        throw new Error(
+          'Gemini: Permission denied. Your API key may not have access to this model or region.'
+        )
+      }
       throw error
     } finally {
       if (unlisten) {
@@ -161,6 +197,24 @@ export class GeminiProvider implements AIProvider {
       await invoke<void>('stream_chat_with_provider', { request: payload, provider: 'gemini' })
     } catch (error: any) {
       console.error('[gemini-provider] streamChatWithThinking error:', error)
+      // Check for specific Gemini errors
+      const errorStr = String(error)
+      if (errorStr.includes('404') || errorStr.includes('not_found')) {
+        throw new Error(
+          `Gemini: Model "${config.model}" not found. ` +
+          'Please check your model ID is correct (e.g., "gemini-1.5-flash", "gemini-1.5-pro").'
+        )
+      }
+      if (errorStr.includes('401') || errorStr.includes('Unauthorized')) {
+        throw new Error(
+          'Gemini: Authentication failed. Please check your API key is valid and has access to the model.'
+        )
+      }
+      if (errorStr.includes('403')) {
+        throw new Error(
+          'Gemini: Permission denied. Your API key may not have access to this model or region.'
+        )
+      }
       throw error
     } finally {
       if (unlisten) {

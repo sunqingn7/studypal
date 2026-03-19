@@ -70,9 +70,27 @@ export class OpenRouterProvider implements AIProvider {
       return resultStr
     } catch (error: any) {
       console.error('[openrouter-provider] invoke failed with error:', error)
-      console.error('[openrouter-provider] error name:', error?.name)
-      console.error('[openrouter-provider] error message:', error?.message)
-      console.error('[openrouter-provider] error stack:', error?.stack)
+      
+      // Check for specific OpenRouter errors
+      const errorStr = String(error)
+      if (errorStr.includes('404') && errorStr.includes('guardrail')) {
+        throw new Error(
+          'OpenRouter: No endpoints available for this model. This model may not be accessible with your current privacy settings. ' +
+          'Please check: https://openrouter.ai/settings/privacy or try a different model.'
+        )
+      }
+      if (errorStr.includes('404')) {
+        throw new Error(
+          `OpenRouter: Model "${config.model}" not found or not accessible. ` +
+          'Please verify the model ID is correct and your API key has access to this model.'
+        )
+      }
+      if (errorStr.includes('401') || errorStr.includes('Unauthorized')) {
+        throw new Error(
+          'OpenRouter: Authentication failed. Please check your API key.'
+        )
+      }
+      
       throw error
     }
   }

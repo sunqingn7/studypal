@@ -345,19 +345,53 @@ function AIView() {
     const userMessage = textContent
     editor.commands.clearContent()
 
-  if (!activeTabId) return
+    if (!activeTabId) return
     addMessage(activeTabId, 'user', htmlContent)
+
+    // Parse routing from message
+    const { parseChatMessage } = await import('../../../../application/services/chat-routing-service')
+    const { useLLMPoolStore } = await import('../../../../application/store/llm-pool-store')
+    const { getPrimaryProvider } = useLLMPoolStore.getState()
+    const providers = useLLMPoolStore.getState().providers
     
+    const routing = parseChatMessage(userMessage, providers)
+    
+    // Determine which providers to use
+    let targetProviders = providers.filter(p => routing.targetProviderIds.includes(p.id))
+    
+    // Auto mode: use primary or first available
+    if (routing.mode === 'auto') {
+      const primary = getPrimaryProvider()
+      if (primary) {
+        targetProviders = [primary]
+      } else {
+        targetProviders = providers.filter(p => p.isEnabled).slice(0, 1)
+      }
+    }
+
+    // Check if any providers available
+    if (targetProviders.length === 0) {
+      addMessage(activeTabId, 'assistant', 
+        'No LLM providers available. Please configure providers in Settings > LLM Pool.',
+        undefined,
+        { providerId: 'system', nickname: 'System' }
+      )
+      return
+    }
+
     // Initialize local streaming state
     setStreamingContent('')
     setStreamingThinking('')
-    
+
     setStreaming(true)
     setIsProcessing(true)
 
+    // Declare targetProvider for use in single provider mode
+    let targetProvider: typeof targetProviders[0] | undefined
+
     try {
       // Build context from current file and notes
-      const context = await buildContext(userMessage)
+      const context = await buildContext(routing.cleanMessage)
 
       // Get available MCP tools
       const mcpTools = getAllMCPTools()
@@ -389,25 +423,103 @@ function AIView() {
         { id: crypto.randomUUID(), role: 'user', content: userMessage, timestamp: Date.now() }
       ]
 
-      const provider = getProvider(config.provider)
+    // Handle discuss mode (multiple providers) vs single provider mode
+    if (routing.mode === 'discuss' && targetProviders.length > 1) {
+      // Discuss mode: Send to all providers in parallel
+      console.log('[AIView] Discuss mode: Sending to', targetProviders.length, 'providers')
       
-      // Use local state for streaming display
-      let localContent = ''
-      let localThinking = ''
+      // Add a header message
+      addMessage(activeTabId, 'assistant', 
+        `**Discuss Mode**: Starting discussion with ${targetProviders.length} providers...`,
+        undefined,
+        { providerId: 'system', nickname: 'System' }
+      )
       
-      // Check if provider supports native function calling
-      const supportsToolCalling = 'chatWithTools' in provider && provider.supportsNativeFunctionCalling?.()
-      // Check if provider supports streaming with thinking
-      const supportsThinking = 'streamChatWithThinking' in provider
-      console.log('[AIView] Provider:', provider.name, 'supportsThinking:', supportsThinking, 'supportsToolCalling:', supportsToolCalling)
+      // Process all providers in parallel
+      const providerPromises = targetProviders.map(async (targetProvider) => {
+        const providerConfig = targetProvider.config
+        const provider = getProvider(providerConfig.provider)
+        
+        let localContent = ''
+        let localThinking = ''
+        
+        try {
+          const supportsToolCalling = 'chatWithTools' in provider && provider.supportsNativeFunctionCalling?.()
+          const supportsThinking = 'streamChatWithThinking' in provider
+          
+          if (supportsToolCalling && mcpTools.length > 0) {
+            await provider.streamChat(
+              messagesWithTools,
+              providerConfig,
+              (chunk: string) => { localContent += chunk }
+            )
+          } else if (supportsThinking) {
+            await provider.streamChatWithThinking!(
+              messagesWithTools,
+              providerConfig,
+              (chunk: string) => { localContent += chunk },
+              (thinking: string) => { localThinking += thinking }
+            )
+          } else {
+            await provider.streamChat(
+              messagesWithTools,
+              providerConfig,
+              (chunk: string) => { localContent += chunk }
+            )
+          }
+          
+          return { provider: targetProvider, content: localContent, thinking: localThinking, success: true }
+        } catch (error) {
+          console.error(`[AIView] Error from provider ${targetProvider.name}:`, error)
+          return { 
+            provider: targetProvider, 
+            content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`, 
+            thinking: '', 
+            success: false 
+          }
+        }
+      })
       
-      if (supportsToolCalling && mcpTools.length > 0) {
-        // Use native function calling (for OpenAI, Anthropic, etc.)
-        console.log('[AIView] Using native function calling')
-        await provider.streamChat(
-          messagesWithTools,
-          config,
-          (chunk: string) => {
+      // Wait for all providers to respond
+      const results = await Promise.all(providerPromises)
+      
+      // Add responses from each provider
+      for (const result of results) {
+        addMessage(activeTabId, 'assistant', result.content, result.thinking || undefined, {
+          providerId: result.provider.id,
+          nickname: result.provider.nickname || result.provider.name,
+        })
+      }
+      
+      setStreamingContent('')
+      setStreamingThinking('')
+      setStreaming(false)
+      setIsProcessing(false)
+      return
+    }
+
+    // Single provider mode (auto or assigned)
+    const targetProvider = targetProviders[0]
+    const providerConfig = targetProvider?.config || config
+    const provider = getProvider(providerConfig.provider)
+
+    // Use local state for streaming display
+    let localContent = ''
+    let localThinking = ''
+
+    // Check if provider supports native function calling
+    const supportsToolCalling = 'chatWithTools' in provider && provider.supportsNativeFunctionCalling?.()
+    // Check if provider supports streaming with thinking
+    const supportsThinking = 'streamChatWithThinking' in provider
+    console.log('[AIView] Provider:', provider.name, 'supportsThinking:', supportsThinking, 'supportsToolCalling:', supportsToolCalling)
+
+    if (supportsToolCalling && mcpTools.length > 0) {
+      // Use native function calling (for OpenAI, Anthropic, etc.)
+      console.log('[AIView] Using native function calling')
+      await provider.streamChat(
+        messagesWithTools,
+        providerConfig,
+        (chunk: string) => {
             localContent += chunk
             const displayContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
             setStreamingContent(displayContent)
@@ -569,16 +681,24 @@ function AIView() {
         return result.trim();
       }
       
-      const finalContent = filterToolCalls(localContent)
-      const finalThinking = filterToolCalls(localThinking || '')
-      addMessage(activeTabId, 'assistant', finalContent, finalThinking || undefined)
+    const finalContent = filterToolCalls(localContent)
+    const finalThinking = filterToolCalls(localThinking || '')
+    
+    // Save message with the actual provider that responded
+    addMessage(activeTabId, 'assistant', finalContent, finalThinking || undefined, {
+      providerId: targetProvider?.id || config.provider,
+      nickname: targetProvider?.nickname || targetProvider?.name || config.provider,
+    })
 
-      // Clear local streaming state
-      setStreamingContent('')
-      setStreamingThinking('')
-    } catch (error) {
-      console.error('AI Error:', error)
-      addMessage(activeTabId, 'assistant', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    // Clear local streaming state
+    setStreamingContent('')
+    setStreamingThinking('')
+  } catch (error) {
+    console.error('AI Error:', error)
+    addMessage(activeTabId, 'assistant', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`, undefined, {
+      providerId: targetProvider?.id || config.provider,
+      nickname: targetProvider?.nickname || targetProvider?.name || config.provider,
+    })
       setStreamingContent('')
       setStreamingThinking('')
     } finally {

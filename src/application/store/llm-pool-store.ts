@@ -28,12 +28,14 @@ export interface LLMPoolState {
   lastHealthCheck: number
 
   // Actions
-  addProvider: (name: string, config: AIConfig) => string
+  addProvider: (name: string, config: AIConfig, nickname?: string) => string
   removeProvider: (id: string) => void
   updateProvider: (id: string, updates: Partial<PoolProvider>) => void
   enableProvider: (id: string) => void
   disableProvider: (id: string) => void
   setProviderHealth: (id: string, isHealthy: boolean, latency?: number, error?: string) => void
+  setPrimaryProvider: (id: string) => void
+  getPrimaryProvider: () => PoolProvider | undefined
 
   // Task management
   submitTask: (task: Omit<LLMTask, 'id' | 'retryCount' | 'createdAt' | 'maxRetries'>) => string
@@ -73,27 +75,32 @@ export const useLLMPoolStore = create<LLMPoolState>()(
       isHealthChecking: false,
       lastHealthCheck: 0,
 
-      addProvider: (name: string, config: AIConfig) => {
-        const id = crypto.randomUUID()
-        const provider: PoolProvider = {
-          id,
-          name,
-          config,
-          isHealthy: false, // Will be checked
-          lastHealthCheck: 0,
-          priority: 50,
-          maxConcurrentTasks: 3,
-          currentTasks: 0,
-          totalTasksCompleted: 0,
-          averageLatency: 0,
-          failureCount: 0,
-          isEnabled: true,
-        }
-        set((state) => ({
-          providers: [...state.providers, provider],
-        }))
-        return id
-      },
+    addProvider: (name: string, config: AIConfig, nickname?: string) => {
+      const id = crypto.randomUUID()
+      const state = get()
+      // If this is the first provider, make it primary
+      const isPrimary = state.providers.length === 0
+      const provider: PoolProvider = {
+        id,
+        name,
+        nickname,
+        config,
+        isHealthy: false, // Will be checked
+        lastHealthCheck: 0,
+        priority: 50,
+        maxConcurrentTasks: 3,
+        currentTasks: 0,
+        totalTasksCompleted: 0,
+        averageLatency: 0,
+        failureCount: 0,
+        isEnabled: true,
+        isPrimary,
+      }
+      set((state) => ({
+        providers: [...state.providers, provider],
+      }))
+      return id
+    },
 
       removeProvider: (id: string) => {
         set((state) => ({
@@ -117,27 +124,45 @@ export const useLLMPoolStore = create<LLMPoolState>()(
         get().updateProvider(id, { isEnabled: false })
       },
 
-      setProviderHealth: (id: string, isHealthy: boolean, latency?: number, _error?: string) => {
-        const provider = get().providers.find((p) => p.id === id)
-        if (!provider) return
+    setProviderHealth: (id: string, isHealthy: boolean, latency?: number, _error?: string) => {
+      const provider = get().providers.find((p) => p.id === id)
+      if (!provider) return
 
-        const updates: Partial<PoolProvider> = {
-          isHealthy,
-          lastHealthCheck: Date.now(),
-        }
+      const updates: Partial<PoolProvider> = {
+        isHealthy,
+        lastHealthCheck: Date.now(),
+      }
 
-        if (latency !== undefined) {
-          updates.averageLatency = latency
-        }
+      if (latency !== undefined) {
+        updates.averageLatency = latency
+      }
 
-        if (!isHealthy) {
-          updates.failureCount = provider.failureCount + 1
-        } else {
-          updates.failureCount = 0
-        }
+      if (!isHealthy) {
+        updates.failureCount = provider.failureCount + 1
+      } else {
+        updates.failureCount = 0
+      }
 
-        get().updateProvider(id, updates)
-      },
+      get().updateProvider(id, updates)
+    },
+
+    setPrimaryProvider: (id: string) => {
+      set((state) => ({
+        providers: state.providers.map((p) => ({
+          ...p,
+          isPrimary: p.id === id,
+        })),
+      }))
+    },
+
+    getPrimaryProvider: () => {
+      const state = get()
+      // First try to find explicitly set primary provider
+      const primary = state.providers.find((p) => p.isPrimary && p.isEnabled)
+      if (primary) return primary
+      // Otherwise return the first enabled provider (top of the list)
+      return state.providers.find((p) => p.isEnabled)
+    },
 
       submitTask: (task: Omit<LLMTask, 'id' | 'retryCount' | 'createdAt' | 'maxRetries'>) => {
         const id = crypto.randomUUID()

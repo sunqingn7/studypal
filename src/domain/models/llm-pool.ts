@@ -2,8 +2,9 @@ import { AIConfig } from './ai-context'
 
 // LLM Pool Provider Entry - represents a provider in the pool
 export interface PoolProvider {
-  id: string  // unique ID for this pool entry
+  id: string // unique ID for this pool entry
   name: string // user-friendly name
+  nickname?: string // short nickname for chat (e.g., "G", "小g", "g sen")
   config: AIConfig
   isHealthy: boolean
   lastHealthCheck: number
@@ -14,6 +15,7 @@ export interface PoolProvider {
   averageLatency: number // in ms
   failureCount: number
   isEnabled: boolean
+  isPrimary: boolean // if true, this is the primary LLM that handles auto mode and task allocation
 }
 
 // Health check result

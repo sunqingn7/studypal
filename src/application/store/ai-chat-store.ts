@@ -22,8 +22,8 @@ interface AIChatStore {
   renameTab: (tabId: string, newTitle: string) => void
 
   // Chat operations
-  addMessage: (tabId: string, role: 'user' | 'assistant', content: string, thinking?: string) => void
-  updateMessage: (tabId: string, messageId: string, content?: string, thinking?: string) => void
+  addMessage: (tabId: string, role: 'user' | 'assistant', content: string, thinking?: string, providerInfo?: { nickname?: string; providerId?: string; color?: string }) => void
+  updateMessage: (tabId: string, messageId: string, content?: string, thinking?: string, providerInfo?: { nickname?: string; providerId?: string; color?: string }) => void
   deleteMessage: (tabId: string, messageId: string) => void
   clearChat: (tabId: string) => void
   getActiveTab: () => ChatTab | undefined
@@ -109,25 +109,28 @@ export const useAIChatStore = create<AIChatStore>((set, get) => ({
     }))
   },
 
-  addMessage: (tabId, role, content, thinking) => {
+  addMessage: (tabId, role, content, thinking, providerInfo) => {
     const message: ChatMessage = {
       id: crypto.randomUUID(),
       role,
       content,
       thinking,
       timestamp: Date.now(),
+      ...(providerInfo?.nickname && { providerNickname: providerInfo.nickname }),
+      ...(providerInfo?.providerId && { providerId: providerInfo.providerId }),
+      ...(providerInfo?.color && { providerColor: providerInfo.color }),
     }
 
     set((state) => ({
       tabs: state.tabs.map((t) =>
         t.id === tabId
-        ? { ...t, messages: [...t.messages, message] }
-        : t
+          ? { ...t, messages: [...t.messages, message] }
+          : t
       ),
     }))
   },
 
-  updateMessage: (tabId, messageId, content, thinking) => {
+  updateMessage: (tabId, messageId, content, thinking, providerInfo) => {
     set((state) => ({
       tabs: state.tabs.map((t) =>
         t.id === tabId
@@ -139,6 +142,9 @@ export const useAIChatStore = create<AIChatStore>((set, get) => ({
                       ...m,
                       ...(content !== undefined && { content }),
                       ...(thinking !== undefined && { thinking }),
+                      ...(providerInfo?.nickname !== undefined && { providerNickname: providerInfo.nickname }),
+                      ...(providerInfo?.providerId !== undefined && { providerId: providerInfo.providerId }),
+                      ...(providerInfo?.color !== undefined && { providerColor: providerInfo.color }),
                     }
                   : m
               ),

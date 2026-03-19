@@ -369,6 +369,7 @@ function LLMPoolTab() {
     enableProvider,
     disableProvider,
     setProviderHealth,
+    setPrimaryProvider,
     getStatistics,
     updateConfig,
     updateProvider,
@@ -378,6 +379,7 @@ function LLMPoolTab() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [newProviderName, setNewProviderName] = useState('');
+  const [newProviderNickname, setNewProviderNickname] = useState('');
   const [newProviderType, setNewProviderType] = useState<AIProviderType>('llamacpp');
   const [newProviderEndpoint, setNewProviderEndpoint] = useState('');
   const [newProviderModel, setNewProviderModel] = useState('');
@@ -477,15 +479,18 @@ function LLMPoolTab() {
       apiKey: newProviderApiKey || undefined,
     };
 
+    const nickname = newProviderNickname.trim() || undefined;
+
     if (editingProviderId) {
       // Update existing provider
       updateProvider(editingProviderId, {
         name: newProviderName.trim(),
+        nickname,
         config: providerConfig,
       });
     } else {
       // Add new provider
-      addProvider(newProviderName.trim(), providerConfig);
+      addProvider(newProviderName.trim(), providerConfig, nickname);
     }
 
     // Reset form
@@ -494,6 +499,7 @@ function LLMPoolTab() {
 
   const resetForm = () => {
     setNewProviderName('');
+    setNewProviderNickname('');
     setNewProviderEndpoint('');
     setNewProviderModel('');
     setNewProviderApiKey('');
@@ -508,6 +514,7 @@ function LLMPoolTab() {
 
     setEditingProviderId(providerId);
     setNewProviderName(provider.name);
+    setNewProviderNickname(provider.nickname || '');
     setNewProviderType(provider.config.provider);
     setNewProviderEndpoint(provider.config.endpoint);
     setNewProviderModel(provider.config.model);
@@ -658,34 +665,46 @@ function LLMPoolTab() {
           <div className="form-header">
             <h4>{editingProviderId ? 'Edit Provider' : 'Add Provider'}</h4>
           </div>
-          <div className="form-row">
-            <div className="form-group">
-              <label>Name</label>
-              <input
-                type="text"
-                value={newProviderName}
-                onChange={(e) => setNewProviderName(e.target.value)}
-                placeholder="e.g., My Llama Server"
-              />
-            </div>
-            <div className="form-group">
-              <label>Type</label>
-              <select
-                value={newProviderType}
-                onChange={(e) => setNewProviderType(e.target.value as AIProviderType)}
-              >
-              <option value="llamacpp">LLama.cpp</option>
-              <option value="ollama">Ollama</option>
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="vllm">vLLM</option>
-              <option value="nvidia">NVIDIA NIM</option>
-              <option value="openrouter">OpenRouter</option>
-              <option value="gemini">Google Gemini</option>
-              <option value="custom">Custom</option>
-              </select>
-            </div>
-          </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label>Name</label>
+          <input
+            type="text"
+            value={newProviderName}
+            onChange={(e) => setNewProviderName(e.target.value)}
+            placeholder="e.g., My Llama Server"
+          />
+        </div>
+        <div className="form-group">
+          <label>Type</label>
+          <select
+            value={newProviderType}
+            onChange={(e) => setNewProviderType(e.target.value as AIProviderType)}
+          >
+            <option value="llamacpp">LLama.cpp</option>
+            <option value="ollama">Ollama</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="vllm">vLLM</option>
+            <option value="nvidia">NVIDIA NIM</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="gemini">Google Gemini</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+      </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label>Nickname (for chat)</label>
+          <input
+            type="text"
+            value={newProviderNickname}
+            onChange={(e) => setNewProviderNickname(e.target.value)}
+            placeholder="e.g., G, 小g, g sen"
+          />
+          <div className="form-hint">Short name used to address this LLM in chat</div>
+        </div>
+      </div>
           <div className="form-row">
             <div className="form-group">
               <label>Endpoint URL</label>
@@ -777,48 +796,62 @@ function LLMPoolTab() {
                     <XCircle size={16} className="status-unhealthy" />
                   )}
                 </div>
-                <div className="provider-info">
-                  <div className="provider-name">{provider.name}</div>
-                  <div className="provider-details">
-                    {provider.config.provider} • {provider.config.endpoint} • {provider.config.model}
-                    {provider.averageLatency > 0 && ` • ${provider.averageLatency}ms`}
-                    {provider.currentTasks > 0 && ` • ${provider.currentTasks} tasks`}
-                  </div>
-                </div>
-                <div className="provider-actions">
-                  <button
-                    className="icon-button"
-                    onClick={() => handleEditProvider(provider.id)}
-                    title="Edit Provider"
-                  >
-                    <Edit3 size={14} />
-                  </button>
-                  <button
-                    className="icon-button"
-                    onClick={() => handleHealthCheck(provider.id)}
-                    disabled={isCheckingHealth === provider.id}
-                    title="Check Health"
-                  >
-                    <RefreshCw size={14} className={isCheckingHealth === provider.id ? 'spinning' : ''} />
-                  </button>
-                  <label className="toggle small">
-                    <input
-                      type="checkbox"
-                      checked={provider.isEnabled}
-                      onChange={(e) =>
-                        e.target.checked ? enableProvider(provider.id) : disableProvider(provider.id)
-                      }
-                    />
-                    <span className="toggle-slider"></span>
-                  </label>
-                  <button
-                    className="icon-button danger"
-                    onClick={() => removeProvider(provider.id)}
-                    title="Remove Provider"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
+        <div className="provider-info">
+          <div className="provider-name">
+            {provider.name}
+            {provider.nickname && <span className="provider-nickname">({provider.nickname})</span>}
+            {provider.isPrimary && <span className="provider-primary-badge">Primary</span>}
+          </div>
+          <div className="provider-details">
+            {provider.config.provider} • {provider.config.endpoint} • {provider.config.model}
+            {provider.averageLatency > 0 && ` • ${provider.averageLatency}ms`}
+            {provider.currentTasks > 0 && ` • ${provider.currentTasks} tasks`}
+          </div>
+        </div>
+        <div className="provider-actions">
+          <button
+            className="icon-button"
+            onClick={() => handleEditProvider(provider.id)}
+            title="Edit Provider"
+          >
+            <Edit3 size={14} />
+          </button>
+          <button
+            className="icon-button"
+            onClick={() => handleHealthCheck(provider.id)}
+            disabled={isCheckingHealth === provider.id}
+            title="Check Health"
+          >
+            <RefreshCw size={14} className={isCheckingHealth === provider.id ? 'spinning' : ''} />
+          </button>
+          <label className="toggle small" title="Set as Primary LLM">
+            <input
+              type="checkbox"
+              checked={provider.isPrimary}
+              onChange={(e) =>
+                e.target.checked ? setPrimaryProvider(provider.id) : undefined
+              }
+            />
+            <span className="toggle-slider"></span>
+          </label>
+          <label className="toggle small" title="Enable/Disable">
+            <input
+              type="checkbox"
+              checked={provider.isEnabled}
+              onChange={(e) =>
+                e.target.checked ? enableProvider(provider.id) : disableProvider(provider.id)
+              }
+            />
+            <span className="toggle-slider"></span>
+          </label>
+          <button
+            className="icon-button danger"
+            onClick={() => removeProvider(provider.id)}
+            title="Remove Provider"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
               </div>
             </div>
           ))

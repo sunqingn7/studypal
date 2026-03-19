@@ -82,6 +82,11 @@ export interface ChatMessage {
   content: string
   thinking?: string
   timestamp: number
+  // For pool mode - identifies which provider sent this message
+  providerNickname?: string
+  providerId?: string
+  // Color theme for this provider (assigned when message is created)
+  providerColor?: string
 }
 
 export interface AIState {
