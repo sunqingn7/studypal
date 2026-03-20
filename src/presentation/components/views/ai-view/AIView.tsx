@@ -19,6 +19,7 @@ import { getAllMCPTools, executeMCPTool } from '../../../../infrastructure/ai-pr
 import { buildToolPrompt, parseToolCalls } from '../../../../infrastructure/ai-providers/tool-calling'
 import { getProviderColor } from '../../../../application/services/provider-colors'
 import { PERSONA_PROMPTS } from '../../../../domain/models/llm-pool'
+import { loadProviderMemory, generateMemoryContext, extractAndStoreMemory } from '../../../../application/services/provider-memory-service'
 import { PaperLink } from './components/PaperLink'
 import './AIView.css'
 
@@ -488,6 +489,15 @@ function AIView() {
           return { provider: targetProvider, content: 'Error: No message ID', thinking: '', success: false }
         }
 
+        // Load provider memory
+        let memoryContext = ''
+        try {
+          const memory = await loadProviderMemory(targetProvider.id, targetProvider.nickname || targetProvider.name)
+          memoryContext = generateMemoryContext(memory)
+        } catch (error) {
+          console.error(`[AIView] Failed to load memory for ${targetProvider.name}:`, error)
+        }
+
         // Build persona system message if provider has a role
         const personaMessages: ChatMessage[] = []
         if (targetProvider.personaRole) {
@@ -504,10 +514,22 @@ ${personaPrompt.systemPrompt}`,
           }
         }
 
-        // Combine messages: persona + tool prompt + context + history
+        // Add memory context message if exists
+        const memoryMessages: ChatMessage[] = []
+        if (memoryContext) {
+          memoryMessages.push({
+            id: crypto.randomUUID(),
+            role: 'system',
+            content: memoryContext,
+            timestamp: Date.now()
+          })
+        }
+
+        // Combine messages: persona + memory + tool prompt + context + history
         const providerMessages: ChatMessage[] = [
           systemMessage, // Tool instructions
           ...personaMessages, // Persona prompt
+          ...memoryMessages, // Memory context
           ...(contextMessage ? [contextMessage] : []), // Context
           ...previousMessages, // Chat history
           { id: crypto.randomUUID(), role: 'user', content: userMessage, timestamp: Date.now() } // Current message
@@ -623,11 +645,23 @@ ${personaPrompt.systemPrompt}`,
               }
             }
             
-            localContent += toolResultText
-            updateMessage(activeTabId, messageId, localContent, localThinking || undefined)
-          }
+localContent += toolResultText
+          updateMessage(activeTabId, messageId, localContent, localThinking || undefined)
+        }
 
-          return { provider: targetProvider, content: localContent, thinking: localThinking, success: true }
+        // Extract and store key points from this response to provider's memory
+        try {
+          await extractAndStoreMemory(
+            targetProvider.id,
+            targetProvider.nickname || targetProvider.name,
+            localContent,
+            discussSessionId
+          )
+        } catch (error) {
+          console.error(`[AIView] Failed to extract memory for ${targetProvider.name}:`, error)
+        }
+
+        return { provider: targetProvider, content: localContent, thinking: localThinking, success: true }
         } catch (error) {
           console.error(`[AIView] Error from provider ${targetProvider.name}:`, error)
           const errorContent = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
