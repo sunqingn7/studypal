@@ -87,6 +87,8 @@ export interface ChatMessage {
   providerId?: string
   // Color theme for this provider (assigned when message is created)
   providerColor?: string
+  // For discuss mode - groups user message with all its AI responses
+  discussSessionId?: string
 }
 
 export interface AIState {

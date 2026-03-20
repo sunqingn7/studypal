@@ -107,20 +107,26 @@ export class GeminiProvider implements AIProvider {
     let unlisten: UnlistenFn | null = null
     let fullContent = ''
 
-    try {
-      unlisten = await listen<StreamChunkData>('chat-stream-chunk', (event) => {
-        if (event.payload.done) {
-          console.log('[gemini-provider] Stream complete, received', fullContent.length, 'chars')
-          return
-        }
+  try {
+    // Generate unique stream ID for this streaming session
+    const streamId = `gemini-stream-${crypto.randomUUID()}`
 
-        if (event.payload.content) {
-          fullContent += event.payload.content
-          onChunk(event.payload.content)
-        }
-      })
+    // Add streamEvent to payload
+    const payloadWithStream = { ...payload, streamEvent: streamId }
 
-      await invoke<void>('stream_chat_with_provider', { request: payload, provider: 'gemini' })
+    unlisten = await listen<StreamChunkData>(streamId, (event) => {
+      if (event.payload.done) {
+        console.log('[gemini-provider] Stream complete, received', fullContent.length, 'chars')
+        return
+      }
+
+      if (event.payload.content) {
+        fullContent += event.payload.content
+        onChunk(event.payload.content)
+      }
+    })
+
+    await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'gemini' })
     } catch (error: any) {
       console.error('[gemini-provider] streamChat error:', error)
       // Check for specific Gemini errors
@@ -172,29 +178,34 @@ export class GeminiProvider implements AIProvider {
       extraBody: config.extraBody,
     }
 
+    // Generate unique stream ID for this streaming session
+    const streamId = `gemini-stream-${crypto.randomUUID()}`
     let unlisten: UnlistenFn | null = null
     let fullContent = ''
     let fullThinking = ''
 
-    try {
-      unlisten = await listen<StreamChunkData>('chat-stream-chunk', (event) => {
-        if (event.payload.done) {
-          console.log('[gemini-provider] Stream complete, content:', fullContent.length, 'chars, thinking:', fullThinking.length, 'chars')
-          return
-        }
+  try {
+    // Add streamEvent to payload
+    const payloadWithStream = { ...payload, streamEvent: streamId }
 
-        if (event.payload.thinking) {
-          fullThinking += event.payload.thinking
-          onThinking(fullThinking)
-        }
+    unlisten = await listen<StreamChunkData>(streamId, (event) => {
+      if (event.payload.done) {
+        console.log('[gemini-provider] Stream complete, content:', fullContent.length, 'chars, thinking:', fullThinking.length, 'chars')
+        return
+      }
 
-        if (event.payload.content) {
-          fullContent += event.payload.content
-          onChunk(event.payload.content)
-        }
-      })
+      if (event.payload.thinking) {
+        fullThinking += event.payload.thinking
+        onThinking(fullThinking)
+      }
 
-      await invoke<void>('stream_chat_with_provider', { request: payload, provider: 'gemini' })
+      if (event.payload.content) {
+        fullContent += event.payload.content
+        onChunk(event.payload.content)
+      }
+    })
+
+    await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'gemini' })
     } catch (error: any) {
       console.error('[gemini-provider] streamChatWithThinking error:', error)
       // Check for specific Gemini errors

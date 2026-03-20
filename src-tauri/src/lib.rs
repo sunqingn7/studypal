@@ -40,6 +40,8 @@ struct ProviderChatRequest {
     extra_headers: Option<serde_json::Map<String, serde_json::Value>>,
     #[serde(rename = "extraBody")]
     extra_body: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(rename = "streamEvent")]
+    stream_event: Option<String>,
 }
 
 #[tauri::command]
@@ -328,23 +330,26 @@ async fn stream_chat_with_provider(
     provider: String,
 ) -> Result<(), String> {
     log::info!("Stream chat request to provider: {}", provider);
-    
+
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(300))
         .build()
         .map_err(|e| e.to_string())?;
 
+    // Use custom event name if provided, otherwise use default
+    let stream_event = request.stream_event.clone().unwrap_or_else(|| "chat-stream-chunk".to_string());
+
     let result = match provider.as_str() {
-        "anthropic" => stream_chat_with_anthropic(&app_handle, &client, &request).await,
-        "gemini" => stream_chat_with_gemini(&app_handle, &client, &request).await,
+        "anthropic" => stream_chat_with_anthropic(&app_handle, &client, &request, &stream_event).await,
+        "gemini" => stream_chat_with_gemini(&app_handle, &client, &request, &stream_event).await,
         "openai" | "vllm" | "llamacpp" | "ollama" | "nvidia" | "openrouter" => {
-            stream_chat_with_openai_compatible(&app_handle, &client, &request).await
+            stream_chat_with_openai_compatible(&app_handle, &client, &request, &stream_event).await
         }
         _ => Err(format!("Unknown provider: {}", provider)),
     };
 
     // Always emit a done event at the end
-    let _ = app_handle.emit("chat-stream-chunk", StreamChunk {
+    let _ = app_handle.emit(&stream_event, StreamChunk {
         content: String::new(),
         thinking: None,
         done: true,
@@ -794,6 +799,7 @@ async fn stream_chat_with_openai_compatible(
     app_handle: &tauri::AppHandle,
     client: &reqwest::Client,
     request: &ProviderChatRequest,
+    stream_event: &str,
 ) -> Result<(), String> {
 
     let url = if request.endpoint.ends_with("/v1/chat/completions") {
@@ -900,14 +906,14 @@ async fn stream_chat_with_openai_compatible(
                         .and_then(|c| c.as_str())
                     });
                   
-                  // Emit chunk to frontend
-                  if !content.is_empty() || reasoning.is_some() {
-                    let _ = app_handle.emit("chat-stream-chunk", StreamChunk {
-                      content: content.to_string(),
-                      thinking: reasoning.map(|s| s.to_string()),
-                      done: false,
-                    });
-                  }
+            // Emit chunk to frontend using custom event name
+                    if !content.is_empty() || reasoning.is_some() {
+                        let _ = app_handle.emit(stream_event, StreamChunk {
+                            content: content.to_string(),
+                            thinking: reasoning.map(|s| s.to_string()),
+                            done: false,
+                        });
+                    }
                 }
               }
             }
@@ -927,6 +933,7 @@ async fn stream_chat_with_anthropic(
     app_handle: &tauri::AppHandle,
     client: &reqwest::Client,
     request: &ProviderChatRequest,
+    stream_event: &str,
 ) -> Result<(), String> {
 
     let url = format!("{}/messages", request.endpoint);
@@ -1027,7 +1034,7 @@ async fn stream_chat_with_anthropic(
                                 "content_block_delta" => {
                                     if let Some(delta) = json.get("delta") {
                                         if let Some(text) = delta.get("text").and_then(|t| t.as_str()) {
-                                            let _ = app_handle.emit("chat-stream-chunk", StreamChunk {
+                                            let _ = app_handle.emit(stream_event, StreamChunk {
                                                 content: text.to_string(),
                                                 thinking: None,
                                                 done: false,
@@ -1057,6 +1064,7 @@ async fn stream_chat_with_gemini(
     app_handle: &tauri::AppHandle,
     client: &reqwest::Client,
     request: &ProviderChatRequest,
+    stream_event: &str,
 ) -> Result<(), String> {
     println!("[RUST] Using Gemini Streaming API");
 
@@ -1145,13 +1153,13 @@ async fn stream_chat_with_gemini(
                                     if let Some(content) = first.get("content") {
                                         if let Some(parts) = content.get("parts").and_then(|p| p.as_array()) {
                                             for part in parts {
-                                                if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
-                                                    let _ = app_handle.emit("chat-stream-chunk", StreamChunk {
-                                                        content: text.to_string(),
-                                                        thinking: None,
-                                                        done: false,
-                                                    });
-                                                }
+                    if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
+                                            let _ = app_handle.emit(stream_event, StreamChunk {
+                                                content: text.to_string(),
+                                                thinking: None,
+                                                done: false,
+                                            });
+                                        }
                                             }
                                         }
                                     }

@@ -17,6 +17,7 @@ import { ChatMessage, AIProviderType } from '../../../../domain/models/ai-contex
 import { updateAIConfig, updateProviderConfigs } from '../../../../application/services/session-manager'
 import { getAllMCPTools, executeMCPTool } from '../../../../infrastructure/ai-providers/mcp-utils'
 import { buildToolPrompt, parseToolCalls } from '../../../../infrastructure/ai-providers/tool-calling'
+import { getProviderColor } from '../../../../application/services/provider-colors'
 import { PaperLink } from './components/PaperLink'
 import './AIView.css'
 
@@ -350,9 +351,8 @@ function AIView() {
     editor.commands.clearContent()
 
     if (!activeTabId) return
-    addMessage(activeTabId, 'user', htmlContent)
-
-    // Parse routing from message
+    
+    // Parse routing from message (before adding user message to determine discuss mode)
     const { parseChatMessage } = await import('../../../../application/services/chat-routing-service')
     const { useLLMPoolStore } = await import('../../../../application/store/llm-pool-store')
     const poolStore = useLLMPoolStore.getState()
@@ -361,6 +361,12 @@ function AIView() {
     
     const routing = parseChatMessage(userMessage, providers)
     
+    // Generate discuss session ID for discuss mode (before adding user message)
+    const discussSessionId = routing.mode === 'discuss' ? crypto.randomUUID() : undefined
+    
+    // Add user message (with discussSessionId if discuss mode)
+    addMessage(activeTabId, 'user', htmlContent, undefined, undefined, discussSessionId)
+
     // Determine which providers to use
     let targetProviders = providers.filter(p => routing.targetProviderIds.includes(p.id))
     
@@ -440,7 +446,8 @@ function AIView() {
       addMessage(activeTabId, 'assistant', 
         `**Discuss Mode**: Starting discussion with ${targetProviders.length} providers...`,
         undefined,
-        { providerId: 'system', nickname: 'System' }
+        { providerId: 'system', nickname: 'System' },
+        discussSessionId
       )
 
       // Create a map to track message IDs for each provider (for streaming updates)
@@ -448,25 +455,17 @@ function AIView() {
       const providerStreamingContent = new Map<string, string>()
       const providerStreamingThinking = new Map<string, string>()
 
-      // Initialize placeholder messages for each provider
-      for (const targetProvider of targetProviders) {
-        const placeholderMessage = {
-          id: crypto.randomUUID(),
-          role: 'assistant' as const,
-          content: '',
-          timestamp: Date.now(),
-          providerId: targetProvider.id,
-          providerNickname: targetProvider.nickname || targetProvider.name,
-        }
-        providerMessageIds.set(targetProvider.id, placeholderMessage.id)
+    // Initialize placeholder messages for each provider
+    for (const targetProvider of targetProviders) {
+      // Add placeholder to chat and capture the returned message ID
+      const messageId = addMessage(activeTabId, 'assistant', '', undefined, {
+        providerId: targetProvider.id,
+        nickname: targetProvider.nickname || targetProvider.name,
+        color: getProviderColor(targetProvider.id).border,
+      }, discussSessionId)
+        providerMessageIds.set(targetProvider.id, messageId)
         providerStreamingContent.set(targetProvider.id, '')
         providerStreamingThinking.set(targetProvider.id, '')
-        
-        // Add placeholder to chat
-        addMessage(activeTabId, 'assistant', '', undefined, {
-          providerId: targetProvider.id,
-          nickname: targetProvider.nickname || targetProvider.name,
-        })
       }
 
       // Process all providers in parallel with streaming
@@ -492,42 +491,54 @@ function AIView() {
               messagesWithTools,
               providerConfig,
               (chunk: string) => {
-                localContent += chunk
-                // Update streaming content map
-                providerStreamingContent.set(targetProvider.id, localContent)
-                // Update the message in real-time
-                updateMessage(activeTabId, messageId, localContent, undefined)
-              }
-            )
+              localContent += chunk
+                  // Update streaming content map
+                  providerStreamingContent.set(targetProvider.id, localContent)
+                  // Update the message in real-time - preserve provider info
+                  updateMessage(activeTabId, messageId, localContent, undefined, {
+                    providerId: targetProvider.id,
+                    nickname: targetProvider.nickname || targetProvider.name
+                  })
+                }
+              )
           } else if (supportsThinking) {
             await provider.streamChatWithThinking!(
               messagesWithTools,
               providerConfig,
               (chunk: string) => {
-                localContent += chunk
-                const displayContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
-                providerStreamingContent.set(targetProvider.id, displayContent)
-                updateMessage(activeTabId, messageId, displayContent, undefined)
-              },
-              (thinking: string) => {
-                const filteredThinking = thinking.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
-                if (filteredThinking) {
-                  localThinking += filteredThinking
-                  providerStreamingThinking.set(targetProvider.id, localThinking)
-                  updateMessage(activeTabId, messageId, undefined, localThinking)
+            localContent += chunk
+                  const displayContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
+                  providerStreamingContent.set(targetProvider.id, displayContent)
+                  updateMessage(activeTabId, messageId, displayContent, undefined, {
+                    providerId: targetProvider.id,
+                    nickname: targetProvider.nickname || targetProvider.name
+                  })
+                },
+                (thinking: string) => {
+                  const filteredThinking = thinking.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
+                  if (filteredThinking) {
+                    localThinking += filteredThinking
+                    providerStreamingThinking.set(targetProvider.id, localThinking)
+                    updateMessage(activeTabId, messageId, undefined, localThinking, {
+                      providerId: targetProvider.id,
+                      nickname: targetProvider.nickname || targetProvider.name
+                    })
+                  }
                 }
-              }
             )
           } else {
             await provider.streamChat(
               messagesWithTools,
               providerConfig,
               (chunk: string) => {
-                localContent += chunk
-                const displayContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
-                providerStreamingContent.set(targetProvider.id, displayContent)
-                updateMessage(activeTabId, messageId, displayContent, undefined)
-              }
+            localContent += chunk
+                  const displayContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
+                  providerStreamingContent.set(targetProvider.id, displayContent)
+                  updateMessage(activeTabId, messageId, displayContent, undefined, {
+                    providerId: targetProvider.id,
+                    nickname: targetProvider.nickname || targetProvider.name
+                  })
+                }
             )
           }
 
@@ -1071,10 +1082,21 @@ function AIView() {
               </p>
             </div>
           ) : (
-activeMessages.map((msg) => (
-            <div key={msg.id} className={`chat-message ${msg.role}`}>
+            activeMessages.map((msg) => (
+              <div
+                key={msg.id}
+                className={`chat-message ${msg.role}`}
+                style={msg.providerColor ? { borderLeft: `4px solid ${msg.providerColor}` } : undefined}
+              >
               <div className="message-header">
-                <div className="message-role">{msg.role === 'user' ? 'You' : 'AI'}</div>
+                <div className="message-role">
+                  {msg.role === 'user' 
+                    ? 'You' 
+                    : msg.providerNickname 
+                      ? msg.providerNickname 
+                      : 'AI'
+                  }
+                </div>
               {msg.role === 'user' && (
                 <div className="message-actions">
                   <button
