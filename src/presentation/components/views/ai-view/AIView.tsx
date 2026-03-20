@@ -152,6 +152,14 @@ function AIView() {
     scrollToBottom()
   }, [activeMessages])
 
+  // Detect discuss mode from loaded messages (for persistence on restart)
+  useEffect(() => {
+    const hasDiscussSession = activeMessages.some((msg) => msg.discussSessionId)
+    if (hasDiscussSession) {
+      setIsDiscussMode(true)
+    }
+  }, [activeMessages])
+
   // Save config changes to session
   useEffect(() => {
     updateAIConfig(config)

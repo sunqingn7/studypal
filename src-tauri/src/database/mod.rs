@@ -9,6 +9,15 @@ pub struct ChatMessage {
     pub content: String,
     pub timestamp: i64,
     pub thinking: Option<String>,
+    // Provider metadata for LLM Pool discuss mode
+    #[serde(rename = "providerNickname")]
+    pub provider_nickname: Option<String>,
+    #[serde(rename = "providerId")]
+    pub provider_id: Option<String>,
+    #[serde(rename = "providerColor")]
+    pub provider_color: Option<String>,
+    #[serde(rename = "discussSessionId")]
+    pub discuss_session_id: Option<String>,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
