@@ -8,6 +8,7 @@ import {
   PoolStatistics,
   PoolConfig,
   DEFAULT_POOL_CONFIG,
+  PersonaRole,
 } from '../../domain/models/llm-pool'
 import { AIConfig } from '../../domain/models/ai-context'
 
@@ -28,7 +29,7 @@ export interface LLMPoolState {
   lastHealthCheck: number
 
   // Actions
-  addProvider: (name: string, config: AIConfig, nickname?: string) => string
+  addProvider: (name: string, config: AIConfig, nickname?: string, personaRole?: PersonaRole) => string
   removeProvider: (id: string) => void
   updateProvider: (id: string, updates: Partial<PoolProvider>) => void
   enableProvider: (id: string) => void
@@ -75,7 +76,7 @@ export const useLLMPoolStore = create<LLMPoolState>()(
       isHealthChecking: false,
       lastHealthCheck: 0,
 
-    addProvider: (name: string, config: AIConfig, nickname?: string) => {
+    addProvider: (name: string, config: AIConfig, nickname?: string, personaRole?: PersonaRole) => {
       const id = crypto.randomUUID()
       const state = get()
       // If this is the first provider, make it primary
@@ -95,6 +96,7 @@ export const useLLMPoolStore = create<LLMPoolState>()(
         failureCount: 0,
         isEnabled: true,
         isPrimary,
+        personaRole,
       }
       set((state) => ({
         providers: [...state.providers, provider],

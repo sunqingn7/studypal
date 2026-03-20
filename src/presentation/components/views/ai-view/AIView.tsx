@@ -18,6 +18,7 @@ import { updateAIConfig, updateProviderConfigs } from '../../../../application/s
 import { getAllMCPTools, executeMCPTool } from '../../../../infrastructure/ai-providers/mcp-utils'
 import { buildToolPrompt, parseToolCalls } from '../../../../infrastructure/ai-providers/tool-calling'
 import { getProviderColor } from '../../../../application/services/provider-colors'
+import { PERSONA_PROMPTS } from '../../../../domain/models/llm-pool'
 import { PaperLink } from './components/PaperLink'
 import './AIView.css'
 
@@ -487,6 +488,31 @@ function AIView() {
           return { provider: targetProvider, content: 'Error: No message ID', thinking: '', success: false }
         }
 
+        // Build persona system message if provider has a role
+        const personaMessages: ChatMessage[] = []
+        if (targetProvider.personaRole) {
+          const personaPrompt = PERSONA_PROMPTS[targetProvider.personaRole]
+          if (personaPrompt) {
+            personaMessages.push({
+              id: crypto.randomUUID(),
+              role: 'system',
+              content: `[PERSONA: You are ${targetProvider.nickname || targetProvider.name}, ${personaPrompt.description}]
+
+${personaPrompt.systemPrompt}`,
+              timestamp: Date.now()
+            })
+          }
+        }
+
+        // Combine messages: persona + tool prompt + context + history
+        const providerMessages: ChatMessage[] = [
+          systemMessage, // Tool instructions
+          ...personaMessages, // Persona prompt
+          ...(contextMessage ? [contextMessage] : []), // Context
+          ...previousMessages, // Chat history
+          { id: crypto.randomUUID(), role: 'user', content: userMessage, timestamp: Date.now() } // Current message
+        ]
+
         let localContent = ''
         let localThinking = ''
 
@@ -496,7 +522,7 @@ function AIView() {
 
           if (supportsToolCalling && mcpTools.length > 0) {
             await provider.streamChat(
-              messagesWithTools,
+              providerMessages,
               providerConfig,
               (chunk: string) => {
               localContent += chunk

@@ -3,6 +3,7 @@ import { useSettingsStore, SearchProvider } from '../../../../application/store/
 import { useLLMPoolStore } from '../../../../application/store/llm-pool-store';
 import { checkProviderHealth } from '../../../../application/services/llm-pool-health-check';
 import { AIConfig, AIProviderType, PROVIDER_DEFAULTS } from '../../../../domain/models/ai-context';
+import { PersonaRole, PERSONA_PROMPTS } from '../../../../domain/models/llm-pool';
 import { fetchAvailableModels, ModelInfo } from '../../../../infrastructure/ai-providers/model-detector';
 import { X, Globe, Search, Key, Filter, BookOpen, Server, Plus, Trash2, RefreshCw, CheckCircle, XCircle, Loader2, Edit3 } from 'lucide-react';
 import './SettingsView.css';
@@ -384,6 +385,7 @@ function LLMPoolTab() {
   const [newProviderEndpoint, setNewProviderEndpoint] = useState('');
   const [newProviderModel, setNewProviderModel] = useState('');
   const [newProviderApiKey, setNewProviderApiKey] = useState('');
+  const [newProviderPersona, setNewProviderPersona] = useState<PersonaRole>('neutral');
   const [isCheckingHealth, setIsCheckingHealth] = useState<string | null>(null);
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [isFetchingModels, setIsFetchingModels] = useState(false);
@@ -487,10 +489,11 @@ function LLMPoolTab() {
         name: newProviderName.trim(),
         nickname,
         config: providerConfig,
+        personaRole: newProviderPersona,
       });
     } else {
       // Add new provider
-      addProvider(newProviderName.trim(), providerConfig, nickname);
+      addProvider(newProviderName.trim(), providerConfig, nickname, newProviderPersona);
     }
 
     // Reset form
@@ -504,6 +507,7 @@ function LLMPoolTab() {
     setNewProviderModel('');
     setNewProviderApiKey('');
     setNewProviderType('llamacpp');
+    setNewProviderPersona('neutral');
     setEditingProviderId(null);
     setShowAddForm(false);
   };
@@ -519,6 +523,7 @@ function LLMPoolTab() {
     setNewProviderEndpoint(provider.config.endpoint);
     setNewProviderModel(provider.config.model);
     setNewProviderApiKey(provider.config.apiKey || '');
+    setNewProviderPersona(provider.personaRole || 'neutral');
     setShowAddForm(true);
   };
 
@@ -693,18 +698,32 @@ function LLMPoolTab() {
           </select>
         </div>
       </div>
-      <div className="form-row">
-        <div className="form-group">
-          <label>Nickname (for chat)</label>
-          <input
-            type="text"
-            value={newProviderNickname}
-            onChange={(e) => setNewProviderNickname(e.target.value)}
-            placeholder="e.g., G, 小g, g sen"
-          />
-          <div className="form-hint">Short name used to address this LLM in chat</div>
-        </div>
-      </div>
+<div className="form-row">
+                <div className="form-group">
+                  <label>Nickname (for chat)</label>
+                  <input
+                    type="text"
+                    value={newProviderNickname}
+                    onChange={(e) => setNewProviderNickname(e.target.value)}
+                    placeholder="e.g., G, 小g, g sen"
+                  />
+                  <div className="form-hint">Short name used to address this LLM in chat</div>
+                </div>
+                <div className="form-group">
+                  <label>Persona/Role</label>
+                  <select
+                    value={newProviderPersona}
+                    onChange={(e) => setNewProviderPersona(e.target.value as PersonaRole)}
+                  >
+                    {Object.entries(PERSONA_PROMPTS).map(([role, config]) => (
+                      <option key={role} value={role}>
+                        {role.charAt(0).toUpperCase() + role.slice(1)} - {config.description}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="form-hint">How this LLM behaves in discussions</div>
+                </div>
+              </div>
           <div className="form-row">
             <div className="form-group">
               <label>Endpoint URL</label>
@@ -796,13 +815,18 @@ function LLMPoolTab() {
                     <XCircle size={16} className="status-unhealthy" />
                   )}
                 </div>
-        <div className="provider-info">
-          <div className="provider-name">
-            {provider.name}
-            {provider.nickname && <span className="provider-nickname">({provider.nickname})</span>}
-            {provider.isPrimary && <span className="provider-primary-badge">Primary</span>}
-          </div>
-          <div className="provider-details">
+<div className="provider-info">
+                  <div className="provider-name">
+                    {provider.name}
+                    {provider.nickname && <span className="provider-nickname">({provider.nickname})</span>}
+                    {provider.isPrimary && <span className="provider-primary-badge">Primary</span>}
+                    {provider.personaRole && (
+                      <span className="provider-persona-badge" title={PERSONA_PROMPTS[provider.personaRole]?.description}>
+                        {provider.personaRole.charAt(0).toUpperCase() + provider.personaRole.slice(1)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="provider-details">
             {provider.config.provider} • {provider.config.endpoint} • {provider.config.model}
             {provider.averageLatency > 0 && ` • ${provider.averageLatency}ms`}
             {provider.currentTasks > 0 && ` • ${provider.currentTasks} tasks`}

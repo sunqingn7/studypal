@@ -641,6 +641,17 @@
   font-weight: 600;
 }
 
+.provider-persona-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background-color: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-weight: 500;
+  border: 1px solid var(--border-color);
+  cursor: help;
+}
+
 .form-hint {
   font-size: 11px;
   color: var(--text-secondary);
