@@ -1,4 +1,4 @@
-export type AIProviderType = 'llamacpp' | 'ollama' | 'openai' | 'anthropic' | 'vllm' | 'custom'
+export type AIProviderType = 'llamacpp' | 'ollama' | 'openai' | 'anthropic' | 'vllm' | 'nvidia' | 'openrouter' | 'gemini' | 'custom'
 
 export type ContextSource = 'file' | 'note' | 'ai-note' | 'global-note' | 'topic'
 
@@ -58,6 +58,18 @@ export const PROVIDER_DEFAULTS: Record<AIProviderType, Partial<AIConfig>> = {
     endpoint: 'http://localhost:8000/v1',
     model: 'meta-llama/Llama-3.2-1B-Instruct',
   },
+  nvidia: {
+    endpoint: 'https://integrate.api.nvidia.com/v1',
+    model: 'meta/llama-3.1-8b-instruct',
+  },
+  openrouter: {
+    endpoint: 'https://openrouter.ai/api/v1',
+    model: 'meta-llama/llama-3.1-8b-instruct',
+  },
+  gemini: {
+    endpoint: 'https://generativelanguage.googleapis.com/v1beta',
+    model: 'gemini-1.5-flash',
+  },
   custom: {
     endpoint: 'http://localhost:8080/v1',
     model: 'default-model',
@@ -70,6 +82,13 @@ export interface ChatMessage {
   content: string
   thinking?: string
   timestamp: number
+  // For pool mode - identifies which provider sent this message
+  providerNickname?: string
+  providerId?: string
+  // Color theme for this provider (assigned when message is created)
+  providerColor?: string
+  // For discuss mode - groups user message with all its AI responses
+  discussSessionId?: string
 }
 
 export interface AIState {

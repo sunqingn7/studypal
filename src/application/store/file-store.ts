@@ -496,7 +496,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
         const systemNotesPath = SYSTEM_DOCUMENT_ID;
         for (const note of allNotes) {
           try {
-            await invoke('save_note_to_markdown', {
+            await invoke('save_note_as_markdown', {
               documentPath: systemNotesPath,
               noteId: note.id,
               title: note.title,

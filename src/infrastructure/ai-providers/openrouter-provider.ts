@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type { AIConfig, ChatMessage } from '../../domain/models/ai-context'
 import type { AIProvider } from './base-provider'
 
-interface OllamaMessage {
+interface OpenRouterMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
 }
@@ -11,7 +11,8 @@ interface OllamaMessage {
 interface ChatRequestPayload {
   endpoint: string
   model: string
-  messages: OllamaMessage[]
+  messages: OpenRouterMessage[]
+  apiKey?: string
   temperature?: number
   maxTokens?: number
   topP?: number
@@ -25,11 +26,11 @@ interface StreamChunkData {
   done: boolean
 }
 
-export class OllamaProvider implements AIProvider {
-  name = 'Ollama'
+export class OpenRouterProvider implements AIProvider {
+  name = 'OpenRouter'
 
   async chat(messages: ChatMessage[], config: AIConfig): Promise<string> {
-    console.log('[ollama-provider] chat() called with:', {
+    console.log('[openrouter-provider] chat() called with:', {
       endpoint: config.endpoint,
       model: config.model,
       messageCount: messages.length,
@@ -42,31 +43,54 @@ export class OllamaProvider implements AIProvider {
         role: m.role,
         content: m.content,
       })),
+      apiKey: config.apiKey,
       temperature: config.temperature,
       maxTokens: config.maxTokens,
       topP: config.topP,
-      extraHeaders: config.extraHeaders,
+      extraHeaders: {
+        'HTTP-Referer': window.location.origin,
+        'X-Title': 'StudyPal',
+        ...config.extraHeaders,
+      },
       extraBody: config.extraBody,
     }
 
-    console.log('[ollama-provider] Calling invoke with payload:', JSON.stringify(payload, null, 2))
+    console.log('[openrouter-provider] Calling invoke with payload:', JSON.stringify(payload, null, 2))
 
     try {
-      console.log('[ollama-provider] About to call invoke...')
-      const result = await invoke<string>('chat_with_provider', { request: payload, provider: 'ollama' })
-      console.log('[ollama-provider] invoke returned!')
-      console.log('[ollama-provider] result type:', typeof result)
-      console.log('[ollama-provider] result:', result)
+      console.log('[openrouter-provider] About to call invoke...')
+      const result = await invoke<string>('chat_with_provider', { request: payload, provider: 'openai' })
+      console.log('[openrouter-provider] invoke returned!')
+      console.log('[openrouter-provider] result type:', typeof result)
+      console.log('[openrouter-provider] result:', result)
 
       // Force convert to string if needed
       const resultStr = String(result)
-      console.log('[ollama-provider] converted to string, length:', resultStr.length)
+      console.log('[openrouter-provider] converted to string, length:', resultStr.length)
       return resultStr
     } catch (error: any) {
-      console.error('[ollama-provider] invoke failed with error:', error)
-      console.error('[ollama-provider] error name:', error?.name)
-      console.error('[ollama-provider] error message:', error?.message)
-      console.error('[ollama-provider] error stack:', error?.stack)
+      console.error('[openrouter-provider] invoke failed with error:', error)
+      
+      // Check for specific OpenRouter errors
+      const errorStr = String(error)
+      if (errorStr.includes('404') && errorStr.includes('guardrail')) {
+        throw new Error(
+          'OpenRouter: No endpoints available for this model. This model may not be accessible with your current privacy settings. ' +
+          'Please check: https://openrouter.ai/settings/privacy or try a different model.'
+        )
+      }
+      if (errorStr.includes('404')) {
+        throw new Error(
+          `OpenRouter: Model "${config.model}" not found or not accessible. ` +
+          'Please verify the model ID is correct and your API key has access to this model.'
+        )
+      }
+      if (errorStr.includes('401') || errorStr.includes('Unauthorized')) {
+        throw new Error(
+          'OpenRouter: Authentication failed. Please check your API key.'
+        )
+      }
+      
       throw error
     }
   }
@@ -76,7 +100,7 @@ export class OllamaProvider implements AIProvider {
     config: AIConfig,
     onChunk: (chunk: string) => void | Promise<void>
   ): Promise<void> {
-    console.log('[ollama-provider] streamChat() called - using true streaming')
+    console.log('[openrouter-provider] streamChat() called - using true streaming')
 
     const payload: ChatRequestPayload = {
       endpoint: config.endpoint,
@@ -85,10 +109,15 @@ export class OllamaProvider implements AIProvider {
         role: m.role,
         content: m.content,
       })),
+      apiKey: config.apiKey,
       temperature: config.temperature,
       maxTokens: config.maxTokens,
       topP: config.topP,
-      extraHeaders: config.extraHeaders,
+      extraHeaders: {
+        'HTTP-Referer': window.location.origin,
+        'X-Title': 'StudyPal',
+        ...config.extraHeaders,
+      },
       extraBody: config.extraBody,
     }
 
@@ -98,7 +127,7 @@ export class OllamaProvider implements AIProvider {
 
   try {
     // Generate unique stream ID for this streaming session
-    const streamId = `ollama-stream-${crypto.randomUUID()}`
+    const streamId = `openrouter-stream-${crypto.randomUUID()}`
 
     // Add streamEvent to payload
     const payloadWithStream = { ...payload, streamEvent: streamId }
@@ -106,7 +135,7 @@ export class OllamaProvider implements AIProvider {
     // Listen for stream chunks from the backend
     unlisten = await listen<StreamChunkData>(streamId, (event) => {
       if (event.payload.done) {
-        console.log('[ollama-provider] Stream complete, received', fullContent.length, 'chars')
+        console.log('[openrouter-provider] Stream complete, received', fullContent.length, 'chars')
         return
       }
 
@@ -117,9 +146,9 @@ export class OllamaProvider implements AIProvider {
     })
 
     // Start the streaming request
-    await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'ollama' })
+    await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'openai' })
     } catch (error: any) {
-      console.error('[ollama-provider] streamChat error:', error)
+      console.error('[openrouter-provider] streamChat error:', error)
       throw error
     } finally {
       if (unlisten) {
@@ -134,7 +163,7 @@ export class OllamaProvider implements AIProvider {
     onChunk: (chunk: string) => void | Promise<void>,
     onThinking: (thinking: string) => void | Promise<void>
   ): Promise<void> {
-    console.log('[ollama-provider] streamChatWithThinking() called - using true streaming')
+    console.log('[openrouter-provider] streamChatWithThinking() called - using true streaming')
 
     const payload: ChatRequestPayload = {
       endpoint: config.endpoint,
@@ -143,10 +172,15 @@ export class OllamaProvider implements AIProvider {
         role: m.role,
         content: m.content,
       })),
+      apiKey: config.apiKey,
       temperature: config.temperature,
       maxTokens: config.maxTokens,
       topP: config.topP,
-      extraHeaders: config.extraHeaders,
+      extraHeaders: {
+        'HTTP-Referer': window.location.origin,
+        'X-Title': 'StudyPal',
+        ...config.extraHeaders,
+      },
       extraBody: config.extraBody,
     }
 
@@ -157,7 +191,7 @@ export class OllamaProvider implements AIProvider {
 
   try {
     // Generate unique stream ID for this streaming session
-    const streamId = `ollama-stream-${crypto.randomUUID()}`
+    const streamId = `openrouter-stream-${crypto.randomUUID()}`
 
     // Add streamEvent to payload
     const payloadWithStream = { ...payload, streamEvent: streamId }
@@ -165,7 +199,7 @@ export class OllamaProvider implements AIProvider {
     // Listen for stream chunks from the backend
     unlisten = await listen<StreamChunkData>(streamId, (event) => {
       if (event.payload.done) {
-        console.log('[ollama-provider] Stream complete, content:', fullContent.length, 'chars, thinking:', fullThinking.length, 'chars')
+        console.log('[openrouter-provider] Stream complete, content:', fullContent.length, 'chars, thinking:', fullThinking.length, 'chars')
         return
       }
 
@@ -181,9 +215,9 @@ export class OllamaProvider implements AIProvider {
     })
 
     // Start the streaming request
-    await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'ollama' })
+    await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'openai' })
     } catch (error: any) {
-      console.error('[ollama-provider] streamChatWithThinking error:', error)
+      console.error('[openrouter-provider] streamChatWithThinking error:', error)
       throw error
     } finally {
       if (unlisten) {
@@ -193,4 +227,4 @@ export class OllamaProvider implements AIProvider {
   }
 }
 
-export const ollamaProvider = new OllamaProvider()
+export const openrouterProvider = new OpenRouterProvider()

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
+import { marked } from 'marked'
 import { useNoteStore } from '../../../../application/store/note-store'
 import { useTopicStore } from '../../../../application/store/topic-store'
 import { useFileStore } from '../../../../application/store/file-store'
@@ -55,10 +56,26 @@ function NoteView() {
     }
   }, [fontSize, editor])
 
+  marked.use({ gfm: true, breaks: true })
+
+  function isMarkdown(text: string): boolean {
+    return /^(#{1,6}\s|\*\*|__|\*|_|`{1,3}|```|\[\[?|>\s|[-*]\s)/m.test(text)
+  }
+
+  function getDisplayContent(content: string): string {
+    if (!content || !isMarkdown(content)) return content
+    try {
+      return marked.parse(content) as string
+    } catch {
+      return content
+    }
+  }
+
   useEffect(() => {
     if (editor && activeNote) {
       console.log('[NoteView] Syncing editor, activeNote:', activeNote.id, 'content length:', activeNote.content?.length)
-      editor.commands.setContent(activeNote.content || '')
+      const displayContent = getDisplayContent(activeNote.content || '')
+      editor.commands.setContent(displayContent)
     }
   }, [editor, activeNote?.id, activeNote?.content])
 

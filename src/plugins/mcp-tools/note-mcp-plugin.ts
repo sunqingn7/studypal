@@ -206,6 +206,7 @@ export class NoteMCPServerPlugin implements MCPServerPlugin {
           
           const note = noteStore.createNote(topicId || null, title, noteType);
           noteStore.updateNoteContent(note.id, content);
+          noteStore.createTabForNote(note.id, title);
           
           return {
             success: true,

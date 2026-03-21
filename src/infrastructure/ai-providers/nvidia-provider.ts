@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type { AIConfig, ChatMessage } from '../../domain/models/ai-context'
 import type { AIProvider } from './base-provider'
 
-interface OllamaMessage {
+interface NvidiaMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
 }
@@ -11,7 +11,8 @@ interface OllamaMessage {
 interface ChatRequestPayload {
   endpoint: string
   model: string
-  messages: OllamaMessage[]
+  messages: NvidiaMessage[]
+  apiKey?: string
   temperature?: number
   maxTokens?: number
   topP?: number
@@ -25,11 +26,11 @@ interface StreamChunkData {
   done: boolean
 }
 
-export class OllamaProvider implements AIProvider {
-  name = 'Ollama'
+export class NvidiaProvider implements AIProvider {
+  name = 'NVIDIA NIM'
 
   async chat(messages: ChatMessage[], config: AIConfig): Promise<string> {
-    console.log('[ollama-provider] chat() called with:', {
+    console.log('[nvidia-provider] chat() called with:', {
       endpoint: config.endpoint,
       model: config.model,
       messageCount: messages.length,
@@ -42,6 +43,7 @@ export class OllamaProvider implements AIProvider {
         role: m.role,
         content: m.content,
       })),
+      apiKey: config.apiKey,
       temperature: config.temperature,
       maxTokens: config.maxTokens,
       topP: config.topP,
@@ -49,24 +51,24 @@ export class OllamaProvider implements AIProvider {
       extraBody: config.extraBody,
     }
 
-    console.log('[ollama-provider] Calling invoke with payload:', JSON.stringify(payload, null, 2))
+    console.log('[nvidia-provider] Calling invoke with payload:', JSON.stringify(payload, null, 2))
 
     try {
-      console.log('[ollama-provider] About to call invoke...')
-      const result = await invoke<string>('chat_with_provider', { request: payload, provider: 'ollama' })
-      console.log('[ollama-provider] invoke returned!')
-      console.log('[ollama-provider] result type:', typeof result)
-      console.log('[ollama-provider] result:', result)
+      console.log('[nvidia-provider] About to call invoke...')
+      const result = await invoke<string>('chat_with_provider', { request: payload, provider: 'openai' })
+      console.log('[nvidia-provider] invoke returned!')
+      console.log('[nvidia-provider] result type:', typeof result)
+      console.log('[nvidia-provider] result:', result)
 
       // Force convert to string if needed
       const resultStr = String(result)
-      console.log('[ollama-provider] converted to string, length:', resultStr.length)
+      console.log('[nvidia-provider] converted to string, length:', resultStr.length)
       return resultStr
     } catch (error: any) {
-      console.error('[ollama-provider] invoke failed with error:', error)
-      console.error('[ollama-provider] error name:', error?.name)
-      console.error('[ollama-provider] error message:', error?.message)
-      console.error('[ollama-provider] error stack:', error?.stack)
+      console.error('[nvidia-provider] invoke failed with error:', error)
+      console.error('[nvidia-provider] error name:', error?.name)
+      console.error('[nvidia-provider] error message:', error?.message)
+      console.error('[nvidia-provider] error stack:', error?.stack)
       throw error
     }
   }
@@ -76,7 +78,7 @@ export class OllamaProvider implements AIProvider {
     config: AIConfig,
     onChunk: (chunk: string) => void | Promise<void>
   ): Promise<void> {
-    console.log('[ollama-provider] streamChat() called - using true streaming')
+    console.log('[nvidia-provider] streamChat() called - using true streaming')
 
     const payload: ChatRequestPayload = {
       endpoint: config.endpoint,
@@ -85,6 +87,7 @@ export class OllamaProvider implements AIProvider {
         role: m.role,
         content: m.content,
       })),
+      apiKey: config.apiKey,
       temperature: config.temperature,
       maxTokens: config.maxTokens,
       topP: config.topP,
@@ -98,7 +101,7 @@ export class OllamaProvider implements AIProvider {
 
   try {
     // Generate unique stream ID for this streaming session
-    const streamId = `ollama-stream-${crypto.randomUUID()}`
+    const streamId = `nvidia-stream-${crypto.randomUUID()}`
 
     // Add streamEvent to payload
     const payloadWithStream = { ...payload, streamEvent: streamId }
@@ -106,7 +109,7 @@ export class OllamaProvider implements AIProvider {
     // Listen for stream chunks from the backend
     unlisten = await listen<StreamChunkData>(streamId, (event) => {
       if (event.payload.done) {
-        console.log('[ollama-provider] Stream complete, received', fullContent.length, 'chars')
+        console.log('[nvidia-provider] Stream complete, received', fullContent.length, 'chars')
         return
       }
 
@@ -117,9 +120,9 @@ export class OllamaProvider implements AIProvider {
     })
 
     // Start the streaming request
-    await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'ollama' })
+    await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'openai' })
     } catch (error: any) {
-      console.error('[ollama-provider] streamChat error:', error)
+      console.error('[nvidia-provider] streamChat error:', error)
       throw error
     } finally {
       if (unlisten) {
@@ -134,7 +137,7 @@ export class OllamaProvider implements AIProvider {
     onChunk: (chunk: string) => void | Promise<void>,
     onThinking: (thinking: string) => void | Promise<void>
   ): Promise<void> {
-    console.log('[ollama-provider] streamChatWithThinking() called - using true streaming')
+    console.log('[nvidia-provider] streamChatWithThinking() called - using true streaming')
 
     const payload: ChatRequestPayload = {
       endpoint: config.endpoint,
@@ -143,6 +146,7 @@ export class OllamaProvider implements AIProvider {
         role: m.role,
         content: m.content,
       })),
+      apiKey: config.apiKey,
       temperature: config.temperature,
       maxTokens: config.maxTokens,
       topP: config.topP,
@@ -157,7 +161,7 @@ export class OllamaProvider implements AIProvider {
 
   try {
     // Generate unique stream ID for this streaming session
-    const streamId = `ollama-stream-${crypto.randomUUID()}`
+    const streamId = `nvidia-stream-${crypto.randomUUID()}`
 
     // Add streamEvent to payload
     const payloadWithStream = { ...payload, streamEvent: streamId }
@@ -165,7 +169,7 @@ export class OllamaProvider implements AIProvider {
     // Listen for stream chunks from the backend
     unlisten = await listen<StreamChunkData>(streamId, (event) => {
       if (event.payload.done) {
-        console.log('[ollama-provider] Stream complete, content:', fullContent.length, 'chars, thinking:', fullThinking.length, 'chars')
+        console.log('[nvidia-provider] Stream complete, content:', fullContent.length, 'chars, thinking:', fullThinking.length, 'chars')
         return
       }
 
@@ -181,9 +185,9 @@ export class OllamaProvider implements AIProvider {
     })
 
     // Start the streaming request
-    await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'ollama' })
+    await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'openai' })
     } catch (error: any) {
-      console.error('[ollama-provider] streamChatWithThinking error:', error)
+      console.error('[nvidia-provider] streamChatWithThinking error:', error)
       throw error
     } finally {
       if (unlisten) {
@@ -193,4 +197,4 @@ export class OllamaProvider implements AIProvider {
   }
 }
 
-export const ollamaProvider = new OllamaProvider()
+export const nvidiaProvider = new NvidiaProvider()

@@ -1,6 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSettingsStore, SearchProvider } from '../../../../application/store/settings-store';
-import { X, Globe, Search, Key, Filter, BookOpen } from 'lucide-react';
+import { useLLMPoolStore } from '../../../../application/store/llm-pool-store';
+import { checkProviderHealth } from '../../../../application/services/llm-pool-health-check';
+import { AIConfig, AIProviderType, PROVIDER_DEFAULTS } from '../../../../domain/models/ai-context';
+import { PersonaRole, PERSONA_PROMPTS } from '../../../../domain/models/llm-pool';
+import { fetchAvailableModels, ModelInfo } from '../../../../infrastructure/ai-providers/model-detector';
+import { X, Globe, Search, Key, Filter, BookOpen, Server, Plus, Trash2, RefreshCw, CheckCircle, XCircle, Loader2, Edit3 } from 'lucide-react';
 import './SettingsView.css';
 
 interface SettingsViewProps {
@@ -8,7 +13,7 @@ interface SettingsViewProps {
   onClose: () => void;
 }
 
-type TabType = 'general' | 'webSearch' | 'plugins';
+type TabType = 'general' | 'webSearch' | 'llmPool' | 'plugins';
 
 const PROVIDER_OPTIONS: { value: SearchProvider; label: string; requiresKey: boolean }[] = [
   { value: 'duckduckgo', label: 'DuckDuckGo (Free)', requiresKey: false },
@@ -84,17 +89,24 @@ export function SettingsView({ isOpen, onClose }: SettingsViewProps) {
               <Globe size={18} />
               General
             </button>
-            <button
-              className={`tab-button ${activeTab === 'webSearch' ? 'active' : ''}`}
-              onClick={() => setActiveTab('webSearch')}
-            >
-              <Search size={18} />
-              Web Search
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'plugins' ? 'active' : ''}`}
-              onClick={() => setActiveTab('plugins')}
-            >
+        <button
+          className={`tab-button ${activeTab === 'webSearch' ? 'active' : ''}`}
+          onClick={() => setActiveTab('webSearch')}
+        >
+          <Search size={18} />
+          Web Search
+        </button>
+        <button
+          className={`tab-button ${activeTab === 'llmPool' ? 'active' : ''}`}
+          onClick={() => setActiveTab('llmPool')}
+        >
+          <Server size={18} />
+          LLM Pool
+        </button>
+        <button
+          className={`tab-button ${activeTab === 'plugins' ? 'active' : ''}`}
+          onClick={() => setActiveTab('plugins')}
+        >
               <BookOpen size={18} />
               Plugins
             </button>
@@ -301,46 +313,602 @@ export function SettingsView({ isOpen, onClose }: SettingsViewProps) {
               </section>
             )}
 
-            {activeTab === 'plugins' && (
-              <section className="settings-section">
-                <h3>
-                  <BookOpen size={20} />
-                  Plugin Configuration
-                </h3>
-                
-                <div className="plugin-list">
-                  {Object.entries(plugins).length === 0 ? (
-                    <div className="empty-plugins">
-                      No plugins configured yet.
+      {activeTab === 'llmPool' && <LLMPoolTab />}
+
+      {activeTab === 'plugins' && (
+        <section className="settings-section">
+          <h3>
+            <BookOpen size={20} />
+            Plugin Configuration
+          </h3>
+
+          <div className="plugin-list">
+            {Object.entries(plugins).length === 0 ? (
+              <div className="empty-plugins">
+                No plugins configured yet.
+              </div>
+            ) : (
+              Object.entries(plugins).map(([id, config]) => (
+                <div key={id} className="plugin-item">
+                  <div className="plugin-header">
+                    <h4>{id}</h4>
+                    <label className="toggle">
+                      <input
+                        type="checkbox"
+                        checked={config.enabled}
+                        onChange={(e) => updatePluginConfig(id, { ...config, enabled: e.target.checked })}
+                      />
+                      <span className="toggle-slider"></span>
+                    </label>
+                  </div>
+                  {config.config && (
+                    <div className="plugin-config">
+                      <pre>{JSON.stringify(config.config, null, 2)}</pre>
                     </div>
-                  ) : (
-                    Object.entries(plugins).map(([id, config]) => (
-                      <div key={id} className="plugin-item">
-                        <div className="plugin-header">
-                          <h4>{id}</h4>
-                          <label className="toggle">
-                            <input 
-                              type="checkbox" 
-                              checked={config.enabled}
-                              onChange={(e) => updatePluginConfig(id, { ...config, enabled: e.target.checked })}
-                            />
-                            <span className="toggle-slider"></span>
-                          </label>
-                        </div>
-                        {config.config && (
-                          <div className="plugin-config">
-                            <pre>{JSON.stringify(config.config, null, 2)}</pre>
-                          </div>
-                        )}
-                      </div>
-                    ))
                   )}
                 </div>
-              </section>
+              ))
             )}
+          </div>
+        </section>
+      )}
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+// LLM Pool Tab Component
+function LLMPoolTab() {
+  const {
+    providers,
+    pendingTasks,
+    runningTasks,
+    addProvider,
+    removeProvider,
+    enableProvider,
+    disableProvider,
+    setProviderHealth,
+    setPrimaryProvider,
+    getStatistics,
+    updateConfig,
+    updateProvider,
+    config: poolConfig,
+  } = useLLMPoolStore();
+
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
+  const [newProviderName, setNewProviderName] = useState('');
+  const [newProviderNickname, setNewProviderNickname] = useState('');
+  const [newProviderType, setNewProviderType] = useState<AIProviderType>('llamacpp');
+  const [newProviderEndpoint, setNewProviderEndpoint] = useState('');
+  const [newProviderModel, setNewProviderModel] = useState('');
+  const [newProviderApiKey, setNewProviderApiKey] = useState('');
+  const [newProviderPersona, setNewProviderPersona] = useState<PersonaRole>('neutral');
+  const [isCheckingHealth, setIsCheckingHealth] = useState<string | null>(null);
+  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
+  const [isFetchingModels, setIsFetchingModels] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const stats = getStatistics();
+
+  // Auto-fill defaults when provider type changes (only when NOT editing)
+  useEffect(() => {
+    if (editingProviderId) {
+      // Don't overwrite existing values when editing
+      return;
+    }
+    const defaults = PROVIDER_DEFAULTS[newProviderType];
+    if (defaults) {
+      setNewProviderEndpoint(defaults.endpoint || '');
+      setNewProviderModel(defaults.model || '');
+      setNewProviderApiKey('');
+      setAvailableModels([]);
+      setFetchError(null);
+    }
+  }, [newProviderType, editingProviderId]);
+
+  // Track form interaction state to prevent unnecessary fetches
+  const formInitializedRef = useRef(false);
+
+  // Fetch models when endpoint or API key changes significantly (only after user interaction)
+  useEffect(() => {
+    // Don't auto-fetch if form not shown, or if editing existing provider
+    if (!showAddForm || editingProviderId) {
+      formInitializedRef.current = false;
+      return;
+    }
+
+    // Set initialized flag after first render
+    if (!formInitializedRef.current) {
+      formInitializedRef.current = true;
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      // Only auto-fetch for local providers that don't need API keys
+      const isLocalProvider = newProviderType === 'llamacpp' || newProviderType === 'ollama' || newProviderType === 'vllm';
+      const needsExplicitFetch = newProviderApiKey || 
+        newProviderEndpoint.includes('generativelanguage.googleapis.com') ||
+        newProviderEndpoint.includes('openrouter.ai') ||
+        newProviderEndpoint.includes('api.openai.com') ||
+        newProviderEndpoint.includes('api.anthropic.com');
+
+      // Skip auto-fetch for local providers without API key
+      if (isLocalProvider && !needsExplicitFetch) {
+        return;
+      }
+
+      // Only fetch if endpoint looks valid
+      if (newProviderEndpoint && newProviderEndpoint.startsWith('http')) {
+        fetchModels();
+      }
+    }, 1000);
+
+    return () => clearTimeout(timeoutId);
+  }, [showAddForm, editingProviderId, newProviderEndpoint, newProviderApiKey, newProviderType]);
+
+  const fetchModels = async () => {
+    if (!newProviderEndpoint) return;
+
+    setIsFetchingModels(true);
+    setFetchError(null);
+
+    try {
+      const models = await fetchAvailableModels(newProviderEndpoint, newProviderApiKey || undefined);
+      setAvailableModels(models);
+
+      // If no model selected and we have models, auto-select first one
+      if (!newProviderModel && models.length > 0) {
+        setNewProviderModel(models[0].id);
+      }
+    } catch (error) {
+      console.error('Failed to fetch models:', error);
+      setFetchError(error instanceof Error ? error.message : 'Failed to fetch models');
+      setAvailableModels([]);
+    } finally {
+      setIsFetchingModels(false);
+    }
+  };
+
+  const handleAddProvider = () => {
+    if (!newProviderName.trim() || !newProviderEndpoint.trim()) return;
+
+    const providerConfig: AIConfig = {
+      provider: newProviderType,
+      endpoint: newProviderEndpoint,
+      model: newProviderModel || 'default',
+      apiKey: newProviderApiKey || undefined,
+    };
+
+    const nickname = newProviderNickname.trim() || undefined;
+
+    if (editingProviderId) {
+      // Update existing provider
+      updateProvider(editingProviderId, {
+        name: newProviderName.trim(),
+        nickname,
+        config: providerConfig,
+        personaRole: newProviderPersona,
+      });
+    } else {
+      // Add new provider
+      addProvider(newProviderName.trim(), providerConfig, nickname, newProviderPersona);
+    }
+
+    // Reset form
+    resetForm();
+  };
+
+  const resetForm = () => {
+    setNewProviderName('');
+    setNewProviderNickname('');
+    setNewProviderEndpoint('');
+    setNewProviderModel('');
+    setNewProviderApiKey('');
+    setNewProviderType('llamacpp');
+    setNewProviderPersona('neutral');
+    setEditingProviderId(null);
+    setShowAddForm(false);
+  };
+
+  const handleEditProvider = (providerId: string) => {
+    const provider = providers.find((p) => p.id === providerId);
+    if (!provider) return;
+
+    setEditingProviderId(providerId);
+    setNewProviderName(provider.name);
+    setNewProviderNickname(provider.nickname || '');
+    setNewProviderType(provider.config.provider);
+    setNewProviderEndpoint(provider.config.endpoint);
+    setNewProviderModel(provider.config.model);
+    setNewProviderApiKey(provider.config.apiKey || '');
+    setNewProviderPersona(provider.personaRole || 'neutral');
+    setShowAddForm(true);
+  };
+
+  const handleCancelEdit = () => {
+    resetForm();
+  };
+
+  const handleHealthCheck = async (providerId: string) => {
+    const provider = providers.find((p) => p.id === providerId);
+    if (!provider) return;
+
+    setIsCheckingHealth(providerId);
+    const result = await checkProviderHealth(provider);
+    setProviderHealth(providerId, result.isHealthy, result.latency, result.error);
+    setIsCheckingHealth(null);
+  };
+
+  const handleCheckAllHealth = async () => {
+    for (const provider of providers.filter((p) => p.isEnabled)) {
+      await handleHealthCheck(provider.id);
+    }
+  };
+
+  return (
+    <section className="settings-section">
+      <h3>
+        <Server size={20} />
+        LLM Pool Management
+      </h3>
+
+      <div className="setting-description">
+        Configure multiple LLM providers to distribute tasks across. The main LLM will act as an orchestrator,
+        distributing tasks like PPT generation, quiz creation, and summarization to available workers.
+      </div>
+
+      {/* Pool Statistics */}
+      <div className="pool-stats">
+        <div className="stat-item">
+          <span className="stat-label">Providers</span>
+          <span className="stat-value">{stats.healthyProviders}/{stats.totalProviders}</span>
+        </div>
+        <div className="stat-item">
+          <span className="stat-label">Pending</span>
+          <span className="stat-value">{stats.pendingTasks}</span>
+        </div>
+        <div className="stat-item">
+          <span className="stat-label">Running</span>
+          <span className="stat-value">{stats.runningTasks}</span>
+        </div>
+        <div className="stat-item">
+          <span className="stat-label">Completed</span>
+          <span className="stat-value">{stats.completedTasks}</span>
+        </div>
+        <div className="stat-item">
+          <span className="stat-label">Failed</span>
+          <span className="stat-value">{stats.failedTasks}</span>
+        </div>
+        <div className="stat-item">
+          <span className="stat-label">Avg Latency</span>
+          <span className="stat-value">{stats.averageLatency}ms</span>
+        </div>
+      </div>
+
+      {/* Pool Configuration */}
+      <div className="setting-section-subtitle">
+        <RefreshCw size={16} />
+        Pool Configuration
+      </div>
+
+      <div className="setting-item checkbox">
+        <label>
+          <input
+            type="checkbox"
+            checked={poolConfig.randomSelection}
+            onChange={(e) => updateConfig({ randomSelection: e.target.checked })}
+          />
+          Random selection (instead of priority-based)
+        </label>
+      </div>
+
+      <div className="setting-item checkbox">
+        <label>
+          <input
+            type="checkbox"
+            checked={poolConfig.preferLowLatency}
+            onChange={(e) => updateConfig({ preferLowLatency: e.target.checked })}
+          />
+          Prefer low-latency providers
+        </label>
+      </div>
+
+      <div className="setting-row">
+        <div className="setting-item">
+          <label>Health Check Interval (ms)</label>
+          <input
+            type="number"
+            value={poolConfig.healthCheckInterval}
+            onChange={(e) => updateConfig({ healthCheckInterval: parseInt(e.target.value) })}
+            min="5000"
+            step="5000"
+          />
+        </div>
+        <div className="setting-item">
+          <label>Task Timeout (ms)</label>
+          <input
+            type="number"
+            value={poolConfig.taskTimeout}
+            onChange={(e) => updateConfig({ taskTimeout: parseInt(e.target.value) })}
+            min="10000"
+            step="10000"
+          />
+        </div>
+        <div className="setting-item">
+          <label>Max Retries</label>
+          <input
+            type="number"
+            value={poolConfig.maxRetries}
+            onChange={(e) => updateConfig({ maxRetries: parseInt(e.target.value) })}
+            min="0"
+            max="5"
+          />
+        </div>
+      </div>
+
+      {/* Provider List Header */}
+      <div className="pool-header">
+        <div className="setting-section-subtitle">
+          <Server size={16} />
+          Pool Providers ({providers.length})
+        </div>
+        <div className="pool-actions">
+          <button className="icon-button" onClick={handleCheckAllHealth} title="Check All Health">
+            <RefreshCw size={16} />
+          </button>
+          <button className="icon-button primary" onClick={() => { resetForm(); setShowAddForm(true); }} title="Add Provider">
+            <Plus size={16} />
+          </button>
+        </div>
+      </div>
+
+      {/* Add/Edit Provider Form */}
+      {showAddForm && (
+        <div className="add-provider-form">
+          <div className="form-header">
+            <h4>{editingProviderId ? 'Edit Provider' : 'Add Provider'}</h4>
+          </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label>Name</label>
+          <input
+            type="text"
+            value={newProviderName}
+            onChange={(e) => setNewProviderName(e.target.value)}
+            placeholder="e.g., My Llama Server"
+          />
+        </div>
+        <div className="form-group">
+          <label>Type</label>
+          <select
+            value={newProviderType}
+            onChange={(e) => setNewProviderType(e.target.value as AIProviderType)}
+          >
+            <option value="llamacpp">LLama.cpp</option>
+            <option value="ollama">Ollama</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="vllm">vLLM</option>
+            <option value="nvidia">NVIDIA NIM</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="gemini">Google Gemini</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+      </div>
+<div className="form-row">
+                <div className="form-group">
+                  <label>Nickname (for chat)</label>
+                  <input
+                    type="text"
+                    value={newProviderNickname}
+                    onChange={(e) => setNewProviderNickname(e.target.value)}
+                    placeholder="e.g., G, 小g, g sen"
+                  />
+                  <div className="form-hint">Short name used to address this LLM in chat</div>
+                </div>
+                <div className="form-group">
+                  <label>Persona/Role</label>
+                  <select
+                    value={newProviderPersona}
+                    onChange={(e) => setNewProviderPersona(e.target.value as PersonaRole)}
+                  >
+                    {Object.entries(PERSONA_PROMPTS).map(([role, config]) => (
+                      <option key={role} value={role}>
+                        {role.charAt(0).toUpperCase() + role.slice(1)} - {config.description}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="form-hint">How this LLM behaves in discussions</div>
+                </div>
+              </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label>Endpoint URL</label>
+              <input
+                type="text"
+                value={newProviderEndpoint}
+                onChange={(e) => setNewProviderEndpoint(e.target.value)}
+                placeholder="http://localhost:8080"
+              />
+            </div>
+            <div className="form-group">
+              <label>
+                Model
+                {isFetchingModels && <Loader2 size={14} className="spinning inline-icon" style={{ marginLeft: '8px' }} />}
+              </label>
+              {availableModels.length > 0 ? (
+                <select
+                  value={newProviderModel}
+                  onChange={(e) => setNewProviderModel(e.target.value)}
+                >
+                  <option value="">Select a model...</option>
+                  {availableModels.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name || model.id}
+                      {model.description && ` - ${model.description.slice(0, 50)}`}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="model-input-with-fetch">
+                  <input
+                    type="text"
+                    value={newProviderModel}
+                    onChange={(e) => setNewProviderModel(e.target.value)}
+                    placeholder={isFetchingModels ? 'Fetching models...' : fetchError ? 'Failed to fetch models' : 'Enter model name'}
+                    disabled={isFetchingModels}
+                  />
+                  <button
+                    className="icon-button small"
+                    onClick={fetchModels}
+                    disabled={isFetchingModels || !newProviderEndpoint}
+                    title="Fetch available models"
+                  >
+                    <RefreshCw size={14} className={isFetchingModels ? 'spinning' : ''} />
+                  </button>
+                </div>
+              )}
+              {fetchError && (
+                <div className="fetch-error">{fetchError}</div>
+              )}
+            </div>
+          </div>
+          {(newProviderType === 'openai' || newProviderType === 'anthropic' || newProviderType === 'nvidia' || newProviderType === 'openrouter' || newProviderType === 'gemini' || newProviderType === 'custom') && (
+            <div className="form-group">
+              <label>API Key (optional)</label>
+              <input
+                type="password"
+                value={newProviderApiKey}
+                onChange={(e) => setNewProviderApiKey(e.target.value)}
+                placeholder="Enter API key if required"
+              />
+            </div>
+          )}
+          <div className="form-actions">
+            <button className="button secondary" onClick={handleCancelEdit}>
+              Cancel
+            </button>
+            <button className="button primary" onClick={handleAddProvider}>
+              {editingProviderId ? 'Save Changes' : 'Add to Pool'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Provider List */}
+      <div className="provider-list">
+        {providers.length === 0 ? (
+          <div className="empty-providers">
+            No providers in pool. Click "Add Provider" to add LLM workers.
+          </div>
+        ) : (
+          providers.map((provider) => (
+            <div key={provider.id} className={`provider-item ${provider.isHealthy ? 'healthy' : 'unhealthy'}`}>
+              <div className="provider-main">
+                <div className="provider-status">
+                  {provider.isHealthy ? (
+                    <CheckCircle size={16} className="status-healthy" />
+                  ) : (
+                    <XCircle size={16} className="status-unhealthy" />
+                  )}
+                </div>
+<div className="provider-info">
+                  <div className="provider-name">
+                    {provider.name}
+                    {provider.nickname && <span className="provider-nickname">({provider.nickname})</span>}
+                    {provider.isPrimary && <span className="provider-primary-badge">Primary</span>}
+                    {provider.personaRole && (
+                      <span className="provider-persona-badge" title={PERSONA_PROMPTS[provider.personaRole]?.description}>
+                        {provider.personaRole.charAt(0).toUpperCase() + provider.personaRole.slice(1)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="provider-details">
+            {provider.config.provider} • {provider.config.endpoint} • {provider.config.model}
+            {provider.averageLatency > 0 && ` • ${provider.averageLatency}ms`}
+            {provider.currentTasks > 0 && ` • ${provider.currentTasks} tasks`}
+          </div>
+        </div>
+        <div className="provider-actions">
+          <button
+            className="icon-button"
+            onClick={() => handleEditProvider(provider.id)}
+            title="Edit Provider"
+          >
+            <Edit3 size={14} />
+          </button>
+          <button
+            className="icon-button"
+            onClick={() => handleHealthCheck(provider.id)}
+            disabled={isCheckingHealth === provider.id}
+            title="Check Health"
+          >
+            <RefreshCw size={14} className={isCheckingHealth === provider.id ? 'spinning' : ''} />
+          </button>
+          <label className="toggle small" title="Set as Primary LLM">
+            <input
+              type="checkbox"
+              checked={provider.isPrimary}
+              onChange={(e) =>
+                e.target.checked ? setPrimaryProvider(provider.id) : undefined
+              }
+            />
+            <span className="toggle-slider"></span>
+          </label>
+          <label className="toggle small" title="Enable/Disable">
+            <input
+              type="checkbox"
+              checked={provider.isEnabled}
+              onChange={(e) =>
+                e.target.checked ? enableProvider(provider.id) : disableProvider(provider.id)
+              }
+            />
+            <span className="toggle-slider"></span>
+          </label>
+          <button
+            className="icon-button danger"
+            onClick={() => removeProvider(provider.id)}
+            title="Remove Provider"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Task Queue Status */}
+      {(pendingTasks.length > 0 || runningTasks.length > 0) && (
+        <>
+          <div className="setting-section-subtitle" style={{ marginTop: '1.5rem' }}>
+            <RefreshCw size={16} />
+            Active Tasks
+          </div>
+          <div className="task-list">
+            {runningTasks.map((task) => (
+              <div key={task.id} className="task-item running">
+                <span className="task-type">{task.type}</span>
+                <span className="task-status">Running</span>
+                <span className="task-provider">{providers.find((p) => p.id === task.assignedProviderId)?.name || 'Unknown'}</span>
+              </div>
+            ))}
+            {pendingTasks.slice(0, 5).map((task) => (
+              <div key={task.id} className="task-item pending">
+                <span className="task-type">{task.type}</span>
+                <span className="task-status">Pending</span>
+              </div>
+            ))}
+            {pendingTasks.length > 5 && (
+              <div className="task-more">+{pendingTasks.length - 5} more pending</div>
+            )}
+          </div>
+        </>
+      )}
+    </section>
   );
 }

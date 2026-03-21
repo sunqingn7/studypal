@@ -22,8 +22,8 @@ interface AIChatStore {
   renameTab: (tabId: string, newTitle: string) => void
 
   // Chat operations
-  addMessage: (tabId: string, role: 'user' | 'assistant', content: string, thinking?: string) => void
-  updateMessage: (tabId: string, messageId: string, content?: string, thinking?: string) => void
+  addMessage: (tabId: string, role: 'user' | 'assistant', content: string, thinking?: string, providerInfo?: { nickname?: string; providerId?: string; color?: string }, discussSessionId?: string) => string
+  updateMessage: (tabId: string, messageId: string, content?: string, thinking?: string, providerInfo?: { nickname?: string; providerId?: string; color?: string }) => void
   deleteMessage: (tabId: string, messageId: string) => void
   clearChat: (tabId: string) => void
   getActiveTab: () => ChatTab | undefined
@@ -49,6 +49,9 @@ const createDefaultProviderConfigs = (): ProviderConfigs => ({
   openai: { ...DEFAULT_AI_CONFIG, provider: 'openai', ...PROVIDER_DEFAULTS.openai },
   anthropic: { ...DEFAULT_AI_CONFIG, provider: 'anthropic', ...PROVIDER_DEFAULTS.anthropic },
   vllm: { ...DEFAULT_AI_CONFIG, provider: 'vllm', ...PROVIDER_DEFAULTS.vllm },
+  nvidia: { ...DEFAULT_AI_CONFIG, provider: 'nvidia', ...PROVIDER_DEFAULTS.nvidia },
+  openrouter: { ...DEFAULT_AI_CONFIG, provider: 'openrouter', ...PROVIDER_DEFAULTS.openrouter },
+  gemini: { ...DEFAULT_AI_CONFIG, provider: 'gemini', ...PROVIDER_DEFAULTS.gemini },
   custom: { ...DEFAULT_AI_CONFIG, provider: 'custom', ...PROVIDER_DEFAULTS.custom },
 })
 
@@ -106,25 +109,31 @@ export const useAIChatStore = create<AIChatStore>((set, get) => ({
     }))
   },
 
-  addMessage: (tabId, role, content, thinking) => {
-    const message: ChatMessage = {
-      id: crypto.randomUUID(),
-      role,
-      content,
-      thinking,
-      timestamp: Date.now(),
-    }
+  addMessage: (tabId, role, content, thinking, providerInfo, discussSessionId) => {
+      const message: ChatMessage = {
+        id: crypto.randomUUID(),
+        role,
+        content,
+        thinking,
+        timestamp: Date.now(),
+        ...(providerInfo?.nickname && { providerNickname: providerInfo.nickname }),
+        ...(providerInfo?.providerId && { providerId: providerInfo.providerId }),
+        ...(providerInfo?.color && { providerColor: providerInfo.color }),
+        ...(discussSessionId && { discussSessionId }),
+      }
 
-    set((state) => ({
-      tabs: state.tabs.map((t) =>
-        t.id === tabId
-        ? { ...t, messages: [...t.messages, message] }
-        : t
-      ),
-    }))
-  },
+      set((state) => ({
+        tabs: state.tabs.map((t) =>
+          t.id === tabId
+            ? { ...t, messages: [...t.messages, message] }
+            : t
+        ),
+      }))
+      
+      return message.id
+    },
 
-  updateMessage: (tabId, messageId, content, thinking) => {
+  updateMessage: (tabId, messageId, content, thinking, providerInfo) => {
     set((state) => ({
       tabs: state.tabs.map((t) =>
         t.id === tabId
@@ -136,6 +145,9 @@ export const useAIChatStore = create<AIChatStore>((set, get) => ({
                       ...m,
                       ...(content !== undefined && { content }),
                       ...(thinking !== undefined && { thinking }),
+                      ...(providerInfo?.nickname !== undefined && { providerNickname: providerInfo.nickname }),
+                      ...(providerInfo?.providerId !== undefined && { providerId: providerInfo.providerId }),
+                      ...(providerInfo?.color !== undefined && { providerColor: providerInfo.color }),
                     }
                   : m
               ),
@@ -154,6 +166,16 @@ export const useAIChatStore = create<AIChatStore>((set, get) => ({
         if (msgIndex === -1) return t
         
         const targetMsg = t.messages[msgIndex]
+        
+        // Discuss mode: If message has discussSessionId, delete all messages in that session
+        if (targetMsg.discussSessionId) {
+          return {
+            ...t,
+            messages: t.messages.filter((m) => m.discussSessionId !== targetMsg.discussSessionId)
+          }
+        }
+        
+        // Regular mode: Delete message and adjacent pair
         let indicesToRemove = new Set([msgIndex])
         
         // If user message, also remove the next assistant message (the reply)

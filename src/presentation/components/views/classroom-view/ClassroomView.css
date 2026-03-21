@@ -1,0 +1,111 @@
+.classroom-view {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg-primary);
+}
+
+.classroom-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.classroom-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.classroom-icon {
+  font-size: 24px;
+}
+
+.classroom-controls {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.classroom-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.progress-bar {
+  width: 120px;
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent-color);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.classroom-exit-btn {
+  padding: 8px 16px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.classroom-exit-btn:hover {
+  background: var(--bg-hover);
+}
+
+.classroom-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.classroom-top {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.ppt-panel-container {
+  flex: 3;
+  border-right: 1px solid var(--border-color);
+}
+
+.document-panel-container {
+  flex: 2;
+}
+
+.classroom-bottom {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  border-top: 1px solid var(--border-color);
+}
+
+.chat-panel-container {
+  flex: 1;
+  border-right: 1px solid var(--border-color);
+}
+
+.note-panel-container {
+  flex: 1;
+}
