@@ -132,6 +132,10 @@
   -webkit-user-select: text !important;
   -moz-user-select: text !important;
   -ms-user-select: text !important;
+  display: inline !important;
+  overflow: visible !important;
+  /* Debug: make spans visible temporarily */
+  /* background: rgba(255, 0, 0, 0.3) !important; */
 }
 
 .pdf-text-layer ::selection {
