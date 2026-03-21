@@ -187,7 +187,7 @@ export class SummarySkillMCPServerPlugin implements MCPServerPlugin {
       console.log(`[SummarySkill] Selected provider for summarization: ${selectedProvider.nickname || selectedProvider.name}`);
 
       // 4. Generate summary using TaskDistributor
-      const distributor = new TaskDistributor(poolStore);
+      const distributor = new TaskDistributor();
       const style = (params.style as string) || 'bullet_points';
       const maxLength = (params.max_length as number) || this.maxSummaryLength;
       const includeThinking = (params.include_thinking as boolean) || false;

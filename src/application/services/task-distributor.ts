@@ -5,15 +5,15 @@ import {
 } from '../../domain/models/llm-pool'
 import { ChatMessage } from '../../domain/models/ai-context'
 import { getProvider } from '../../infrastructure/ai-providers/provider-factory'
-import type { LLMPoolState } from '../store/llm-pool-store'
+import { useLLMPoolStore } from '../store/llm-pool-store'
 
 export class TaskDistributor {
-  private poolStore: LLMPoolState
   private activeTasks: Map<string, AbortController> = new Map()
   private isProcessing: boolean = false
 
-  constructor(poolStore: LLMPoolState) {
-    this.poolStore = poolStore
+  // Always get fresh state to avoid stale references after Zustand set()
+  private getStore(): ReturnType<typeof useLLMPoolStore.getState> {
+    return useLLMPoolStore.getState()
   }
 
   // Submit and execute a task
@@ -28,7 +28,8 @@ export class TaskDistributor {
       timeout?: number
     }
   ): Promise<TaskResult> {
-    const taskId = this.poolStore.submitTask({
+    const store = this.getStore()
+    const taskId = store.submitTask({
       type: taskType,
       prompt,
       context,
@@ -43,16 +44,17 @@ export class TaskDistributor {
 
   // Execute a specific task
   private async executeTask(taskId: string): Promise<TaskResult> {
-    const pendingTask = this.poolStore.pendingTasks.find((t) => t.id === taskId)
+    const store = this.getStore()
+    const pendingTask = store.pendingTasks.find((t) => t.id === taskId)
     if (!pendingTask) {
       throw new Error(`Task ${taskId} not found`)
     }
 
     // Select provider
-    const provider = this.poolStore.selectProviderForTask(pendingTask)
+    const provider = store.selectProviderForTask(pendingTask)
     if (!provider) {
       const error = 'No available providers in pool'
-      this.poolStore.failTask(taskId, error)
+      store.failTask(taskId, error)
       return {
         taskId,
         providerId: '',
@@ -65,13 +67,13 @@ export class TaskDistributor {
     }
 
     // Assign task
-    this.poolStore.assignTask(taskId, provider.id)
+    store.assignTask(taskId, provider.id)
 
     // Create abort controller for timeout
     const abortController = new AbortController()
     this.activeTasks.set(taskId, abortController)
 
-    const timeout = pendingTask.timeout || this.poolStore.config.taskTimeout
+    const timeout = pendingTask.timeout || store.config.taskTimeout
     const timeoutId = setTimeout(() => {
       abortController.abort()
     }, timeout)
@@ -93,8 +95,8 @@ export class TaskDistributor {
         timestamp: Date.now(),
       }
 
-      this.poolStore.completeTask(taskId, taskResult)
-      this.poolStore.updateProviderStats(provider.id, latency, true)
+      this.getStore().completeTask(taskId, taskResult)
+      this.getStore().updateProviderStats(provider.id, latency, true)
       this.activeTasks.delete(taskId)
 
       return taskResult
@@ -103,8 +105,8 @@ export class TaskDistributor {
       const latency = Date.now() - startTime
 
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      this.poolStore.failTask(taskId, errorMessage)
-      this.poolStore.updateProviderStats(provider.id, latency, false)
+      this.getStore().failTask(taskId, errorMessage)
+      this.getStore().updateProviderStats(provider.id, latency, false)
       this.activeTasks.delete(taskId)
 
       return {
@@ -195,8 +197,8 @@ export class TaskDistributor {
     this.isProcessing = true
 
     try {
-      while (this.poolStore.pendingTasks.length > 0) {
-        const task = this.poolStore.pendingTasks[0]
+      while (this.getStore().pendingTasks.length > 0) {
+        const task = this.getStore().pendingTasks[0]
         if (task && task.status === 'pending') {
           await this.executeTask(task.id)
         } else {
@@ -232,6 +234,6 @@ export class TaskDistributor {
 }
 
 // Factory function to create distributor
-export function createTaskDistributor(poolStore: LLMPoolState): TaskDistributor {
-  return new TaskDistributor(poolStore)
+export function createTaskDistributor(): TaskDistributor {
+  return new TaskDistributor()
 }
