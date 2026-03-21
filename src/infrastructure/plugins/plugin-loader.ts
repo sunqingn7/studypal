@@ -12,6 +12,7 @@ import { QwenTTSBackendPlugin } from '../../plugins/tts-backends/qwen-tts-backen
 import { TTSMCPServerPlugin } from '../../plugins/mcp-tools/tts-mcp-plugin';
 import { classroomMCPServerPlugin } from '../../plugins/mcp-tools/classroom-mcp-plugin';
 import { classroomViewPlugin } from '../../plugins/classroom-view';
+import { summarySkillMCPServerPlugin } from '../../plugins/mcp-tools/summary-skill-plugin';
 
 export async function loadAllPlugins(): Promise<void> {
   console.log('[PluginLoader] Starting plugin loading...');
@@ -35,6 +36,7 @@ export async function loadAllPlugins(): Promise<void> {
     { plugin: ttsMCPPlugin, enabled: true },
     { plugin: classroomMCPServerPlugin, enabled: true },
     { plugin: classroomViewPlugin, enabled: true },
+    { plugin: summarySkillMCPServerPlugin, enabled: true },
   ];
   
   for (const { plugin, enabled } of plugins) {

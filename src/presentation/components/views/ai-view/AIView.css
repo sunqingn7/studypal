@@ -404,7 +404,7 @@
 .message-action-btn {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--text-secondary);
   font-size: 11px;
   cursor: pointer;
   padding: 2px 6px;

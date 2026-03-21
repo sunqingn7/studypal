@@ -47,7 +47,7 @@ function AIView() {
   } = useAIChatStore()
 
   const { currentFile, currentPage } = useFileStore()
-  const { getActiveNote } = useNoteStore()
+  const { getActiveNote, createNote, updateNoteContent, createTabForNote } = useNoteStore()
   const { activeTopicId } = useTopicStore()
 
   const [showConfig, setShowConfig] = useState(false)
@@ -122,6 +122,14 @@ function AIView() {
     })
   }, [editor])
 
+  const handleNoteIt = useCallback((message: ChatMessage) => {
+    const title = message.content.slice(0, 60).replace(/[#*_`]/g, '').trim() || 'Note from AI'
+    const note = createNote(activeTopicId || null, title, 'ai-note')
+    updateNoteContent(note.id, message.content)
+    createTabForNote(note.id, title)
+    console.log('[AIView] NoteIt: Created note', note.id, title)
+  }, [activeTopicId, createNote, updateNoteContent, createTabForNote])
+
   // Track if we've initialized tabs to prevent duplicates
   const initializedRef = useRef(false)
 
@@ -156,10 +164,20 @@ function AIView() {
 
   // Detect discuss mode from loaded messages (for persistence on restart)
   useEffect(() => {
-    const hasDiscussSession = activeMessages.some((msg) => msg.discussSessionId)
-    if (hasDiscussSession) {
-      setIsDiscussMode(true)
+    if (activeMessages.length === 0) {
+      setIsDiscussMode(false)
+      return
     }
+    // Only check the last user message group - old discuss sessions shouldn't force grid mode
+    const lastUserMsgIdx = [...activeMessages].reverse().findIndex(m => m.role === 'user')
+    if (lastUserMsgIdx === -1) {
+      setIsDiscussMode(false)
+      return
+    }
+    const lastUserIdx = activeMessages.length - 1 - lastUserMsgIdx
+    const afterUserMessages = activeMessages.slice(lastUserIdx)
+    const hasDiscussInCurrentGroup = afterUserMessages.some((msg) => msg.discussSessionId)
+    setIsDiscussMode(hasDiscussInCurrentGroup)
   }, [activeMessages])
 
   // Save config changes to session
@@ -377,6 +395,45 @@ function AIView() {
     // Add user message (with discussSessionId if discuss mode)
     addMessage(activeTabId, 'user', htmlContent, undefined, undefined, discussSessionId)
 
+    // Check for summary trigger
+    const { summarySkillMCPServerPlugin } = await import('../../../../plugins/mcp-tools/summary-skill-plugin')
+    if (summarySkillMCPServerPlugin.isSummaryTrigger(userMessage)) {
+      // Execute summary tool
+      setIsProcessing(true)
+      try {
+        const result = await summarySkillMCPServerPlugin.executeTool('summarize_discussion', {
+          style: 'bullet_points',
+          include_thinking: false,
+          max_length: 2000
+        })
+
+      if (result.success) {
+        const data = result.data as { message?: string } | undefined
+        addMessage(activeTabId, 'assistant', 
+          `✅ ${data?.message || 'Discussion summarized and added to note.'}`,
+            undefined,
+            { providerId: 'system', nickname: 'System' }
+          )
+        } else {
+          addMessage(activeTabId, 'assistant', 
+            `❌ Failed to summarize: ${result.error}`,
+            undefined,
+            { providerId: 'system', nickname: 'System' }
+          )
+        }
+      } catch (error) {
+        console.error('[AIView] Summary execution error:', error)
+        addMessage(activeTabId, 'assistant', 
+          `❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          undefined,
+          { providerId: 'system', nickname: 'System' }
+        )
+      } finally {
+        setIsProcessing(false)
+      }
+      return
+    }
+
     // Determine which providers to use
     let targetProviders = providers.filter(p => routing.targetProviderIds.includes(p.id))
     
@@ -447,23 +504,24 @@ function AIView() {
     // Set discuss mode for UI
     setIsDiscussMode(routing.mode === 'discuss')
 
-    // Handle discuss mode (multiple providers) vs single provider mode
-    if (routing.mode === 'discuss') {
-      // Discuss mode: Send to all providers in parallel with streaming
-      console.log('[AIView] Discuss mode: Sending to', targetProviders.length, 'providers')
+  // Handle discuss mode (multiple providers) vs single provider mode
+  if (routing.mode === 'discuss') {
+    // Discuss mode: Send to all providers in parallel with streaming
+    console.log('[AIView] Discuss mode: Sending to', targetProviders.length, 'providers')
 
-      // Add a header message
-      addMessage(activeTabId, 'assistant', 
-        `**Discuss Mode**: Starting discussion with ${targetProviders.length} providers...`,
-        undefined,
-        { providerId: 'system', nickname: 'System' },
-        discussSessionId
-      )
+    // Add a header message
+    addMessage(activeTabId, 'assistant',
+      `**Discuss Mode**: Starting discussion with ${targetProviders.length} providers...`,
+      undefined,
+      { providerId: 'system', nickname: 'System' },
+      discussSessionId
+    )
 
-      // Create a map to track message IDs for each provider (for streaming updates)
-      const providerMessageIds = new Map<string, string>()
-      const providerStreamingContent = new Map<string, string>()
-      const providerStreamingThinking = new Map<string, string>()
+    // Create a map to track message IDs for each provider (for streaming updates)
+    const providerMessageIds = new Map<string, string>()
+    const providerStreamingContent = new Map<string, string>()
+    const providerStreamingThinking = new Map<string, string>()
+    const providerUpdateTimers = new Map<string, ReturnType<typeof setTimeout> | null>()
 
     // Initialize placeholder messages for each provider
     for (const targetProvider of targetProviders) {
@@ -473,130 +531,169 @@ function AIView() {
         nickname: targetProvider.nickname || targetProvider.name,
         color: getProviderColor(targetProvider.id).border,
       }, discussSessionId)
-        providerMessageIds.set(targetProvider.id, messageId)
-        providerStreamingContent.set(targetProvider.id, '')
-        providerStreamingThinking.set(targetProvider.id, '')
+      providerMessageIds.set(targetProvider.id, messageId)
+      providerStreamingContent.set(targetProvider.id, '')
+      providerStreamingThinking.set(targetProvider.id, '')
+      providerUpdateTimers.set(targetProvider.id, null)
+    }
+
+    // Throttled update function to prevent React infinite loops
+    const throttledUpdateMessage = (providerId: string, messageId: string, content: string | undefined, thinking: string | undefined, providerInfo: { providerId: string; nickname: string }) => {
+      // Clear existing timer
+      const existingTimer = providerUpdateTimers.get(providerId)
+      if (existingTimer) {
+        clearTimeout(existingTimer)
+      }
+      
+      // Set new timer to batch updates (50ms debounce)
+      const timer = setTimeout(() => {
+        updateMessage(activeTabId, messageId, content, thinking, providerInfo)
+        providerUpdateTimers.set(providerId, null)
+      }, 50)
+      
+      providerUpdateTimers.set(providerId, timer)
+    }
+
+    // Process all providers in parallel with streaming
+    const providerPromises = targetProviders.map(async (targetProvider) => {
+      const providerConfig = targetProvider.config
+      const provider = getProvider(providerConfig.provider)
+      const messageId = providerMessageIds.get(targetProvider.id)
+
+      if (!messageId) {
+        console.error('[AIView] No message ID found for provider:', targetProvider.name)
+        return { provider: targetProvider, content: 'Error: No message ID', thinking: '', success: false }
       }
 
-      // Process all providers in parallel with streaming
-      const providerPromises = targetProviders.map(async (targetProvider) => {
-        const providerConfig = targetProvider.config
-        const provider = getProvider(providerConfig.provider)
-        const messageId = providerMessageIds.get(targetProvider.id)
+      // Load provider memory
+      let memoryContext = ''
+      try {
+        const memory = await loadProviderMemory(targetProvider.id, targetProvider.nickname || targetProvider.name)
+        memoryContext = generateMemoryContext(memory)
+      } catch (error) {
+        console.error(`[AIView] Failed to load memory for ${targetProvider.name}:`, error)
+      }
 
-        if (!messageId) {
-          console.error('[AIView] No message ID found for provider:', targetProvider.name)
-          return { provider: targetProvider, content: 'Error: No message ID', thinking: '', success: false }
-        }
-
-        // Load provider memory
-        let memoryContext = ''
-        try {
-          const memory = await loadProviderMemory(targetProvider.id, targetProvider.nickname || targetProvider.name)
-          memoryContext = generateMemoryContext(memory)
-        } catch (error) {
-          console.error(`[AIView] Failed to load memory for ${targetProvider.name}:`, error)
-        }
-
-        // Build persona system message if provider has a role
-        const personaMessages: ChatMessage[] = []
-        if (targetProvider.personaRole) {
-          const personaPrompt = PERSONA_PROMPTS[targetProvider.personaRole]
-          if (personaPrompt) {
-            personaMessages.push({
-              id: crypto.randomUUID(),
-              role: 'system',
-              content: `[PERSONA: You are ${targetProvider.nickname || targetProvider.name}, ${personaPrompt.description}]
-
-${personaPrompt.systemPrompt}`,
-              timestamp: Date.now()
-            })
-          }
-        }
-
-        // Add memory context message if exists
-        const memoryMessages: ChatMessage[] = []
-        if (memoryContext) {
-          memoryMessages.push({
+      // Build persona system message if provider has a role
+      const personaMessages: ChatMessage[] = []
+      if (targetProvider.personaRole) {
+        const personaPrompt = PERSONA_PROMPTS[targetProvider.personaRole]
+        if (personaPrompt) {
+          personaMessages.push({
             id: crypto.randomUUID(),
             role: 'system',
-            content: memoryContext,
+            content: `[PERSONA: You are ${targetProvider.nickname || targetProvider.name}, ${personaPrompt.description}]
+
+${personaPrompt.systemPrompt}`,
             timestamp: Date.now()
           })
         }
+      }
 
-        // Combine messages: persona + memory + tool prompt + context + history
-        const providerMessages: ChatMessage[] = [
-          systemMessage, // Tool instructions
-          ...personaMessages, // Persona prompt
-          ...memoryMessages, // Memory context
-          ...(contextMessage ? [contextMessage] : []), // Context
-          ...previousMessages, // Chat history
-          { id: crypto.randomUUID(), role: 'user', content: userMessage, timestamp: Date.now() } // Current message
-        ]
+      // Add memory context message if exists
+      const memoryMessages: ChatMessage[] = []
+      if (memoryContext) {
+        memoryMessages.push({
+          id: crypto.randomUUID(),
+          role: 'system',
+          content: memoryContext,
+          timestamp: Date.now()
+        })
+      }
 
-        let localContent = ''
-        let localThinking = ''
+      // Combine messages: persona + memory + tool prompt + context + history
+      const providerMessages: ChatMessage[] = [
+        systemMessage, // Tool instructions
+        ...personaMessages, // Persona prompt
+        ...memoryMessages, // Memory context
+        ...(contextMessage ? [contextMessage] : []), // Context
+        ...previousMessages, // Chat history
+        { id: crypto.randomUUID(), role: 'user', content: userMessage, timestamp: Date.now() } // Current message
+      ]
 
-        try {
-          const supportsToolCalling = 'chatWithTools' in provider && provider.supportsNativeFunctionCalling?.()
-          const supportsThinking = 'streamChatWithThinking' in provider
+      let localContent = ''
+      let localThinking = ''
+      let lastUpdateTime = 0
+      const UPDATE_INTERVAL = 100 // Minimum ms between updates
 
-          if (supportsToolCalling && mcpTools.length > 0) {
-            await provider.streamChat(
-              providerMessages,
-              providerConfig,
-              (chunk: string) => {
+      try {
+        const supportsToolCalling = 'chatWithTools' in provider && provider.supportsNativeFunctionCalling?.()
+        const supportsThinking = 'streamChatWithThinking' in provider
+
+        if (supportsToolCalling && mcpTools.length > 0) {
+          await provider.streamChat(
+            providerMessages,
+            providerConfig,
+            (chunk: string) => {
               localContent += chunk
-                  // Update streaming content map
-                  providerStreamingContent.set(targetProvider.id, localContent)
-                  // Update the message in real-time - preserve provider info
-                  updateMessage(activeTabId, messageId, localContent, undefined, {
+              // Update streaming content map
+              providerStreamingContent.set(targetProvider.id, localContent)
+              // Throttled update to prevent React infinite loops
+              const now = Date.now()
+              if (now - lastUpdateTime >= UPDATE_INTERVAL) {
+                lastUpdateTime = now
+                throttledUpdateMessage(targetProvider.id, messageId, localContent, undefined, {
+                  providerId: targetProvider.id,
+                  nickname: targetProvider.nickname || targetProvider.name
+                })
+              }
+            }
+          )
+        } else if (supportsThinking) {
+          await provider.streamChatWithThinking!(
+            messagesWithTools,
+            providerConfig,
+            (chunk: string) => {
+              localContent += chunk
+              const displayContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
+              providerStreamingContent.set(targetProvider.id, displayContent)
+              // Throttled update
+              const now = Date.now()
+              if (now - lastUpdateTime >= UPDATE_INTERVAL) {
+                lastUpdateTime = now
+                throttledUpdateMessage(targetProvider.id, messageId, displayContent, undefined, {
+                  providerId: targetProvider.id,
+                  nickname: targetProvider.nickname || targetProvider.name
+                })
+              }
+            },
+            (thinking: string) => {
+              const filteredThinking = thinking.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
+              if (filteredThinking) {
+                localThinking = filteredThinking
+                providerStreamingThinking.set(targetProvider.id, localThinking)
+                // Throttled update
+                const now = Date.now()
+                if (now - lastUpdateTime >= UPDATE_INTERVAL) {
+                  lastUpdateTime = now
+                  throttledUpdateMessage(targetProvider.id, messageId, undefined, localThinking, {
                     providerId: targetProvider.id,
                     nickname: targetProvider.nickname || targetProvider.name
                   })
                 }
-              )
-          } else if (supportsThinking) {
-            await provider.streamChatWithThinking!(
-              messagesWithTools,
-              providerConfig,
-              (chunk: string) => {
-            localContent += chunk
-                  const displayContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
-                  providerStreamingContent.set(targetProvider.id, displayContent)
-                  updateMessage(activeTabId, messageId, displayContent, undefined, {
-                    providerId: targetProvider.id,
-                    nickname: targetProvider.nickname || targetProvider.name
-                  })
-                },
-                (thinking: string) => {
-                  const filteredThinking = thinking.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
-                  if (filteredThinking) {
-                    localThinking += filteredThinking
-                    providerStreamingThinking.set(targetProvider.id, localThinking)
-                    updateMessage(activeTabId, messageId, undefined, localThinking, {
-                      providerId: targetProvider.id,
-                      nickname: targetProvider.nickname || targetProvider.name
-                    })
-                  }
-                }
-            )
-          } else {
-            await provider.streamChat(
-              messagesWithTools,
-              providerConfig,
-              (chunk: string) => {
-            localContent += chunk
-                  const displayContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
-                  providerStreamingContent.set(targetProvider.id, displayContent)
-                  updateMessage(activeTabId, messageId, displayContent, undefined, {
-                    providerId: targetProvider.id,
-                    nickname: targetProvider.nickname || targetProvider.name
-                  })
-                }
-            )
-          }
+              }
+            }
+          )
+        } else {
+          await provider.streamChat(
+            messagesWithTools,
+            providerConfig,
+            (chunk: string) => {
+              localContent += chunk
+              const displayContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
+              providerStreamingContent.set(targetProvider.id, displayContent)
+              // Throttled update
+              const now = Date.now()
+              if (now - lastUpdateTime >= UPDATE_INTERVAL) {
+                lastUpdateTime = now
+                throttledUpdateMessage(targetProvider.id, messageId, displayContent, undefined, {
+                  providerId: targetProvider.id,
+                  nickname: targetProvider.nickname || targetProvider.name
+                })
+              }
+            }
+          )
+        }
 
           // Handle tool calls after streaming
           const toolCalls = parseToolCalls(localContent)
@@ -645,27 +742,39 @@ ${personaPrompt.systemPrompt}`,
               }
             }
             
-localContent += toolResultText
-          updateMessage(activeTabId, messageId, localContent, localThinking || undefined)
-        }
+      localContent += toolResultText
+      // Flush any pending throttled updates before final update
+      const pendingTimer = providerUpdateTimers.get(targetProvider.id)
+      if (pendingTimer) {
+        clearTimeout(pendingTimer)
+        providerUpdateTimers.set(targetProvider.id, null)
+      }
+      updateMessage(activeTabId, messageId, localContent, localThinking || undefined)
+    }
 
-        // Extract and store key points from this response to provider's memory
-        try {
-          await extractAndStoreMemory(
-            targetProvider.id,
-            targetProvider.nickname || targetProvider.name,
-            localContent,
-            discussSessionId
-          )
-        } catch (error) {
-          console.error(`[AIView] Failed to extract memory for ${targetProvider.name}:`, error)
-        }
+    // Extract and store key points from this response to provider's memory
+    try {
+      await extractAndStoreMemory(
+        targetProvider.id,
+        targetProvider.nickname || targetProvider.name,
+        localContent,
+        discussSessionId
+      )
+    } catch (error) {
+      console.error(`[AIView] Failed to extract memory for ${targetProvider.name}:`, error)
+    }
 
-        return { provider: targetProvider, content: localContent, thinking: localThinking, success: true }
-        } catch (error) {
-          console.error(`[AIView] Error from provider ${targetProvider.name}:`, error)
-          const errorContent = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
-          updateMessage(activeTabId, messageId, errorContent, undefined)
+    return { provider: targetProvider, content: localContent, thinking: localThinking, success: true }
+  } catch (error) {
+    console.error(`[AIView] Error from provider ${targetProvider.name}:`, error)
+    const errorContent = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
+    // Flush pending updates before error update
+    const pendingTimer = providerUpdateTimers.get(targetProvider.id)
+    if (pendingTimer) {
+      clearTimeout(pendingTimer)
+      providerUpdateTimers.set(targetProvider.id, null)
+    }
+    updateMessage(activeTabId, messageId, errorContent, undefined)
           return { 
             provider: targetProvider, 
             content: errorContent, 
@@ -675,14 +784,30 @@ localContent += toolResultText
         }
       })
 
-      // Wait for all providers to finish
-      await Promise.all(providerPromises)
+    // Wait for all providers to finish
+    await Promise.all(providerPromises)
 
-      setStreamingContent('')
-      setStreamingThinking('')
-      setStreaming(false)
-      setIsProcessing(false)
-      return
+    // Flush any remaining pending updates
+    providerUpdateTimers.forEach((timer, providerId) => {
+      if (timer) {
+        clearTimeout(timer)
+        const messageId = providerMessageIds.get(providerId)
+        const content = providerStreamingContent.get(providerId)
+        const thinking = providerStreamingThinking.get(providerId)
+        if (messageId) {
+          updateMessage(activeTabId, messageId, content || '', thinking || undefined, {
+            providerId: providerId,
+            nickname: targetProviders.find(p => p.id === providerId)?.nickname || 'Unknown'
+          })
+        }
+      }
+    })
+
+    setStreamingContent('')
+    setStreamingThinking('')
+    setStreaming(false)
+    setIsProcessing(false)
+    return
     }
 
     // Single provider mode (auto or assigned)
@@ -726,7 +851,7 @@ localContent += toolResultText
           (thinking: string) => {
             const filteredThinking = thinking.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
             if (filteredThinking) {
-              localThinking += filteredThinking
+              localThinking = filteredThinking
               setStreamingThinking(localThinking)
             }
           }
@@ -1190,6 +1315,17 @@ localContent += toolResultText
                   </button>
                 </div>
               )}
+              {msg.role === 'assistant' && msg.providerId !== 'system' && (
+                <div className="message-actions">
+                  <button
+                    className="message-action-btn"
+                    onClick={() => handleNoteIt(msg)}
+                    title="Save to notes"
+                  >
+                    📝 NoteIt
+                  </button>
+                </div>
+              )}
               </div>
               {msg.role === 'assistant' && msg.thinking && (
                 <div className="message-thinking">
@@ -1230,13 +1366,16 @@ localContent += toolResultText
                 >
                   {msg.content}
                 </ReactMarkdown>
+                {msg.providerId === 'system' && isDiscussMode && (isStreaming || isProcessing) && (
+                  <span className="typing-indicator">...</span>
+                )}
               </div>
                 )}
               </div>
             </div>
           ))
           )}
-      {(isStreaming || isProcessing) && (
+      {(isStreaming || isProcessing) && !isDiscussMode && (
         <div className="chat-message assistant streaming">
           <div className="message-header">
             <div className="message-role">AI</div>

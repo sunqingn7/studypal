@@ -4,8 +4,7 @@
  * Each provider has its own memory file to store ideas, facts, and learnings
  */
 
-import { invoke } from '@tauri-apps/api/core'
-import { readTextFile, writeTextFile, exists } from '@tauri-apps/plugin-fs'
+import { readTextFile, writeTextFile, exists, mkdir } from '@tauri-apps/plugin-fs'
 import { appLocalDataDir, join } from '@tauri-apps/api/path'
 
 export interface ProviderMemory {
@@ -62,8 +61,8 @@ async function ensureMemoryDirectory(): Promise<void> {
     // Check if directory exists
     const dirExists = await exists(memoriesDir)
     if (!dirExists) {
-      // Create directory using invoke if needed
-      await invoke('create_directory', { path: memoriesDir })
+      // Create directory using mkdir
+      await mkdir(memoriesDir, { recursive: true })
     }
   } catch (error) {
     console.error('[ProviderMemory] Failed to create memory directory:', error)
