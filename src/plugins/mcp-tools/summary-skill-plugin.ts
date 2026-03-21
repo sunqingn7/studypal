@@ -201,32 +201,23 @@ export class SummarySkillMCPServerPlugin implements MCPServerPlugin {
         temperature: 0.3,
       };
 
-      let summaryText: string;
-      try {
-        const messages: ChatMessage[] = [];
-        if (selectedProvider.config.systemPrompt) {
-          messages.push({ id: crypto.randomUUID(), role: 'system', content: selectedProvider.config.systemPrompt, timestamp: Date.now() });
-        }
-        messages.push({ id: crypto.randomUUID(), role: 'user', content: prompt, timestamp: Date.now() });
-        summaryText = await aiProvider.chat(messages, config);
-      } catch (err) {
-        console.error('[SummarySkill] Provider call failed:', err);
-        return { success: false, error: err instanceof Error ? err.message : 'Failed to generate summary' };
+      // Build messages
+      const messages: ChatMessage[] = [];
+      if (selectedProvider.config.systemPrompt) {
+        messages.push({ id: crypto.randomUUID(), role: 'system', content: selectedProvider.config.systemPrompt, timestamp: Date.now() });
       }
+      messages.push({ id: crypto.randomUUID(), role: 'user', content: prompt, timestamp: Date.now() });
 
-      // 5. Format and append to note
+      // 5. Stream summary to note view progressively
       const timestamp = new Date().toLocaleString();
       const providerName = selectedProvider.nickname || selectedProvider.name;
       
-      const summaryHeader = `\n\n---\n📋 **Discussion Summary** (${timestamp})\n*Summarized by: ${providerName}*\n`;
+      const summaryHeader = `\n\n---\n📋 **Discussion Summary** (${timestamp})\n*Summarized by: ${providerName}*\n\n`;
       const summaryFooter = `\n---\n`;
       
-      const fullSummary = `${summaryHeader}${summaryText}${summaryFooter}`;
-
-      // Append to current note content
+      // Get current content and prepend header
       const currentContent = noteStore.getNoteContent(activeNote.id);
-      const newContent = currentContent + fullSummary;
-      noteStore.updateNoteContent(activeNote.id, newContent);
+      noteStore.updateNoteContent(activeNote.id, currentContent + summaryHeader);
 
       // Find and activate the tab for this note
       const tabs = noteStore.tabs;
@@ -234,17 +225,35 @@ export class SummarySkillMCPServerPlugin implements MCPServerPlugin {
       if (noteTab) {
         noteStore.setActiveTab(noteTab.id);
       } else {
-        // Create a tab for the note if not exists
         const newTabId = noteStore.createTabForNote(activeNote.id, activeNote.title);
         noteStore.setActiveTab(newTabId);
       }
+
+      // Stream chunks to note progressively
+      let accumulated = '';
+      try {
+        await aiProvider.streamChat(messages, config, (chunk: string) => {
+          // Normalize: LLM might output literal \n or real newlines
+          const normalized = chunk.replace(/\\n/g, '\n');
+          accumulated += normalized;
+          const fullContent = currentContent + summaryHeader + accumulated;
+          noteStore.updateNoteContent(activeNote.id, fullContent);
+        });
+      } catch (err) {
+        console.error('[SummarySkill] Stream failed:', err);
+        return { success: false, error: err instanceof Error ? err.message : 'Failed to stream summary' };
+      }
+
+      // Append footer
+      const fullContent = currentContent + summaryHeader + accumulated + summaryFooter;
+      noteStore.updateNoteContent(activeNote.id, fullContent);
 
       return {
         success: true,
         data: {
           noteId: activeNote.id,
           noteTitle: activeNote.title,
-          summaryLength: summaryText.length,
+          summaryLength: accumulated.length,
           provider: providerName,
           messagesSummarized: discussionMessages.length,
           message: `Summary successfully written to note "${activeNote.title}"`
