@@ -1,5 +1,4 @@
 import { TaskDistributor } from './task-distributor';
-import { useLLMPoolStore } from '../store/llm-pool-store';
 import { useClassroomStore } from '../store/classroom-store';
 import { getCurrentPageText } from '../../infrastructure/file-handlers/pdf-utils';
 import { FileReadingService } from '../../infrastructure/file-handlers/file-reading-service';
@@ -36,7 +35,7 @@ let taskDistributor: TaskDistributor | null = null;
 
 function getTaskDistributor(): TaskDistributor {
   if (!taskDistributor) {
-    taskDistributor = new TaskDistributor(useLLMPoolStore.getState());
+    taskDistributor = new TaskDistributor();
   }
   return taskDistributor;
 }
