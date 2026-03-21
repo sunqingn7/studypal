@@ -162,13 +162,28 @@ function AIView() {
     scrollToBottom()
   }, [activeMessages])
 
+  // Track if we've ever been in discuss mode - once set, never turns off
+  const everInDiscussMode = useRef(false)
+  useEffect(() => {
+    if (activeMessages.some((msg) => msg.discussSessionId)) {
+      everInDiscussMode.current = true
+      setIsDiscussMode(true)
+    }
+  }, [activeMessages])
+
   // Detect discuss mode from loaded messages (for persistence on restart)
   useEffect(() => {
     if (activeMessages.length === 0) {
       setIsDiscussMode(false)
+      everInDiscussMode.current = false
       return
     }
-    // Only check the last user message group - old discuss sessions shouldn't force grid mode
+    // Don't turn off discuss mode once it's been enabled
+    if (everInDiscussMode.current) {
+      setIsDiscussMode(true)
+      return
+    }
+    // Only check the last user message group when initially determining mode
     const lastUserMsgIdx = [...activeMessages].reverse().findIndex(m => m.role === 'user')
     if (lastUserMsgIdx === -1) {
       setIsDiscussMode(false)
