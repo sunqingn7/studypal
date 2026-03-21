@@ -120,15 +120,13 @@
 }
 
 .pdf-text-layer span {
-  pointer-events: auto;
-}
-
-.pdf-text-layer span {
   color: transparent;
   cursor: text;
   position: absolute;
   white-space: pre;
   pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .pdf-text-layer ::selection {
