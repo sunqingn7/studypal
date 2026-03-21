@@ -2,8 +2,9 @@ import { MCPServerPlugin, MCPTool, MCPToolResult, PluginMetadata } from '../../d
 import { useAIChatStore } from '../../application/store/ai-chat-store';
 import { useNoteStore } from '../../application/store/note-store';
 import { useLLMPoolStore } from '../../application/store/llm-pool-store';
-import { TaskDistributor } from '../../application/services/task-distributor';
-import { PoolProvider } from '../../domain/models/llm-pool';
+import { getProvider } from '../../infrastructure/ai-providers/provider-factory';
+import type { ChatMessage } from '../../domain/models/ai-context';
+import type { PoolProvider } from '../../domain/models/llm-pool';
 
 export class SummarySkillMCPServerPlugin implements MCPServerPlugin {
   metadata: PluginMetadata = {
@@ -186,31 +187,31 @@ export class SummarySkillMCPServerPlugin implements MCPServerPlugin {
 
       console.log(`[SummarySkill] Selected provider for summarization: ${selectedProvider.nickname || selectedProvider.name}`);
 
-      // 4. Generate summary using TaskDistributor
-      const distributor = new TaskDistributor();
+      // 4. Generate summary by calling the provider directly (bypass task queue)
       const style = (params.style as string) || 'bullet_points';
       const maxLength = (params.max_length as number) || this.maxSummaryLength;
       const includeThinking = (params.include_thinking as boolean) || false;
 
       const prompt = this.buildSummaryPrompt(formattedDiscussion, style, maxLength, includeThinking);
 
-      const result = await distributor.submitTask(
-        'other',
-        prompt,
-        undefined,
-        {
-          maxTokens: Math.min(Math.ceil(maxLength / 2), 1500),
-          temperature: 0.3,
-          priority: 80,
-          timeout: 60000
-        }
-      );
+      const aiProvider = getProvider(selectedProvider.config.provider);
+      const config = {
+        ...selectedProvider.config,
+        maxTokens: Math.min(Math.ceil(maxLength / 2), 1500),
+        temperature: 0.3,
+      };
 
-      if (!result.success) {
-        return { 
-          success: false, 
-          error: result.error || 'Failed to generate summary' 
-        };
+      let summaryText: string;
+      try {
+        const messages: ChatMessage[] = [];
+        if (selectedProvider.config.systemPrompt) {
+          messages.push({ id: crypto.randomUUID(), role: 'system', content: selectedProvider.config.systemPrompt, timestamp: Date.now() });
+        }
+        messages.push({ id: crypto.randomUUID(), role: 'user', content: prompt, timestamp: Date.now() });
+        summaryText = await aiProvider.chat(messages, config);
+      } catch (err) {
+        console.error('[SummarySkill] Provider call failed:', err);
+        return { success: false, error: err instanceof Error ? err.message : 'Failed to generate summary' };
       }
 
       // 5. Format and append to note
@@ -220,7 +221,7 @@ export class SummarySkillMCPServerPlugin implements MCPServerPlugin {
       const summaryHeader = `\n\n---\n📋 **Discussion Summary** (${timestamp})\n*Summarized by: ${providerName}*\n`;
       const summaryFooter = `\n---\n`;
       
-      const fullSummary = `${summaryHeader}${result.content}${summaryFooter}`;
+      const fullSummary = `${summaryHeader}${summaryText}${summaryFooter}`;
 
       // Append to current note content
       const currentContent = noteStore.getNoteContent(activeNote.id);
@@ -243,7 +244,7 @@ export class SummarySkillMCPServerPlugin implements MCPServerPlugin {
         data: {
           noteId: activeNote.id,
           noteTitle: activeNote.title,
-          summaryLength: result.content.length,
+          summaryLength: summaryText.length,
           provider: providerName,
           messagesSummarized: discussionMessages.length,
           message: `Summary successfully written to note "${activeNote.title}"`
