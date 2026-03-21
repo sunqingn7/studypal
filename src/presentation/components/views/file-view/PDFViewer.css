@@ -114,9 +114,11 @@
   position: absolute;
   top: 0;
   left: 0;
-  z-index: 1;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
   --scale-factor: 1.2;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .pdf-text-layer span {
@@ -127,10 +129,21 @@
   pointer-events: auto;
   user-select: text;
   -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+}
+
+.pdf-text-layer span:hover {
+  cursor: text;
 }
 
 .pdf-text-layer ::selection {
   background-color: rgba(74, 144, 217, 0.3);
+}
+
+/* Ensure canvas doesn't block text selection */
+.pdf-pages canvas {
+  pointer-events: none;
 }
 
 .pdf-viewer-loading,

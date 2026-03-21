@@ -476,6 +476,14 @@ useEffect(() => {
                 if (el) textLayerRefs.current.set(currentPage, el)
                 else textLayerRefs.current.delete(currentPage)
               }}
+              onMouseDown={(e) => e.stopPropagation()}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+              }}
             />
           </div>
           {pageMode === 'double' && currentPage < totalPages && (
@@ -486,14 +494,22 @@ useEffect(() => {
                   else canvasRefs.current.delete(2)
                 }}
               />
-              <div
-                className="pdf-text-layer"
-                ref={(el) => {
-                  const secondPage = currentPage + 1
-                  if (el) textLayerRefs.current.set(secondPage, el)
-                  else textLayerRefs.current.delete(secondPage)
-                }}
-              />
+            <div
+              className="pdf-text-layer"
+              ref={(el) => {
+                const secondPage = currentPage + 1
+                if (el) textLayerRefs.current.set(secondPage, el)
+                else textLayerRefs.current.delete(secondPage)
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+              }}
+            />
             </div>
           )}
         </div>
