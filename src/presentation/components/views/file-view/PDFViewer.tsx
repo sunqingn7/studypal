@@ -168,33 +168,10 @@ const renderTextLayer = async (container: HTMLDivElement, page: pdfjsLib.PDFPage
   container.style.cursor = 'text'
 
   try {
-    const textContent = await page.getTextContent()
-    console.log('[PDFViewer] Text content items:', textContent.items.length)
-
-    // Sanitize text content to avoid DataCloneError
-    // PDF.js TextItem objects may contain non-serializable properties
-    const sanitizedItems = textContent.items.map((item: any) => ({
-      str: item.str || '',
-      dir: item.dir || 'ltr',
-      width: item.width || 0,
-      height: item.height || 0,
-      transform: Array.isArray(item.transform) 
-        ? item.transform.map((v: any) => typeof v === 'number' ? v : 0)
-        : [1, 0, 0, 1, 0, 0],
-      fontName: item.fontName || null,
-      hasEOL: item.hasEOL || false,
-    }))
-
-    const sanitizedTextContent = {
-      items: sanitizedItems,
-      styles: textContent.styles || {},
-      lang: (textContent as any).lang || null,
-    }
-
     const textLayer = new TextLayer({
       container,
-      textContentSource: sanitizedTextContent,
-      viewport: viewport,
+      textContentSource: page.streamTextContent(),
+      viewport,
     })
 
     await textLayer.render()
@@ -208,12 +185,12 @@ const renderTextLayer = async (container: HTMLDivElement, page: pdfjsLib.PDFPage
       htmlSpan.style.userSelect = 'text'
       htmlSpan.style.webkitUserSelect = 'text'
       htmlSpan.style.pointerEvents = 'auto'
+      htmlSpan.style.display = 'inline'
     })
 
     console.log('[PDFViewer] Text layer rendered, children:', container.children.length, 'spans:', spans.length)
   } catch (err) {
     console.warn('[PDFViewer] Failed to render text layer:', err)
-    // Text layer is optional, continue without it
   }
 }
 
