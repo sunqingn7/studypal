@@ -159,6 +159,14 @@ const renderTextLayer = async (container: HTMLDivElement, page: pdfjsLib.PDFPage
   container.style.height = `${viewport.height}px`
   container.style.setProperty('--scale-factor', scale.toString())
 
+  // Apply styles directly to container for guaranteed effect
+  container.style.position = 'absolute'
+  container.style.top = '0'
+  container.style.left = '0'
+  container.style.zIndex = '2'
+  container.style.pointerEvents = 'auto'
+  container.style.cursor = 'text'
+
   try {
     const textContent = await page.getTextContent()
     console.log('[PDFViewer] Text content items:', textContent.items.length)
@@ -190,7 +198,19 @@ const renderTextLayer = async (container: HTMLDivElement, page: pdfjsLib.PDFPage
     })
 
     await textLayer.render()
-    console.log('[PDFViewer] Text layer rendered, children:', container.children.length)
+
+    // Apply styles to all text spans after render
+    const spans = container.querySelectorAll('span')
+    spans.forEach((span) => {
+      const htmlSpan = span as HTMLElement
+      htmlSpan.style.color = 'transparent'
+      htmlSpan.style.cursor = 'text'
+      htmlSpan.style.userSelect = 'text'
+      htmlSpan.style.webkitUserSelect = 'text'
+      htmlSpan.style.pointerEvents = 'auto'
+    })
+
+    console.log('[PDFViewer] Text layer rendered, children:', container.children.length, 'spans:', spans.length)
   } catch (err) {
     console.warn('[PDFViewer] Failed to render text layer:', err)
     // Text layer is optional, continue without it
