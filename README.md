@@ -9,20 +9,26 @@ StudyPal combines document viewing, rich text note-taking, and AI chat in a flex
 ## Features
 
 ### 📚 Document Viewer
-- **PDF**: Rendering via PDF.js, text extraction via Rust `pdftotext`
+- **PDF**: Rendering via PDF.js, text selection, text extraction via Rust `pdftotext`
 - **EPUB**: Full support via epub.js
 - **HTML**: Native browser rendering
 - **LaTeX**: Mathematical notation support
 - **Markdown/Text**: Native support with syntax highlighting
 
 ### ✍️ Note-Taking
-- Rich text editor powered by **TipTap**
+- Markdown editor with **Edit/Preview toggle**
+- LaTeX math rendering (`$inline$` and `$$block$$`) via **KaTeX**
+- NoteIt button — save AI chat messages directly to notes
+- Discussion summarization — auto-generate structured summaries from chat
 - Document-bound notes (persisted per file)
 - Tabbed interface for multiple notes
 
 ### 🤖 AI Chat
+- **LLM Pool**: Configure multiple AI providers, assign nicknames (e.g. "G", "小g"), mark primary provider
+- **Chat Routing**: Auto-route to primary, or explicitly `@mention` a provider by nickname
+- **Discuss Mode**: `@everyone` or `@all` — sends your message to all enabled providers simultaneously, responses displayed in a grid layout with dancing dots while streaming
 - **Local Providers**: llama.cpp, Ollama, vLLM
-- **Cloud Providers**: OpenAI, Anthropic, Custom endpoints
+- **Cloud Providers**: OpenAI, Anthropic, Google Gemini, OpenRouter, Custom endpoints
 - **Context Triggers**:
   - `this page` — current page content
   - `whole file` — entire document
@@ -30,6 +36,7 @@ StudyPal combines document viewing, rich text note-taking, and AI chat in a flex
   - `topic notes` — topic-related notes
 - **Web Search**: Supports Tavily, DuckDuckGo, Brave, and Serper with clickable results
 - **Paper Discovery**: Search academic papers with direct download links
+- **Discussion Summarization**: Trigger with "summarize above discussion and make it a note" — auto-generates structured summaries using the LLM Pool
 
 ### 🌐 Web Search
 - **Providers**: DuckDuckGo (official API), Tavily, Brave, Serper
@@ -64,7 +71,7 @@ StudyPal combines document viewing, rich text note-taking, and AI chat in a flex
 | **Desktop** | Tauri 2.x (Rust) |
 | **State** | Zustand (with persistence) |
 | **Styling** | Tailwind CSS |
-| **Editor** | TipTap |
+| **Editor** | ReactMarkdown + KaTeX (notes), textarea (edit mode) |
 | **PDF** | PDF.js (render), pdftotext (extract) |
 | **EPUB** | epub.js |
 | **Markdown** | react-markdown, remark-math, rehype-katex |
@@ -161,7 +168,20 @@ Tauri Commands ←── Rust Backend (AI, PDF extraction)
 
 ## AI Configuration
 
-Configure AI provider in the AI view settings:
+Configure AI providers in the AI view settings via the LLM Pool panel.
+
+### LLM Pool
+
+The LLM Pool lets you configure multiple AI providers and route messages using `@mentions`:
+
+- **Provider nicknames**: Assign short nicknames to each provider (e.g. "G", "小g", "g sen") for quick `@mention` routing
+- **Primary provider**: Mark one provider as primary — messages without `@mention` go to the primary
+- **Chat routing modes**:
+  - **Auto** (no `@mention`) → routes to primary or first available provider
+  - **Assigned** (`@nickname`) → routes to the specified provider
+  - **Discuss** (`@everyone` / `@all`) → sends to ALL enabled providers simultaneously
+
+### Supported Providers
 
 ### Supported Providers
 
@@ -235,6 +255,11 @@ const myPlugin: ViewPlugin = {
 - [x] Sidebar with Explorer/History tabs
 - [x] Web search with clickable results
 - [x] Academic paper search with PDF download
+- [x] PDF text selection
+- [x] LLM Pool with @mention routing
+- [x] Discuss mode (multi-provider simultaneous chat)
+- [x] NoteIt — save AI messages to notes
+- [x] Discussion summarization to notes
 - [ ] Translation plugin
 - [ ] Collaborative notes
 - [ ] Cloud sync
