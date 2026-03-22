@@ -423,10 +423,14 @@ export const useLLMPoolStore = create<LLMPoolState>()(
 
         const caps = await detectProviderCapabilities(provider, force)
         if (caps) {
-          get().updateProvider(providerId, {
-            capabilities: caps,
-            capabilitiesLastChecked: Date.now(),
-          })
+          // Refetch provider before update to avoid race condition
+          const currentProvider = get().providers.find(p => p.id === providerId)
+          if (currentProvider) {
+            get().updateProvider(providerId, {
+              capabilities: caps,
+              capabilitiesLastChecked: Date.now(),
+            })
+          }
         }
         return caps
       },
