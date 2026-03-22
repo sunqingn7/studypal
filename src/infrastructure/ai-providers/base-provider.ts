@@ -15,9 +15,9 @@ export interface StreamChunk {
 
 export interface AIProvider {
   name: string
-  chat(messages: ChatMessage[], config: AIConfig): Promise<string>
-  streamChat(messages: ChatMessage[], config: AIConfig, onChunk: (chunk: string) => void | Promise<void>): Promise<void>
-  streamChatWithThinking?(messages: ChatMessage[], config: AIConfig, onChunk: (chunk: string) => void | Promise<void>, onThinking: (thinking: string) => void | Promise<void>): Promise<void>
+  chat(messages: ChatMessage[], config: AIConfig, signal?: AbortSignal): Promise<string>
+  streamChat(messages: ChatMessage[], config: AIConfig, onChunk: (chunk: string) => void | Promise<void>, signal?: AbortSignal): Promise<void>
+  streamChatWithThinking?(messages: ChatMessage[], config: AIConfig, onChunk: (chunk: string) => void | Promise<void>, onThinking: (thinking: string) => void | Promise<void>, signal?: AbortSignal): Promise<void>
   supportsTrueStreaming?(): boolean
   
   // Tool calling support
