@@ -4,7 +4,7 @@
  * Each provider has its own memory file to store ideas, facts, and learnings
  */
 
-import { readTextFile, writeTextFile, exists, mkdir } from '@tauri-apps/plugin-fs'
+import { readTextFile, writeTextFile, exists, mkdir, readDir } from '@tauri-apps/plugin-fs'
 import { appLocalDataDir, join } from '@tauri-apps/api/path'
 
 export interface ProviderMemory {
@@ -297,15 +297,44 @@ export async function clearProviderMemory(providerId: string, providerName: stri
 /**
  * Get memory statistics for all providers
  */
-export async function getMemoryStats(): Promise<{ providerId: string; providerName: string; entries: number }[]> {
+export async function getMemoryStats(): Promise<{ providerId: string; providerName: string; ideas: number; facts: number; learnings: number; peerInsights: number }[]> {
   try {
-    // TODO: Implement directory listing to get all provider memories
-    // const appDir = await appLocalDataDir()
-    // const memoriesDir = await join(appDir, 'provider-memories')
+    await ensureMemoryDirectory()
+    const appDir = await appLocalDataDir()
+    const memoriesDir = await join(appDir, 'provider-memories')
     
-    // For now, return empty stats
-    return []
-  } catch {
+    const dirExists = await exists(memoriesDir)
+    if (!dirExists) {
+      return []
+    }
+    
+    const entries = await readDir(memoriesDir)
+    const stats: { providerId: string; providerName: string; ideas: number; facts: number; learnings: number; peerInsights: number }[] = []
+    
+    for (const entry of entries) {
+      if (entry.name?.endsWith('.json')) {
+        try {
+          const filePath = await join(memoriesDir, entry.name)
+          const content = await readTextFile(filePath)
+          const memory = JSON.parse(content) as ProviderMemory
+          
+          stats.push({
+            providerId: memory.providerId,
+            providerName: memory.providerName,
+            ideas: memory.ideas.length,
+            facts: memory.facts.length,
+            learnings: memory.learnings.length,
+            peerInsights: memory.peerInsights.length
+          })
+        } catch (e) {
+          console.warn(`[ProviderMemory] Failed to read memory file ${entry.name}:`, e)
+        }
+      }
+    }
+    
+    return stats
+  } catch (error) {
+    console.error('[ProviderMemory] Failed to get memory stats:', error)
     return []
   }
 }

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import { TextLayer } from 'pdfjs-dist'
 import { FileReadingService } from '../../../../infrastructure/file-handlers/file-reading-service'
-import { useFileStore } from '../../../../application/store/file-store'
 import { useDocumentMetadataStore } from '../../../../application/store/document-metadata-store'
 import './PDFViewer.css'
 
@@ -22,7 +21,6 @@ interface PDFViewerProps {
 function PDFViewer({ path, fileData, initialPage = 1 }: PDFViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const metadataStore = useDocumentMetadataStore()
-  const { setCurrentPage: setFileStorePage } = useFileStore()
   const [pdf, setPdf] = useState<pdfjsLib.PDFDocumentProxy | null>(null)
   const [currentPage, setCurrentPageState] = useState(initialPage)
   const [totalPages, setTotalPages] = useState(0)
@@ -33,17 +31,14 @@ function PDFViewer({ path, fileData, initialPage = 1 }: PDFViewerProps) {
   const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map())
   const textLayerRefs = useRef<Map<number, HTMLDivElement>>(new Map())
   const renderTasksRef = useRef<Map<number, { cancel: () => void }>>(new Map())
+  const isInitialPageSetRef = useRef(false)
 
-  // Update file store when currentPage changes (to sync for file switching)
+  // Update page when initialPage changes (from file store) - only on mount
   useEffect(() => {
-    setFileStorePage(currentPage)
-  }, [currentPage, setFileStorePage])
-
-  // Update page when initialPage changes (from file store)
-  useEffect(() => {
-    if (initialPage && initialPage !== currentPage) {
+    if (initialPage && initialPage !== currentPage && !isInitialPageSetRef.current) {
       console.log('[PDFViewer] Setting page from initialPage:', initialPage)
       setCurrentPageState(initialPage)
+      isInitialPageSetRef.current = true
     }
   }, [initialPage])
 

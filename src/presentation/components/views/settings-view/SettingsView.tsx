@@ -7,7 +7,9 @@ import { PersonaRole, PERSONA_PROMPTS } from '../../../../domain/models/llm-pool
 import { fetchAvailableModels, ModelInfo } from '../../../../infrastructure/ai-providers/model-detector';
 import { pluginRegistry } from '../../../../infrastructure/plugins/plugin-registry';
 import { pluginManager } from '../../../../infrastructure/plugins/plugin-manager';
-import { X, Globe, Search, Key, Filter, BookOpen, Server, Plus, Trash2, RefreshCw, CheckCircle, XCircle, Loader2, Edit3 } from 'lucide-react';
+import { getMemoryStats, clearProviderMemory } from '../../../../application/services/provider-memory-service';
+import { ttsManager } from '../../../../infrastructure/tts/tts-manager';
+import { X, Globe, Search, Key, Filter, BookOpen, Server, Plus, Trash2, RefreshCw, CheckCircle, XCircle, Loader2, Edit3, Brain, Eraser, Volume2, Play } from 'lucide-react';
 import './SettingsView.css';
 
 interface SettingsViewProps {
@@ -15,7 +17,7 @@ interface SettingsViewProps {
   onClose: () => void;
 }
 
-type TabType = 'general' | 'webSearch' | 'llmPool' | 'plugins';
+type TabType = 'general' | 'webSearch' | 'llmPool' | 'tts' | 'plugins';
 
 const PROVIDER_OPTIONS: { value: SearchProvider; label: string; requiresKey: boolean }[] = [
   { value: 'duckduckgo', label: 'DuckDuckGo (Free)', requiresKey: false },
@@ -104,6 +106,13 @@ export function SettingsView({ isOpen, onClose }: SettingsViewProps) {
         >
           <Server size={18} />
           LLM Pool
+        </button>
+        <button
+          className={`tab-button ${activeTab === 'tts' ? 'active' : ''}`}
+          onClick={() => setActiveTab('tts')}
+        >
+          <Volume2 size={18} />
+          Text-to-Speech
         </button>
         <button
           className={`tab-button ${activeTab === 'plugins' ? 'active' : ''}`}
@@ -317,6 +326,8 @@ export function SettingsView({ isOpen, onClose }: SettingsViewProps) {
 
       {activeTab === 'llmPool' && <LLMPoolTab />}
 
+      {activeTab === 'tts' && <TTSTab />}
+
       {activeTab === 'plugins' && (
         <section className="settings-section">
           <h3>
@@ -409,6 +420,9 @@ function LLMPoolTab() {
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [isFetchingModels, setIsFetchingModels] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [memoryStats, setMemoryStats] = useState<{ providerId: string; providerName: string; ideas: number; facts: number; learnings: number; peerInsights: number }[]>([]);
+  const [isLoadingMemory, setIsLoadingMemory] = useState(false);
+  const [clearingMemoryId, setClearingMemoryId] = useState<string | null>(null);
   const stats = getStatistics();
 
   // Auto-fill defaults when provider type changes (only when NOT editing)
@@ -573,6 +587,44 @@ function LLMPoolTab() {
       await handleHealthCheck(provider.id);
     }
   };
+
+  const loadMemoryStats = async () => {
+    setIsLoadingMemory(true);
+    try {
+      const stats = await getMemoryStats();
+      setMemoryStats(stats);
+    } catch (error) {
+      console.error('[Settings] Failed to load memory stats:', error);
+    } finally {
+      setIsLoadingMemory(false);
+    }
+  };
+
+  const handleClearMemory = async (providerId: string, providerName: string) => {
+    if (!confirm(`Clear all memory for ${providerName}? This cannot be undone.`)) {
+      return;
+    }
+    
+    setClearingMemoryId(providerId);
+    try {
+      await clearProviderMemory(providerId, providerName);
+      await loadMemoryStats();
+    } catch (error) {
+      console.error('[Settings] Failed to clear memory:', error);
+    } finally {
+      setClearingMemoryId(null);
+    }
+  };
+
+  useEffect(() => {
+    loadMemoryStats();
+  }, []);
+
+  useEffect(() => {
+    if (providers.length > 0) {
+      loadMemoryStats();
+    }
+  }, [providers.length]);
 
   return (
     <section className="settings-section">
@@ -871,6 +923,18 @@ function LLMPoolTab() {
               )}
             </div>
           )}
+          {(() => {
+            const mem = memoryStats.find(m => m.providerId === provider.id);
+            if (mem && (mem.ideas + mem.facts + mem.learnings + mem.peerInsights) > 0) {
+              return (
+                <div className="provider-memory" title={`Memory: ${mem.ideas} ideas, ${mem.facts} facts, ${mem.learnings} learnings`}>
+                  <Brain size={12} />
+                  <span>{mem.ideas + mem.facts + mem.learnings}</span>
+                </div>
+              );
+            }
+            return null;
+          })()}
         </div>
         <div className="provider-actions">
           <button
@@ -949,6 +1013,375 @@ function LLMPoolTab() {
           </div>
         </>
       )}
+
+      {/* Provider Memory Management */}
+      <div className="setting-section-subtitle" style={{ marginTop: '1.5rem' }}>
+        <Brain size={16} />
+        Provider Memories
+        <button className="icon-button small" onClick={loadMemoryStats} title="Refresh Memory Stats" style={{ marginLeft: '8px' }}>
+          <RefreshCw size={14} className={isLoadingMemory ? 'spinning' : ''} />
+        </button>
+      </div>
+      
+      <div className="setting-description" style={{ marginBottom: '1rem' }}>
+        Each provider maintains memory of ideas, facts, and learnings from discussions.
+      </div>
+
+      {memoryStats.length === 0 ? (
+        <div className="empty-providers">
+          No provider memories found. Memories are created when providers participate in discussions.
+        </div>
+      ) : (
+        <div className="memory-list">
+          {memoryStats.map((stat) => (
+            <div key={stat.providerId} className="memory-item">
+              <div className="memory-header">
+                <div className="memory-provider">
+                  <Brain size={14} />
+                  <span className="memory-name">{stat.providerName}</span>
+                </div>
+                <button
+                  className="icon-button small danger"
+                  onClick={() => handleClearMemory(stat.providerId, stat.providerName)}
+                  disabled={clearingMemoryId === stat.providerId}
+                  title="Clear memory"
+                >
+                  <Eraser size={14} className={clearingMemoryId === stat.providerId ? 'spinning' : ''} />
+                </button>
+              </div>
+              <div className="memory-stats">
+                <div className="memory-stat">
+                  <span className="memory-stat-value">{stat.ideas}</span>
+                  <span className="memory-stat-label">Ideas</span>
+                </div>
+                <div className="memory-stat">
+                  <span className="memory-stat-value">{stat.facts}</span>
+                  <span className="memory-stat-label">Facts</span>
+                </div>
+                <div className="memory-stat">
+                  <span className="memory-stat-value">{stat.learnings}</span>
+                  <span className="memory-stat-label">Learnings</span>
+                </div>
+                <div className="memory-stat">
+                  <span className="memory-stat-value">{stat.peerInsights}</span>
+                  <span className="memory-stat-label">Peer Insights</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// TTS Tab Component
+function TTSTab() {
+  const { global, updateTTS } = useSettingsStore();
+  const tts = global.tts || { defaultBackend: 'edge' as const, edge: { enabled: true, voice: 'en-US-AriaNeural', speed: 1.0 }, qwen: { enabled: false, serverUrl: 'http://localhost:8083', voice: 'Vivian', speed: 1.0, systemPrompt: '' }, system: { enabled: false, speed: 1.0 }, volume: 1.0, autoPlayInClassroom: false };
+  
+  const [availableVoices, setAvailableVoices] = useState<string[]>([]);
+  const [isLoadingVoices, setIsLoadingVoices] = useState(false);
+  const [isTestingTTS, setIsTestingTTS] = useState(false);
+  const [testText, setTestText] = useState('Hello! This is a test of the text-to-speech system.');
+  const qwenVoices = ['Vivian', 'Serena', 'Ryan', 'Aiden', 'Uncle_Fu'];
+
+  const loadEdgeVoices = async () => {
+    setIsLoadingVoices(true);
+    try {
+      // Load voices from Web Speech API
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length > 0) {
+        setAvailableVoices(voices.map(v => v.name));
+      } else {
+        // If voices aren't loaded yet, wait a bit
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const voicesAfterWait = window.speechSynthesis.getVoices();
+        setAvailableVoices(voicesAfterWait.map(v => v.name));
+      }
+    } catch (error) {
+      console.error('[Settings] Failed to load TTS voices:', error);
+    } finally {
+      setIsLoadingVoices(false);
+    }
+  };
+
+  useEffect(() => {
+    if (tts.defaultBackend === 'edge') {
+      loadEdgeVoices();
+    }
+  }, [tts.defaultBackend]);
+
+  const handleTestTTS = async () => {
+    setIsTestingTTS(true);
+    try {
+      const backend = tts.defaultBackend;
+      const config: any = {};
+      
+      if (backend === 'edge') {
+        config.backend = 'edge';
+        // Use saved voice (including 'auto' for language detection)
+        config.voice = tts.edge?.voice || 'auto';
+        config.speed = tts.edge?.speed || 1.0;
+      } else if (backend === 'qwen') {
+        config.backend = 'qwen';
+        config.voice = tts.qwen?.voice || 'Vivian';
+        config.speed = tts.qwen?.speed || 1.0;
+      }
+      
+      console.log('[Settings] TTS Test - Backend:', backend, 'Config:', config);
+      console.log('[Settings] TTS Manager available backends:', ttsManager.getAvailableBackends());
+      
+      await ttsManager.speak(testText, config);
+    } catch (error) {
+      console.error('[Settings] TTS test failed:', error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      alert('TTS test failed: ' + errorMsg + '\n\nCheck console for details.');
+    } finally {
+      setIsTestingTTS(false);
+    }
+  };
+
+  return (
+    <section className="settings-section">
+      <h3>
+        <Volume2 size={20} />
+        Text-to-Speech Configuration
+      </h3>
+
+      <div className="setting-description">
+        Configure text-to-speech for reading chat messages and classroom content aloud.
+      </div>
+
+      {/* Default Backend Selection */}
+      <div className="setting-section-subtitle">
+        <Filter size={16} />
+        Default TTS Backend
+      </div>
+
+      <div className="setting-item">
+        <div className="backend-selector">
+          <label className={`backend-option ${tts.defaultBackend === 'edge' ? 'selected' : ''}`}>
+            <input
+              type="radio"
+              name="tts-backend"
+              value="edge"
+              checked={tts.defaultBackend === 'edge'}
+              onChange={() => updateTTS({ defaultBackend: 'edge' })}
+            />
+            <div className="backend-info">
+              <span className="backend-name">Microsoft Edge TTS</span>
+              <span className="backend-desc">High quality neural voices, requires internet</span>
+            </div>
+            <div className={`backend-status ${tts.edge.enabled ? 'enabled' : ''}`}>
+              {tts.edge.enabled ? 'Active' : 'Disabled'}
+            </div>
+          </label>
+          
+          <label className={`backend-option ${tts.defaultBackend === 'qwen' ? 'selected' : ''}`}>
+            <input
+              type="radio"
+              name="tts-backend"
+              value="qwen"
+              checked={tts.defaultBackend === 'qwen'}
+              onChange={() => updateTTS({ defaultBackend: 'qwen' })}
+            />
+            <div className="backend-info">
+              <span className="backend-name">Qwen TTS</span>
+              <span className="backend-desc">Custom voice generation, requires Qwen TTS server</span>
+            </div>
+            <div className={`backend-status ${tts.qwen.enabled ? 'enabled' : ''}`}>
+              {tts.qwen.enabled ? 'Active' : 'Disabled'}
+            </div>
+          </label>
+        </div>
+      </div>
+
+      {/* Edge TTS Settings */}
+      {tts.defaultBackend === 'edge' && (
+        <>
+          <div className="setting-section-subtitle">
+            <Filter size={16} />
+            Edge TTS Settings
+          </div>
+
+          <div className="setting-item">
+            <label>Voice</label>
+            {isLoadingVoices ? (
+              <div className="loading-voices">
+                <Loader2 size={14} className="spinning" />
+                <span>Loading voices...</span>
+              </div>
+            ) : availableVoices.length > 0 ? (
+              <select
+                value={tts.edge.voice || 'auto'}
+                onChange={(e) => updateTTS({ edge: { ...tts.edge, voice: e.target.value } })}
+              >
+                <option value="auto">Auto (detects language)</option>
+                {availableVoices.map((voice) => (
+                  <option key={voice} value={voice}>
+                    {voice}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="voice-load-error">
+                <span>Could not load voices. Click to retry.</span>
+                <button className="icon-button small" onClick={loadEdgeVoices}>
+                  <RefreshCw size={14} />
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="setting-item">
+            <label>Speed</label>
+            <div className="range-input">
+              <input
+                type="range"
+                min="0.5"
+                max="2"
+                step="0.1"
+                value={tts.edge.speed}
+                onChange={(e) => updateTTS({ edge: { ...tts.edge, speed: parseFloat(e.target.value) } })}
+              />
+              <span>{tts.edge.speed.toFixed(1)}x</span>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Qwen TTS Settings */}
+      {tts.defaultBackend === 'qwen' && (
+        <>
+          <div className="setting-section-subtitle">
+            <Filter size={16} />
+            Qwen TTS Settings
+          </div>
+
+          <div className="setting-item">
+            <label>Server URL</label>
+            <input
+              type="text"
+              value={tts.qwen.serverUrl}
+              onChange={(e) => updateTTS({ qwen: { ...tts.qwen, serverUrl: e.target.value } })}
+              placeholder="http://localhost:8083"
+            />
+            <div className="setting-hint">
+              Qwen TTS server must be running at this address
+            </div>
+          </div>
+
+          <div className="setting-item">
+            <label>Voice</label>
+            <select
+              value={tts.qwen.voice}
+              onChange={(e) => updateTTS({ qwen: { ...tts.qwen, voice: e.target.value } })}
+            >
+              {qwenVoices.map((voice) => (
+                <option key={voice} value={voice}>
+                  {voice.replace('_', ' ')}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="setting-item">
+            <label>Speed</label>
+            <div className="range-input">
+              <input
+                type="range"
+                min="0.5"
+                max="2"
+                step="0.1"
+                value={tts.qwen.speed}
+                onChange={(e) => updateTTS({ qwen: { ...tts.qwen, speed: parseFloat(e.target.value) } })}
+              />
+              <span>{tts.qwen.speed.toFixed(1)}x</span>
+            </div>
+          </div>
+
+          <div className="setting-item">
+            <label>System Prompt (Optional)</label>
+            <textarea
+              value={tts.qwen.systemPrompt || ''}
+              onChange={(e) => updateTTS({ qwen: { ...tts.qwen, systemPrompt: e.target.value } })}
+              placeholder="Additional instructions for the TTS voice (e.g., 'Speak in a warm, friendly tone')"
+              rows={3}
+            />
+            <div className="setting-hint">
+              Custom prompt to guide the TTS voice personality
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Global Settings */}
+      <div className="setting-section-subtitle">
+        <Filter size={16} />
+        Global Settings
+      </div>
+
+      <div className="setting-item">
+        <label>Volume</label>
+        <div className="range-input">
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.1"
+            value={tts.volume}
+            onChange={(e) => updateTTS({ volume: parseFloat(e.target.value) })}
+          />
+          <span>{Math.round(tts.volume * 100)}%</span>
+        </div>
+      </div>
+
+      {/* Test Section */}
+      <div className="setting-section-subtitle">
+        <Filter size={16} />
+        Test TTS
+      </div>
+
+      <div className="setting-item">
+        <label>Quick Language Tests</label>
+        <div className="language-test-buttons">
+          <button className="lang-test-btn" onClick={() => setTestText('Hello! This is a test of the text-to-speech system.')}>🇺🇸 English</button>
+          <button className="lang-test-btn" onClick={() => setTestText('你好！这是一个文本转语音的测试。')}>🇨🇳 中文</button>
+          <button className="lang-test-btn" onClick={() => setTestText('こんにちは！これは音声合成のテストです。')}>🇯🇵 日本語</button>
+          <button className="lang-test-btn" onClick={() => setTestText('안녕하세요! 이것은 음성 합성 테스트입니다.')}>🇰🇷 한국어</button>
+        </div>
+      </div>
+
+      <div className="setting-item">
+        <label>Test Text</label>
+        <textarea
+          value={testText}
+          onChange={(e) => setTestText(e.target.value)}
+          rows={2}
+          placeholder="Enter text to test TTS..."
+        />
+      </div>
+
+      <div className="test-tts-button">
+        <button
+          className="button primary"
+          onClick={handleTestTTS}
+          disabled={isTestingTTS}
+        >
+          {isTestingTTS ? (
+            <>
+              <Loader2 size={16} className="spinning" />
+              Playing...
+            </>
+          ) : (
+            <>
+              <Play size={16} />
+              Test TTS
+            </>
+          )}
+        </button>
+      </div>
     </section>
   );
 }

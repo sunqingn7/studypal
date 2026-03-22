@@ -186,8 +186,146 @@ export class TTSManager {
   }
 
   async speak(text: string, config?: TTSConfig): Promise<void> {
+    const backendName = config?.backend || this.defaultBackend?.getBackendName();
+    
+    // For Web Speech API (edge backend without API), speak directly
+    if (backendName === 'edge' && window.speechSynthesis) {
+      return this.speakWithWebSpeech(text, config);
+    }
+    
     const audioData = await this.synthesize(text, config);
+    if (!audioData.data) {
+      return;
+    }
     return this.audioPlayer.play(audioData);
+  }
+
+  private speakWithWebSpeech(text: string, config?: TTSConfig): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const utterance = new SpeechSynthesisUtterance(text);
+      
+      const voices = window.speechSynthesis!.getVoices();
+      console.log('[TTS] Available voices:', voices.map(v => ({ name: v.name, lang: v.lang })));
+      
+      // Get voice name from config, or auto-detect based on language
+      let voiceName = config?.voice;
+      
+      if (!voiceName || voiceName === 'auto') {
+        const detectedLang = this.detectLanguage(text);
+        console.log('[TTS] Detected language:', detectedLang);
+        voiceName = this.selectVoiceForLanguage(text, voices);
+        console.log('[TTS] Selected voice:', voiceName);
+      } else {
+        // Try to find exact match first
+        const exactMatch = voices.find(v => v.name === voiceName);
+        if (!exactMatch) {
+          console.log('[TTS] Voice not found:', voiceName, 'falling back to auto');
+          voiceName = this.selectVoiceForLanguage(text, voices);
+        }
+      }
+      
+      const matchedVoice = voices.find(v => v.name === voiceName);
+      if (matchedVoice) {
+        utterance.voice = matchedVoice;
+        utterance.lang = matchedVoice.lang;
+        console.log('[TTS] Using voice:', matchedVoice.name, 'lang:', matchedVoice.lang);
+      } else {
+        console.log('[TTS] No matching voice found, using default');
+      }
+      
+      utterance.rate = config?.speed || 1;
+      
+      utterance.onend = () => resolve();
+      utterance.onerror = (event) => reject(new Error(`Speech synthesis error: ${event.error}`));
+
+      window.speechSynthesis!.speak(utterance);
+    });
+  }
+
+  private detectLanguage(text: string): string {
+    // Simple language detection based on character patterns
+    const chineseRegex = /[\u4e00-\u9fff]/g;
+    const japaneseRegex = /[\u3040-\u309f\u30a0-\u30ff]/g;
+    const koreanRegex = /[\uac00-\ud7af\u1100-\u11ff]/g;
+    const arabicRegex = /[\u0600-\u06ff]/g;
+    const russianRegex = /[\u0400-\u04ff]/g;
+    const germanRegex = /[äöüß]/gi;
+    const frenchRegex = /[àâçéèêëïîôùûüÿ]/gi;
+    const spanishRegex = /[áéíóúüñ¿¡]/gi;
+
+    const chineseCount = (text.match(chineseRegex) || []).length;
+    const japaneseCount = (text.match(japaneseRegex) || []).length;
+    const koreanCount = (text.match(koreanRegex) || []).length;
+    const arabicCount = (text.match(arabicRegex) || []).length;
+    const russianCount = (text.match(russianRegex) || []).length;
+    const germanCount = (text.match(germanRegex) || []).length;
+    const frenchCount = (text.match(frenchRegex) || []).length;
+    const spanishCount = (text.match(spanishRegex) || []).length;
+
+    const totalNonEnglish = chineseCount + japaneseCount + koreanCount + arabicCount + russianCount + germanCount + frenchCount + spanishCount;
+
+    if (totalNonEnglish === 0) {
+      return 'en';
+    }
+
+    const langCounts: Record<string, number> = {
+      'zh': chineseCount,
+      'ja': japaneseCount,
+      'ko': koreanCount,
+      'ar': arabicCount,
+      'ru': russianCount,
+      'de': germanCount,
+      'fr': frenchCount,
+      'es': spanishCount,
+    };
+
+    let maxLang = 'en';
+    let maxCount = 0;
+    for (const [lang, count] of Object.entries(langCounts)) {
+      if (count > maxCount) {
+        maxCount = count;
+        maxLang = lang;
+      }
+    }
+
+    return maxLang;
+  }
+
+  private selectVoiceForLanguage(text: string, voices: SpeechSynthesisVoice[]): string {
+    const detectedLang = this.detectLanguage(text);
+    
+    // First, try to find a voice that matches the detected language
+    // This is the most reliable method - match by voice's lang property
+    const langVoiceMap: Record<string, string[]> = {
+      'zh': ['zh', 'zh-CN', 'zh-TW', 'zh-HK'],
+      'ja': ['ja', 'ja-JP'],
+      'ko': ['ko', 'ko-KR'],
+      'ar': ['ar', 'ar-SA'],
+      'ru': ['ru', 'ru-RU'],
+      'de': ['de', 'de-DE'],
+      'fr': ['fr', 'fr-FR', 'fr-CA'],
+      'es': ['es', 'es-ES', 'es-MX'],
+    };
+
+    const targetLangs = langVoiceMap[detectedLang] || [detectedLang];
+    
+    // Find voice by language code in the voice's lang property
+    for (const lang of targetLangs) {
+      const voice = voices.find(v => v.lang.startsWith(lang));
+      if (voice) {
+        return voice.name;
+      }
+    }
+
+    // If no exact match, try partial matching for the language
+    const partialVoice = voices.find(v => v.lang.toLowerCase().includes(detectedLang));
+    if (partialVoice) {
+      return partialVoice.name;
+    }
+
+    // Fallback to first English voice
+    const englishVoice = voices.find(v => v.lang.startsWith('en'));
+    return englishVoice?.name || voices[0]?.name || 'Samantha';
   }
 
   pausePlayback(): void {
@@ -200,6 +338,9 @@ export class TTSManager {
 
   stopPlayback(): void {
     this.audioPlayer.stop();
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
   }
 
   seekPlayback(time: number): void {

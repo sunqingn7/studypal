@@ -70,8 +70,8 @@ impl EdgeTTS {
     }
 
     pub async fn synthesize(&self, request: TTSRequest) -> Result<TTSResponse, String> {
-        // Use the correct Edge TTS synthesis endpoint
-        let url = "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1";
+        // Use the Microsoft Cognitive Services TTS API endpoint
+        let url = "https://eastus.tts.speech.microsoft.com/cognitiveservices/v1";
         
         let voice = request.voice.unwrap_or_else(|| "en-US-JennyNeural".to_string());
         let rate = request.rate.unwrap_or(0.0);
@@ -80,21 +80,19 @@ impl EdgeTTS {
 
         // Build SSML
         let ssml = format!(
-            r#"
-            <speak version="1.0" xml:lang="en-US"
-                xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xmlns:emo="http://www.w3.org/2009/10/emotionml">
-                <voice name="{}">
-                    <prosody rate="{}%" pitch="{}Hz" volume="{}%">
-                        {}
-                    </prosody>
-                </voice>
-            </speak>
-            "#,
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<speak version='1.0' xml:lang='en-US' xmlns='http://www.w3.org/2001/10/synthesis' xmlns:mstts='http://schemas.microsoft.com/2003/10/ synthesis'>
+    <voice name='{}'>
+        <prosody rate='{}%' pitch='{}Hz' volume='{}%'>
+            {}
+        </prosody>
+    </voice>
+</speak>"#,
             voice,
             rate,
             pitch,
             volume,
-            request.text
+            request.text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
         );
 
         let response = self.client
@@ -102,6 +100,7 @@ impl EdgeTTS {
             .header("Content-Type", "application/ssml+xml")
             .header("User-Agent", "Mozilla/5.0")
             .header("X-Microsoft-OutputFormat", "audio-24khz-48kbitrate-monaural-mp3")
+            .header("Ocp-Apim-Subscription-Key", "dummy_key_for_testing")
             .body(ssml)
             .send()
             .await
@@ -110,6 +109,7 @@ impl EdgeTTS {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
+            println!("[EdgeTTS] Synthesis failed: HTTP {} - {}", status, error_text);
             return Err(format!("Failed to synthesize: HTTP {} - {}", status, error_text));
         }
 

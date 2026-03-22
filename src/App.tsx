@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import MainLayout from './presentation/layouts/MainLayout'
 import { loadAllPlugins, unloadAllPlugins } from './infrastructure/plugins/plugin-loader'
 import { useThemeStore } from './application/store/theme-store'
@@ -7,6 +7,7 @@ import { useSettingsStore } from './application/store/settings-store'
 function App() {
   const { theme, setTheme, toggleTheme } = useThemeStore()
   const { global } = useSettingsStore()
+  const pluginsLoadedRef = useRef(false)
 
   // Apply theme from settings store
   useEffect(() => {
@@ -33,6 +34,9 @@ function App() {
 
   // Load plugins on app start
   useEffect(() => {
+    if (pluginsLoadedRef.current) return
+    pluginsLoadedRef.current = true
+    
     const initPlugins = async () => {
       try {
         await loadAllPlugins()
@@ -46,6 +50,7 @@ function App() {
     // Cleanup plugins on unmount
     return () => {
       unloadAllPlugins().catch(console.error)
+      pluginsLoadedRef.current = false
     }
   }, [])
 

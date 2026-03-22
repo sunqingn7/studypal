@@ -1,9 +1,11 @@
 import { MCPServerPlugin, MCPTool, MCPToolResult, PluginMetadata } from '../../domain/models/plugin';
 import { useClassroomStore } from '../../application/store/classroom-store';
 import { useLLMPoolStore } from '../../application/store/llm-pool-store';
+import { useNotificationStore } from '../../application/store/notification-store';
 
 export class ClassroomMCPServerPlugin implements MCPServerPlugin {
   private healthCheckInterval?: ReturnType<typeof setInterval>;
+  private lastHealthStatus: Map<string, boolean> = new Map();
 
   private startHealthChecks() {
     if (this.healthCheckInterval) return;
@@ -16,6 +18,29 @@ export class ClassroomMCPServerPlugin implements MCPServerPlugin {
           const { checkProviderHealth } = await import('../../application/services/llm-pool-health-check');
           const result = await checkProviderHealth(provider);
           setProviderHealth(provider.id, result.isHealthy, result.latency, result.error);
+          
+          const prevHealth = this.lastHealthStatus.get(provider.id);
+          const notifications = useNotificationStore.getState();
+          
+          if (prevHealth === true && !result.isHealthy) {
+            notifications.addNotification({
+              type: 'warning',
+              title: 'Provider Offline',
+              message: `${provider.nickname || provider.name} is not responding. Last check: ${result.latency}ms`,
+              autoClose: true,
+              duration: 8000,
+            });
+          } else if (prevHealth === false && result.isHealthy) {
+            notifications.addNotification({
+              type: 'success',
+              title: 'Provider Online',
+              message: `${provider.nickname || provider.name} is back online`,
+              autoClose: true,
+              duration: 5000,
+            });
+          }
+          
+          this.lastHealthStatus.set(provider.id, result.isHealthy);
         } catch (e) {
           setProviderHealth(provider.id, false, undefined, String(e));
         }

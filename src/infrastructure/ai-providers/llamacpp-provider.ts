@@ -26,6 +26,9 @@ interface StreamChunkData {
   done: boolean
 }
 
+const MAX_RETRIES = 2
+const RETRY_DELAY = 1000
+
 export class LlamaCppProvider implements AIProvider {
   name = 'llama.cpp'
 
@@ -49,13 +52,25 @@ export class LlamaCppProvider implements AIProvider {
       extraBody: config.extraBody,
     }
 
-    try {
-      const result = await invoke<string>('chat_with_provider', { request: payload, provider: 'llamacpp' })
-      return String(result)
-    } catch (error: any) {
-      console.error('[llamacpp-provider] Chat failed:', error?.message || error)
-      throw error
+    let lastError: Error | null = null
+    
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const result = await invoke<string>('chat_with_provider', { request: payload, provider: 'llamacpp' })
+        return String(result)
+      } catch (error: any) {
+        lastError = error
+        console.warn(`[llamacpp-provider] Chat attempt ${attempt + 1} failed:`, error?.message || error)
+        
+        if (attempt < MAX_RETRIES) {
+          console.log(`[llamacpp-provider] Retrying in ${RETRY_DELAY}ms...`)
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY))
+        }
+      }
     }
+    
+    console.error('[llamacpp-provider] Chat failed after', MAX_RETRIES + 1, 'attempts')
+    throw lastError
   }
 
   async streamChat(
@@ -78,39 +93,46 @@ export class LlamaCppProvider implements AIProvider {
       extraBody: config.extraBody,
     }
 
-    // Set up event listener for streaming chunks
     let unlisten: UnlistenFn | null = null
     let fullContent = ''
+    let lastError: Error | null = null
 
-    try {
-    // Generate unique stream ID for this streaming session
-    const streamId = `llamacpp-stream-${crypto.randomUUID()}`
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const streamId = `llamacpp-stream-${crypto.randomUUID()}`
+        const payloadWithStream = { ...payload, streamEvent: streamId }
 
-    // Add streamEvent to payload
-    const payloadWithStream = { ...payload, streamEvent: streamId }
+        unlisten = await listen<StreamChunkData>(streamId, (event) => {
+          if (event.payload.done) {
+            return
+          }
 
-    // Listen for stream chunks from the backend
-    unlisten = await listen<StreamChunkData>(streamId, (event) => {
-      if (event.payload.done) {
+          if (event.payload.content) {
+            fullContent += event.payload.content
+            onChunk(event.payload.content)
+          }
+        })
+
+        await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'llamacpp' })
         return
-      }
-
-      if (event.payload.content) {
-        fullContent += event.payload.content
-        onChunk(event.payload.content)
-      }
-    })
-
-    // Start the streaming request
-    await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'llamacpp' })
-    } catch (error: any) {
-      console.error('[llamacpp-provider] Stream error:', error?.message || error)
-      throw error
-    } finally {
-      if (unlisten) {
-        unlisten()
+      } catch (error: any) {
+        lastError = error
+        console.warn(`[llamacpp-provider] Stream attempt ${attempt + 1} failed:`, error?.message || error)
+        
+        if (unlisten) {
+          unlisten()
+          unlisten = null
+        }
+        
+        if (attempt < MAX_RETRIES) {
+          console.log(`[llamacpp-provider] Retrying in ${RETRY_DELAY}ms...`)
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY))
+        }
       }
     }
+    
+    console.error('[llamacpp-provider] Stream failed after', MAX_RETRIES + 1, 'attempts')
+    throw lastError
   }
 
   async streamChatWithThinking(
@@ -136,46 +158,53 @@ export class LlamaCppProvider implements AIProvider {
       extraBody: config.extraBody,
     }
 
-    // Set up event listener for streaming chunks
     let unlisten: UnlistenFn | null = null
     let fullContent = ''
     let fullThinking = ''
+    let lastError: Error | null = null
 
-  try {
-    // Generate unique stream ID for this streaming session
-    const streamId = `llamacpp-stream-${crypto.randomUUID()}`
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const streamId = `llamacpp-stream-${crypto.randomUUID()}`
+        const payloadWithStream = { ...payload, streamEvent: streamId }
 
-    // Add streamEvent to payload
-    const payloadWithStream = { ...payload, streamEvent: streamId }
+        unlisten = await listen<StreamChunkData>(streamId, (event) => {
+          if (event.payload.done) {
+            console.log('[llamacpp-provider] Stream complete, content:', fullContent.length, 'chars, thinking:', fullThinking.length, 'chars')
+            return
+          }
 
-    // Listen for stream chunks from the backend
-    unlisten = await listen<StreamChunkData>(streamId, (event) => {
-      if (event.payload.done) {
-        console.log('[llamacpp-provider] Stream complete, content:', fullContent.length, 'chars, thinking:', fullThinking.length, 'chars')
+          if (event.payload.thinking) {
+            fullThinking += event.payload.thinking
+            onThinking(fullThinking)
+          }
+
+          if (event.payload.content) {
+            fullContent += event.payload.content
+            onChunk(event.payload.content)
+          }
+        })
+
+        await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'llamacpp' })
         return
-      }
-
-      if (event.payload.thinking) {
-        fullThinking += event.payload.thinking
-        onThinking(fullThinking)
-      }
-
-      if (event.payload.content) {
-        fullContent += event.payload.content
-        onChunk(event.payload.content)
-      }
-    })
-
-    // Start the streaming request
-    await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'llamacpp' })
-    } catch (error: any) {
-      console.error('[llamacpp-provider] streamChatWithThinking error:', error)
-      throw error
-    } finally {
-      if (unlisten) {
-        unlisten()
+      } catch (error: any) {
+        lastError = error
+        console.warn(`[llamacpp-provider] StreamWithThinking attempt ${attempt + 1} failed:`, error?.message || error)
+        
+        if (unlisten) {
+          unlisten()
+          unlisten = null
+        }
+        
+        if (attempt < MAX_RETRIES) {
+          console.log(`[llamacpp-provider] Retrying in ${RETRY_DELAY}ms...`)
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY))
+        }
       }
     }
+    
+    console.error('[llamacpp-provider] StreamWithThinking failed after', MAX_RETRIES + 1, 'attempts')
+    throw lastError
   }
 }
 

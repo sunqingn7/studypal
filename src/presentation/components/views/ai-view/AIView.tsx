@@ -12,6 +12,7 @@ import { useAIChatStore } from '../../../../application/store/ai-chat-store'
 import { useFileStore } from '../../../../application/store/file-store'
 import { useNoteStore } from '../../../../application/store/note-store'
 import { useTopicStore } from '../../../../application/store/topic-store'
+import { useSettingsStore } from '../../../../application/store/settings-store'
 import { getProvider, AVAILABLE_PROVIDERS } from '../../../../infrastructure/ai-providers/provider-factory'
 import { fetchAvailableModels, ModelInfo, getModelMaxTokens } from '../../../../infrastructure/ai-providers/model-detector'
 import { getCurrentPageText, getAllPagesText } from '../../../../infrastructure/file-handlers/pdf-utils'
@@ -66,6 +67,9 @@ function AIView() {
 
   // Track discuss mode for visual grouping
   const [isDiscussMode, setIsDiscussMode] = useState(false)
+  
+  // TTS state
+  const [readingMessageId, setReadingMessageId] = useState<string | null>(null)
   
   // AbortController for canceling in-flight streaming requests
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -135,15 +139,71 @@ function AIView() {
     console.log('[AIView] NoteIt: Created note', note.id, title)
   }, [activeTopicId, createNote, updateNoteContent, createTabForNote])
 
+  const handleRead = useCallback(async (message: ChatMessage) => {
+    if (readingMessageId === message.id) {
+      const { ttsManager } = await import('../../../../infrastructure/tts/tts-manager')
+      ttsManager.stopPlayback()
+      setReadingMessageId(null)
+      return
+    }
+
+    setReadingMessageId(message.id)
+    
+    try {
+      const { global } = useSettingsStore.getState()
+      const { ttsManager } = await import('../../../../infrastructure/tts/tts-manager')
+      
+      const plainText = message.content
+        .replace(/```[\s\S]*?```/g, '')
+        .replace(/`[^`]*`/g, '')
+        .replace(/[#*_~\[\]]/g, '')
+        .replace(/\n+/g, ' ')
+        .trim()
+      
+      if (!plainText) {
+        setReadingMessageId(null)
+        return
+      }
+
+      const ttsConfig = global.tts || { defaultBackend: 'edge', edge: { voice: 'en-US-AriaNeural', speed: 1.0 }, qwen: { voice: 'Vivian', speed: 1.0 }, volume: 1.0 }
+      
+      const config: any = {}
+      const backend = ttsConfig.defaultBackend
+      
+      if (backend === 'edge') {
+        config.backend = 'edge'
+        // Use 'auto' to enable automatic language detection
+        config.voice = ttsConfig.edge?.voice || 'auto'
+        config.speed = ttsConfig.edge?.speed || 1.0
+      } else if (backend === 'qwen') {
+        config.backend = 'qwen'
+        config.voice = ttsConfig.qwen?.voice || 'Vivian'
+        config.speed = ttsConfig.qwen?.speed || 1.0
+      } else {
+        config.backend = 'edge'
+        config.voice = 'auto'
+        config.speed = 1.0
+      }
+      
+      ttsManager.setVolume(ttsConfig.volume || 1.0)
+      ttsManager.setPlaybackRate(config.speed || 1)
+      
+      await ttsManager.speak(plainText, config)
+    } catch (error) {
+      console.error('[AIView] TTS error:', error)
+    } finally {
+      setReadingMessageId(null)
+    }
+  }, [readingMessageId])
+
   // Track if we've initialized tabs to prevent duplicates
   const initializedRef = useRef(false)
 
   useEffect(() => {
     // Skip if already initialized
     if (initializedRef.current) return;
-    
+
     // Don't auto-create tabs if no file is open (system state handles it)
-    const currentFile = useFileStore.getState().currentFile;
     if (!currentFile && tabs.length === 0) {
       // System state will be loaded, don't create default tabs here
       return;
@@ -152,16 +212,15 @@ function AIView() {
       initializedRef.current = true;
       addTab()
     }
-  }, [])
+  }, [currentFile, tabs.length, addTab])
 
   // Also handle when system state gets loaded
   useEffect(() => {
-    const currentFile = useFileStore.getState().currentFile;
     if (!currentFile && tabs.length > 0) {
       // System state loaded tabs, mark as initialized
       initializedRef.current = true;
     }
-  }, [tabs.length]);
+  }, [currentFile, tabs.length]);
 
   // Track if we've ever been in discuss mode - once set, never turns off
   const everInDiscussMode = useRef(false)
@@ -487,8 +546,8 @@ const handleSend = async () => {
     setStreaming(true)
     setIsProcessing(true)
 
-    // Declare targetProvider for use in single provider mode
-    let targetProvider: typeof targetProviders[0] | undefined
+      // targetProvider will be assigned below for single provider mode
+      let singleProvider: typeof targetProviders[0] | undefined
 
     try {
       // Build context from current file and notes
@@ -663,11 +722,11 @@ ${personaPrompt.systemPrompt}`,
             },
             signal
           )
-        } else if (supportsThinking) {
-          await provider.streamChatWithThinking!(
-            messagesWithTools,
-            providerConfig,
-            (chunk: string) => {
+          } else if (supportsThinking) {
+            await provider.streamChatWithThinking!(
+              providerMessages,
+              providerConfig,
+              (chunk: string) => {
               localContent += chunk
               const displayContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
               providerStreamingContent.set(targetProvider.id, displayContent)
@@ -837,7 +896,8 @@ ${personaPrompt.systemPrompt}`,
     }
 
     // Single provider mode (auto or assigned)
-    const targetProvider = targetProviders[0]
+    singleProvider = targetProviders[0]
+    const targetProvider = singleProvider
     const providerConfig = targetProvider?.config || config
     const provider = getProvider(providerConfig.provider)
 
@@ -1059,8 +1119,8 @@ ${personaPrompt.systemPrompt}`,
   } catch (error) {
     console.error('AI Error:', error)
     addMessage(activeTabId, 'assistant', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`, undefined, {
-      providerId: targetProvider?.id || config.provider,
-      nickname: targetProvider?.nickname || targetProvider?.name || config.provider,
+      providerId: singleProvider?.id || config.provider,
+      nickname: singleProvider?.nickname || singleProvider?.name || config.provider,
     })
       setStreamingContent('')
       setStreamingThinking('')
@@ -1368,6 +1428,13 @@ ${personaPrompt.systemPrompt}`,
               )}
               {msg.role === 'assistant' && msg.providerId !== 'system' && (
                 <div className="message-actions">
+                  <button
+                    className="message-action-btn"
+                    onClick={() => handleRead(msg)}
+                    title="Read aloud"
+                  >
+                    {readingMessageId === msg.id ? '⏹️ Stop' : '🔊 Read'}
+                  </button>
                   <button
                     className="message-action-btn"
                     onClick={() => handleNoteIt(msg)}

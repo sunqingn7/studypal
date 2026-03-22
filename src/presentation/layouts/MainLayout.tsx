@@ -17,6 +17,7 @@ import AIView from '../components/views/ai-view/AIView'
 import { Sun, Moon, Settings } from 'lucide-react'
 import { FileMetadata } from '../../domain/models/file'
 import { SettingsView } from '../components/views/settings-view/SettingsView'
+import { NotificationBell } from '../components/NotificationBell'
 
 function MainLayout() {
   const { currentFile } = useFileStore()
@@ -434,6 +435,9 @@ function MainLayout() {
       >
         <Settings className="w-4 h-4" />
       </button>
+
+      {/* Notification Bell */}
+      <NotificationBell />
 
       {/* Settings Modal */}
       <SettingsView isOpen={showSettings} onClose={() => setShowSettings(false)} />
