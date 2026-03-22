@@ -14,7 +14,7 @@ export function PaperLink({ href, children }: PaperLinkProps) {
   const [downloadError, setDownloadError] = useState<string | null>(null);
   
   const { setCurrentFile } = useFileStore();
-  const { createNote } = useNoteStore();
+  const { createNote, updateNoteContent } = useNoteStore();
 
   const isPaper = isPaperUrl(href);
   const title = typeof children === 'string' ? children : extractPaperTitleFromMarkdown(href);
@@ -58,9 +58,9 @@ ${result.metadata.year ? `**Year:** ${result.metadata.year}` : ''}
 
 Downloaded and opened automatically.`;
 
-        // Add note to global notes (TODO: Store note content properly)
-        console.log('Note content:', noteContent);
-        createNote(null, result.metadata.title || 'Paper', 'note');
+        // Add note to global notes with paper info
+        const note = createNote(null, result.metadata.title || 'Paper', 'note');
+        updateNoteContent(note.id, noteContent);
       } else {
         setDownloadError(result.error || 'Download failed');
         console.error('Paper download failed:', result.error);

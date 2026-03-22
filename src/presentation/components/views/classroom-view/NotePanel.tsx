@@ -1,12 +1,16 @@
 import { useState } from 'react'
+import { useNoteStore } from '../../../../application/store/note-store'
 import './NotePanel.css'
 
 export function NotePanel() {
   const [notes, setNotes] = useState('')
+  const { createNote, updateNoteContent } = useNoteStore()
 
   const handleSaveNote = () => {
-    // TODO: Save to note store
-    console.log('Saving note:', notes)
+    if (!notes.trim()) return
+    const note = createNote(null, `Classroom Notes - ${new Date().toLocaleDateString()}`, 'note')
+    updateNoteContent(note.id, notes.trim())
+    setNotes('')
   }
 
   return (
