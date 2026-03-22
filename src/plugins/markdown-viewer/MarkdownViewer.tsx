@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
+import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
 import 'katex/dist/katex.min.css';
@@ -137,7 +138,7 @@ export const MarkdownViewer: React.FC<MarkdownViewerProps> = ({ context }) => {
       <div className="flex-1 overflow-auto">
         <div style={customStyles} className="markdown-content">
 <ReactMarkdown
-              remarkPlugins={[remarkMath]}
+              remarkPlugins={[remarkMath, remarkGfm]}
               rehypePlugins={[rehypeRaw, rehypeKatex]}
             >
               {content}

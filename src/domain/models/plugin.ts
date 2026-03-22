@@ -1,3 +1,5 @@
+import React from 'react';
+
 export type PluginType = 'view' | 'file-handler' | 'action' | 'ai-provider' | 'mcp-server' | 'tts-backend';
 
 export interface PluginMetadata {
@@ -67,21 +69,6 @@ export interface MCPServerPlugin extends Plugin {
   executeTool(toolName: string, params: Record<string, unknown>): Promise<MCPToolResult>;
 }
 
-export interface FileHandlerPlugin {
-  type: 'file-handler';
-  supportedExtensions: string[];
-  canHandle(filePath: string): boolean;
-  getFileContent(filePath: string): Promise<string>;
-  renderFile(filePath: string): React.ComponentType<{ filePath: string }> | null;
-  extractText?(filePath: string): Promise<string>;
-}
-
-export interface ActionPlugin {
-  type: 'action';
-  getActions(): PluginAction[];
-  executeAction(actionId: string, context: PluginContext): Promise<void>;
-}
-
 export interface PluginAction {
   id: string;
   name: string;
@@ -90,20 +77,6 @@ export interface PluginAction {
   shortcut?: string;
   contextMenu?: boolean;
   toolbar?: boolean;
-}
-
-export interface AIProviderPlugin {
-  type: 'ai-provider';
-  getProviderName(): string;
-  chat(messages: Message[], config?: Record<string, unknown>): Promise<StreamResponse>;
-  streamChat(messages: Message[], config?: Record<string, unknown>): AsyncGenerator<string, void, unknown>;
-}
-
-export interface MCPServerPlugin {
-  type: 'mcp-server';
-  getServerName(): string;
-  getTools(): MCPTool[];
-  executeTool(toolName: string, params: Record<string, unknown>): Promise<MCPToolResult>;
 }
 
 export interface TTSBackendPlugin extends Plugin {

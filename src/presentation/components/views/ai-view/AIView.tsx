@@ -4,6 +4,7 @@ import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
+import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
 import DOMPurify from 'dompurify'
 import 'katex/dist/katex.min.css'
@@ -1406,7 +1407,7 @@ ${personaPrompt.systemPrompt}`,
               // AI messages are Markdown
               <div className="markdown-content">
                 <ReactMarkdown
-                  remarkPlugins={[remarkMath]}
+                  remarkPlugins={[remarkMath, remarkGfm]}
                   rehypePlugins={[rehypeKatex]}
                   components={{
                     a: ({ href, children }) => (
@@ -1451,7 +1452,7 @@ ${personaPrompt.systemPrompt}`,
             <div className="message-content" style={{ fontSize: `${fontSize}px` }}>
               <div className="markdown-content">
                 <ReactMarkdown
-                  remarkPlugins={[remarkMath]}
+                  remarkPlugins={[remarkMath, remarkGfm]}
                   rehypePlugins={[rehypeKatex]}
                 >
                   {streamingContent}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
+import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
 import DOMPurify from 'dompurify'
 import 'katex/dist/katex.min.css'
@@ -368,7 +369,7 @@ function NoteView() {
                 <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(displayContent) }} />
               ) : (
                 <ReactMarkdown
-                  remarkPlugins={[remarkMath]}
+                  remarkPlugins={[remarkMath, remarkGfm]}
                   rehypePlugins={[rehypeKatex]}
                 >
                   {displayContent}

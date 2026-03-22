@@ -1,5 +1,6 @@
 import { pluginManager } from './plugin-manager';
 import { pluginRegistry } from './plugin-registry';
+import { TypedPlugin } from '../../domain/models/plugin';
 import { fileBrowserViewPlugin } from '../../plugins/file-browser-view';
 import { epubSupportPlugin } from '../../plugins/epub-support';
 import { noteMCPServerPlugin } from '../../plugins/mcp-tools/note-mcp-plugin';
@@ -13,45 +14,53 @@ import { TTSMCPServerPlugin } from '../../plugins/mcp-tools/tts-mcp-plugin';
 import { classroomMCPServerPlugin } from '../../plugins/mcp-tools/classroom-mcp-plugin';
 import { classroomViewPlugin } from '../../plugins/classroom-view';
 import { summarySkillMCPServerPlugin } from '../../plugins/mcp-tools/summary-skill-plugin';
+import { useSettingsStore } from '../../application/store/settings-store';
 
 export async function loadAllPlugins(): Promise<void> {
   console.log('[PluginLoader] Starting plugin loading...');
 
-  // Initialize TTS backends and register with manager
+  const { plugins: savedConfigs, updatePluginConfig } = useSettingsStore.getState();
+
   const edgeTTSPlugin = new EdgeTTSBackendPlugin();
   const qwenTTSPlugin = new QwenTTSBackendPlugin();
   const ttsMCPPlugin = new TTSMCPServerPlugin();
 
-  // Load built-in plugins
-  const plugins = [
-    { plugin: fileBrowserViewPlugin, enabled: true },
-    { plugin: epubSupportPlugin, enabled: true },
-    { plugin: noteMCPServerPlugin, enabled: true },
-    { plugin: webSearchMCPServerPlugin, enabled: true },
-    { plugin: markdownViewerPlugin, enabled: true },
-    { plugin: htmlViewerPlugin, enabled: true },
-    { plugin: latexViewerPlugin, enabled: true },
-    { plugin: edgeTTSPlugin, enabled: true },
-    { plugin: qwenTTSPlugin, enabled: true },
-    { plugin: ttsMCPPlugin, enabled: true },
-    { plugin: classroomMCPServerPlugin, enabled: true },
-    { plugin: classroomViewPlugin, enabled: true },
-    { plugin: summarySkillMCPServerPlugin, enabled: true },
+  const builtInPlugins: Array<{ plugin: TypedPlugin }> = [
+    { plugin: fileBrowserViewPlugin },
+    { plugin: epubSupportPlugin },
+    { plugin: noteMCPServerPlugin },
+    { plugin: webSearchMCPServerPlugin },
+    { plugin: markdownViewerPlugin },
+    { plugin: htmlViewerPlugin },
+    { plugin: latexViewerPlugin },
+    { plugin: edgeTTSPlugin },
+    { plugin: qwenTTSPlugin },
+    { plugin: ttsMCPPlugin },
+    { plugin: classroomMCPServerPlugin },
+    { plugin: classroomViewPlugin },
+    { plugin: summarySkillMCPServerPlugin },
   ];
   
-  for (const { plugin, enabled } of plugins) {
+  for (const { plugin } of builtInPlugins) {
+    const pluginId = plugin.metadata.id;
+    const savedConfig = savedConfigs[pluginId];
+    const enabled = savedConfig?.enabled ?? true;
+
     if (enabled) {
-      console.log(`[PluginLoader] Loading ${plugin.metadata.id}...`);
-      const result = await pluginManager.loadPlugin(plugin, { 
-        enabled: true, 
-        config: {} 
-      });
+      console.log(`[PluginLoader] Loading ${pluginId}...`);
+      const config = savedConfig || { enabled: true, config: {} };
+      const result = await pluginManager.loadPlugin(plugin, config);
       
       if (result.success) {
-        console.log(`[PluginLoader] ✓ ${plugin.metadata.id} loaded successfully`);
+        console.log(`[PluginLoader] ✓ ${pluginId} loaded successfully`);
       } else {
-        console.error(`[PluginLoader] ✗ ${plugin.metadata.id} failed:`, result.error);
+        console.error(`[PluginLoader] ✗ ${pluginId} failed:`, result.error);
       }
+    } else {
+      if (!savedConfig) {
+        updatePluginConfig(pluginId, { enabled: false, config: {} });
+      }
+      console.log(`[PluginLoader] ⊘ ${pluginId} disabled by user`);
     }
   }
   
