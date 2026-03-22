@@ -249,3 +249,133 @@
 .note-editor .ProseMirror em {
   font-style: italic;
 }
+
+/* Textarea editor mode */
+.note-textarea {
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+  border: none;
+  outline: none;
+  resize: none;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: inherit;
+  line-height: 1.6;
+  overflow-y: auto;
+}
+
+.note-textarea::placeholder {
+  color: var(--text-secondary);
+}
+
+/* Preview/rendered mode */
+.note-preview {
+  padding: 16px;
+  overflow-y: auto;
+  height: 100%;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+.note-preview h1 {
+  font-size: 1.8em;
+  font-weight: 600;
+  margin: 16px 0 8px 0;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 4px;
+}
+
+.note-preview h2 {
+  font-size: 1.5em;
+  font-weight: 600;
+  margin: 14px 0 7px 0;
+}
+
+.note-preview h3 {
+  font-size: 1.25em;
+  font-weight: 600;
+  margin: 12px 0 6px 0;
+}
+
+.note-preview ul,
+.note-preview ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.note-preview li {
+  margin: 4px 0;
+}
+
+.note-preview strong {
+  font-weight: 600;
+}
+
+.note-preview em {
+  font-style: italic;
+}
+
+.note-preview code {
+  background-color: var(--bg-secondary);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 0.9em;
+}
+
+.note-preview pre {
+  background-color: var(--bg-secondary);
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 12px 0;
+}
+
+.note-preview pre code {
+  background: none;
+  padding: 0;
+}
+
+.note-preview blockquote {
+  border-left: 3px solid var(--accent-color);
+  margin: 8px 0;
+  padding-left: 12px;
+  color: var(--text-secondary);
+}
+
+.note-preview hr {
+  border: none;
+  border-top: 1px solid var(--border-color);
+  margin: 16px 0;
+}
+
+.note-preview a {
+  color: var(--accent-color);
+  text-decoration: none;
+}
+
+.note-preview a:hover {
+  text-decoration: underline;
+}
+
+.note-placeholder {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* View/Edit toggle button */
+.view-edit-toggle {
+  min-width: 60px !important;
+  font-weight: 500;
+}
+
+/* KaTeX math in preview */
+.note-preview .math-display {
+  margin: 12px 0;
+  overflow-x: auto;
+}
+
+.note-preview .math-inline {
+  padding: 0 4px;
+}

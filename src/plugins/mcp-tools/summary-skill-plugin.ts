@@ -195,9 +195,9 @@ export class SummarySkillMCPServerPlugin implements MCPServerPlugin {
       const prompt = this.buildSummaryPrompt(formattedDiscussion, style, maxLength, false);
 
       const aiProvider = getProvider(selectedProvider.config.provider);
-      const config = {
+      const       config = {
         ...selectedProvider.config,
-        maxTokens: Math.min(Math.ceil(maxLength / 2), 1500),
+        maxTokens: Math.max(maxLength * 2, 3000),
         temperature: 0.3,
       };
 
@@ -240,38 +240,58 @@ export class SummarySkillMCPServerPlugin implements MCPServerPlugin {
       // Clean the response: strip thinking JSON, tool calls, markdown code fences if any
       let summaryText = response.trim()
 
-      // Try to extract clean markdown - check if response is JSON with thinking
-      if (summaryText.startsWith('{')) {
+      // Check if response is a JSON object (e.g., {"content":"...","thinking":"..."})
+      if (summaryText.startsWith('{') && summaryText.endsWith('}')) {
         try {
           const parsed = JSON.parse(summaryText)
-          summaryText = parsed.content || parsed.text || parsed.summary || parsed.response || ''
+          if (parsed.content && parsed.content.trim()) {
+            summaryText = parsed.content.trim()
+          } else if (parsed.text && parsed.text.trim()) {
+            summaryText = parsed.text.trim()
+          } else if (parsed.summary && parsed.summary.trim()) {
+            summaryText = parsed.summary.trim()
+          } else if (parsed.response && parsed.response.trim()) {
+            summaryText = parsed.response.trim()
+          }
         } catch {
-          // Not JSON - try to strip thinking JSON from the text
+          // Not valid JSON, continue with text cleaning
         }
       }
 
       // Strip thinking JSON patterns aggressively
       summaryText = summaryText
-        // Match {"content":"","thinking":"..."} or similar patterns with thinking field
-        .replace(/\{[^{}]*?"thinking"\s*:\s*"[\s\S]*?"[\s\S]*?\}/g, '')
+        // Match {"content":"","thinking":"..."} or similar with empty content + thinking
         .replace(/\{[^{}]*?"content"\s*:\s*""[\s\S]*?\}/g, '')
-        // Match any JSON object containing thinking-like content at the start
-        .replace(/^\s*\{[\s\S]*?"thinking"[\s\S]*?\}\s*/, '')
+        // Match any JSON object containing thinking-like content
+        .replace(/\{[^{}]*?"thinking"\s*:\s*"[\s\S]*?"[\s\S]*?\}/g, '')
+        // Match any JSON object that is purely thinking (no useful content)
+        .replace(/^\s*\{[\s\S]*?"(thinking|reasoning|analysis)"[\s\S]*?\}\s*/, '')
         // Remove tool call JSON
         .replace(/\{[\s\S]*?"tool_call"[\s\S]*?\}\s*/g, '')
+        // Remove tool_use JSON
+        .replace(/\{[\s\S]*?"tool_use"[\s\S]*?\}\s*/g, '')
         // Remove triple backtick code fences
-        .replace(/```[\s\S]*?```/g, '')
+        .replace(/```[\s\S]*?```/gs, '')
         // Remove leading/trailing markdown code fences
         .replace(/^```markdown\s*/im, '')
         .replace(/^```\s*/im, '')
         .replace(/```\s*$/gm, '')
+        // Remove thinking/reasoning stage markers
+        .replace(/^\*\*Analyze the Request\*\*[\s\S]*?(?=\*\*|$)/im, '')
+        .replace(/^\*\*Analyze the Source\*\*[\s\S]*?(?=\*\*|$)/im, '')
+        .replace(/^\*\*Synthesize\*\*[\s\S]*?(?=\*\*|$)/im, '')
+        .replace(/^\*\*Drafting\*\*[\s\S]*?(?=\*\*|$)/im, '')
+        .replace(/^\*\*Step \d+[\s:].*$/gm, '')
+        // Collapse multiple blank lines
+        .replace(/\n{3,}/g, '\n\n')
         .trim()
 
-      // Last resort: if text still contains thinking patterns, find the first markdown heading
-      if (/Analyze the Request|Analyze the Source|Synthesize|Drafting|Step \d+:/i.test(summaryText)) {
+      // Last resort: if text starts with thinking patterns, find first real content
+      if (/Analyze the Request|Analyze the Source|Synthesize|Drafting|Step \d+:/i.test(summaryText.slice(0, 500))) {
         const headingMatch = summaryText.match(/(#{1,6}\s+.+?(?=\n|$))/)
         const bulletMatch = summaryText.match(/^[\s]*[-*•]\s+\S/i)
-        const match = headingMatch || bulletMatch
+        const listMatch = summaryText.match(/^[\s]*\d+[.)]\s+\S/i)
+        const match = headingMatch || bulletMatch || listMatch
         if (match?.index !== undefined && match.index > 0) {
           summaryText = summaryText.slice(match.index).trim()
         }
