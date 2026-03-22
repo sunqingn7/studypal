@@ -1030,6 +1030,28 @@ ${personaPrompt.systemPrompt}`,
       nickname: targetProvider?.nickname || targetProvider?.name || config.provider,
     })
 
+    // Update provider capabilities based on actual response
+    const providerId = targetProvider?.id || config.provider
+    const { useLLMPoolStore } = await import('../../../../application/store/llm-pool-store')
+    const poolStore = useLLMPoolStore.getState()
+    if (providerId) {
+      const provider = poolStore.providers.find(p => p.id === providerId)
+      if (provider) {
+        const caps = provider.capabilities
+        const hasThinkingResponse = finalThinking && finalThinking.length > 10
+        if (caps && !caps.supportsThinking && hasThinkingResponse) {
+          poolStore.updateProvider(providerId, {
+            capabilities: { ...caps, supportsThinking: true, detectedAt: Date.now(), detectionMethod: 'inference' }
+          })
+          console.log('[AIView] Updated provider capabilities: thinking detected from response')
+        }
+        // Re-detect capabilities if none exist
+        if (!caps) {
+          poolStore.detectCapabilities(providerId)
+        }
+      }
+    }
+
     // Clear local streaming state
     setStreamingContent('')
     setStreamingThinking('')
