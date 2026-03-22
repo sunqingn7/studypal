@@ -76,6 +76,10 @@ function NoteView() {
     addTab(activeTopicId)
   }, [addTab, activeTopicId])
 
+  const handleCreateNote = useCallback(() => {
+    addTab(activeTopicId)
+  }, [addTab, activeTopicId])
+
   const handleRemoveTab = useCallback((tabId: string, e: React.MouseEvent) => {
     e.stopPropagation()
     removeTab(tabId)
@@ -122,9 +126,15 @@ function NoteView() {
   if (!activeNote) {
     return (
       <div className="view-container note-view">
+        <div className="view-header note-view-header">
+          <div className="note-tabs">
+            <button className="add-tab-button" onClick={handleCreateNote}>+</button>
+          </div>
+        </div>
         <div className="view-content note-view-content">
           <div className="note-empty">
-            <p>No note selected. Create or open a note to start taking notes.</p>
+            <p>No note selected. Click + to create one.</p>
+            <button className="note-empty-create" onClick={handleCreateNote}>Create Note</button>
           </div>
         </div>
       </div>
