@@ -5,6 +5,8 @@ import { checkProviderHealth } from '../../../../application/services/llm-pool-h
 import { AIConfig, AIProviderType, PROVIDER_DEFAULTS } from '../../../../domain/models/ai-context';
 import { PersonaRole, PERSONA_PROMPTS } from '../../../../domain/models/llm-pool';
 import { fetchAvailableModels, ModelInfo } from '../../../../infrastructure/ai-providers/model-detector';
+import { pluginRegistry } from '../../../../infrastructure/plugins/plugin-registry';
+import { pluginManager } from '../../../../infrastructure/plugins/plugin-manager';
 import { X, Globe, Search, Key, Filter, BookOpen, Server, Plus, Trash2, RefreshCw, CheckCircle, XCircle, Loader2, Edit3 } from 'lucide-react';
 import './SettingsView.css';
 
@@ -323,32 +325,48 @@ export function SettingsView({ isOpen, onClose }: SettingsViewProps) {
           </h3>
 
           <div className="plugin-list">
-            {Object.entries(plugins).length === 0 ? (
-              <div className="empty-plugins">
-                No plugins configured yet.
-              </div>
-            ) : (
-              Object.entries(plugins).map(([id, config]) => (
-                <div key={id} className="plugin-item">
-                  <div className="plugin-header">
-                    <h4>{id}</h4>
-                    <label className="toggle">
-                      <input
-                        type="checkbox"
-                        checked={config.enabled}
-                        onChange={(e) => updatePluginConfig(id, { ...config, enabled: e.target.checked })}
-                      />
-                      <span className="toggle-slider"></span>
-                    </label>
-                  </div>
-                  {config.config && (
-                    <div className="plugin-config">
-                      <pre>{JSON.stringify(config.config, null, 2)}</pre>
+            {(() => {
+              try {
+                const allPlugins = pluginRegistry.getPlugins();
+                if (allPlugins.length === 0) {
+                  return <div className="empty-plugins">No plugins available.</div>;
+                }
+                return allPlugins.map(plugin => {
+                  const pluginId = plugin.metadata.id;
+                  const config = plugins[pluginId];
+                  const enabled = config?.enabled ?? true;
+                  const isLoaded = pluginManager.isPluginLoaded(pluginId);
+                  return (
+                    <div key={pluginId} className={`plugin-item ${isLoaded ? 'loaded' : 'disabled'}`}>
+                      <div className="plugin-header">
+                        <div className="plugin-info">
+                          <h4>{plugin.metadata.name}</h4>
+                          <span className="plugin-id">{pluginId}</span>
+                        </div>
+                        <label className="toggle">
+                          <input
+                            type="checkbox"
+                            checked={enabled}
+                            onChange={(e) => updatePluginConfig(pluginId, { enabled: e.target.checked, config: config?.config || {} })}
+                          />
+                          <span className="toggle-slider"></span>
+                        </label>
+                      </div>
+                      <div className="plugin-details">
+                        <p className="plugin-description">{plugin.metadata.description}</p>
+                        <div className="plugin-meta">
+                          <span className="plugin-version">v{plugin.metadata.version}</span>
+                          <span className="plugin-author">by {plugin.metadata.author}</span>
+                          {isLoaded && <span className="plugin-status loaded">Loaded</span>}
+                        </div>
+                      </div>
                     </div>
-                  )}
-                </div>
-              ))
-            )}
+                  );
+                });
+              } catch (e) {
+                return <div className="empty-plugins">Error loading plugins: {String(e)}</div>;
+              }
+            })()}
           </div>
         </section>
       )}

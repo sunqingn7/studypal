@@ -91,7 +91,10 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'studypal-settings',
-      partialize: (state) => ({ global: state.global }),
+      partialize: (state) => ({ 
+        global: state.global,
+        plugins: state.plugins,
+      }),
     }
   )
 );

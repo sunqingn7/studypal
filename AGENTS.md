@@ -22,6 +22,17 @@
 
 ## Completed
 
+### Plugin System Streamlining (Phase 5)
+- Cleaned up `plugin.ts` - removed duplicate interface definitions
+- Added React import for plugin interfaces
+- Wired plugin enable/disable from settings store (now persists)
+- Improved plugin settings UI with:
+  - Grouped by plugin type (View, File Handler, MCP Server, TTS Backend)
+  - Type icons for each category
+  - Plugin name, ID, description, version, author display
+  - Loaded/disabled status indicator
+  - Visual grouping with count badges
+
 ### Chat Routing Integration
 - Added `parseChatMessage()` to detect @mentions
 - Supports `@nickname`, `@everyone`, `@all`
