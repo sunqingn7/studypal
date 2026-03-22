@@ -65,6 +65,9 @@ function AIView() {
 
   // Track discuss mode for visual grouping
   const [isDiscussMode, setIsDiscussMode] = useState(false)
+  
+  // AbortController for canceling in-flight streaming requests
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   const activeMessages = getActiveMessages()
   
