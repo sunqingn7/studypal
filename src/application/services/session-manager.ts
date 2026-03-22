@@ -11,6 +11,9 @@ let currentSession: SessionState | null = null;
 // Store callbacks for file restoration
 let fileRestorationCallback: ((files: FilePosition[], activeFile: string | null) => void) | null = null;
 
+// Store timer for capability detection
+let capabilityDetectionTimer: ReturnType<typeof setTimeout> | null = null;
+
 export async function initializeSession(): Promise<void> {
   try {
     const session = await loadSession();
@@ -53,7 +56,9 @@ export async function initializeSession(): Promise<void> {
     }
 
     // Detect provider capabilities after loading session
-    setTimeout(() => {
+    if (capabilityDetectionTimer) clearTimeout(capabilityDetectionTimer)
+    capabilityDetectionTimer = setTimeout(() => {
+      capabilityDetectionTimer = null
       const poolStore = useLLMPoolStore.getState()
       if (poolStore.providers.length > 0) {
         console.log('[Session] Detecting capabilities for', poolStore.providers.length, 'providers')
@@ -137,6 +142,18 @@ function saveSessionThrottled(): void {
     }
     saveTimeout = null;
   }, 1000);
+}
+
+// Cleanup function - call when app is unloading
+export function cleanupSessionTimers(): void {
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+    saveTimeout = null;
+  }
+  if (capabilityDetectionTimer) {
+    clearTimeout(capabilityDetectionTimer);
+    capabilityDetectionTimer = null;
+  }
 }
 
 export async function forceSaveSession(): Promise<void> {

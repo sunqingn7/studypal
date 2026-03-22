@@ -493,12 +493,16 @@ function LLMPoolTab() {
         personaRole: newProviderPersona,
       });
       // Re-detect capabilities since model may have changed
-      detectCapabilities(editingProviderId, true);
+      detectCapabilities(editingProviderId, true).catch(err => {
+        console.error('[Settings] Failed to detect capabilities for updated provider:', err);
+      });
     } else {
       // Add new provider
       const newId = addProvider(newProviderName.trim(), providerConfig, nickname, newProviderPersona);
       // Detect capabilities for the new provider
-      detectCapabilities(newId);
+      detectCapabilities(newId).catch(err => {
+        console.error('[Settings] Failed to detect capabilities for new provider:', err);
+      });
     }
 
     // Reset form
