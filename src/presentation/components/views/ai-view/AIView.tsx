@@ -385,9 +385,15 @@ function AIView() {
     return result
   }
 
-  // Handle message with tool calling support
-  const handleSend = async () => {
+// Handle message with tool calling support
+const handleSend = async () => {
     if (!activeTabId || !editor || isStreaming || isProcessing) return
+    
+    // Cancel any previous in-flight requests
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+    abortControllerRef.current = new AbortController()
 
     const htmlContent = editor.getHTML()
     const textContent = editor.getText().trim()
