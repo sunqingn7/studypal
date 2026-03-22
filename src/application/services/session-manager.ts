@@ -1,5 +1,6 @@
 import { loadSession, saveSession, SessionState, FilePosition } from '../../infrastructure/session/session-service';
 import { useAIChatStore } from '../store/ai-chat-store';
+import { useLLMPoolStore } from '../store/llm-pool-store';
 import { AIConfig, ProviderConfigs } from '../../domain/models/ai-context';
 
 // Re-export FilePosition for use in components
@@ -50,6 +51,15 @@ export async function initializeSession(): Promise<void> {
     if (fileRestorationCallback && session.openFiles && session.openFiles.length > 0) {
       fileRestorationCallback(session.openFiles, session.activeFile);
     }
+
+    // Detect provider capabilities after loading session
+    setTimeout(() => {
+      const poolStore = useLLMPoolStore.getState()
+      if (poolStore.providers.length > 0) {
+        console.log('[Session] Detecting capabilities for', poolStore.providers.length, 'providers')
+        poolStore.detectAllCapabilities()
+      }
+    }, 2000) // Delay to let providers initialize first
   } catch (error) {
     console.error('[Session] Failed to initialize session:', error);
   }
@@ -91,6 +101,14 @@ export function updateProviderConfigs(providerConfigs: ProviderConfigs): void {
   
   // Auto-save session
   saveSessionThrottled();
+
+  // Re-detect capabilities after model change
+  setTimeout(() => {
+    const poolStore = useLLMPoolStore.getState()
+    if (poolStore.providers.length > 0) {
+      poolStore.detectAllCapabilities(true) // Force re-detect
+    }
+  }, 1000)
 }
 
 export function updateFilePositions(openFiles: FilePosition[], activeFile: string | null): void {

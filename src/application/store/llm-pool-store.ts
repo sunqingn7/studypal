@@ -9,8 +9,10 @@ import {
   PoolConfig,
   DEFAULT_POOL_CONFIG,
   PersonaRole,
+  ProviderCapabilities,
 } from '../../domain/models/llm-pool'
 import { AIConfig } from '../../domain/models/ai-context'
+import { detectProviderCapabilities, detectAllProviderCapabilities } from '../services/provider-capability-detector'
 
 export interface LLMPoolState {
   // Providers in the pool
@@ -27,6 +29,7 @@ export interface LLMPoolState {
   // Health check state
   isHealthChecking: boolean
   lastHealthCheck: number
+  isDetectingCapabilities: boolean
 
   // Actions
   addProvider: (name: string, config: AIConfig, nickname?: string, personaRole?: PersonaRole) => string
@@ -61,6 +64,10 @@ export interface LLMPoolState {
   // Configuration
   updateConfig: (config: Partial<PoolConfig>) => void
 
+  // Capability detection
+  detectCapabilities: (providerId: string, force?: boolean) => Promise<ProviderCapabilities | null>
+  detectAllCapabilities: (force?: boolean) => Promise<void>
+
   // Clear history
   clearCompletedTasks: () => void
 }
@@ -75,6 +82,7 @@ export const useLLMPoolStore = create<LLMPoolState>()(
       config: DEFAULT_POOL_CONFIG,
       isHealthChecking: false,
       lastHealthCheck: 0,
+      isDetectingCapabilities: false,
 
     addProvider: (name: string, config: AIConfig, nickname?: string, personaRole?: PersonaRole) => {
       const id = crypto.randomUUID()
@@ -407,6 +415,45 @@ export const useLLMPoolStore = create<LLMPoolState>()(
         set((state) => ({
           config: { ...state.config, ...config },
         }))
+      },
+
+      detectCapabilities: async (providerId: string, force = false) => {
+        const provider = get().providers.find(p => p.id === providerId)
+        if (!provider) return null
+
+        const caps = await detectProviderCapabilities(provider, force)
+        if (caps) {
+          get().updateProvider(providerId, {
+            capabilities: caps,
+            capabilitiesLastChecked: Date.now(),
+          })
+        }
+        return caps
+      },
+
+      detectAllCapabilities: async (force = false) => {
+        const providers = get().providers
+        if (providers.length === 0) return
+
+        set({ isDetectingCapabilities: true })
+        try {
+          const toDetect = force ? providers : providers.filter(p => {
+            if (!p.capabilities || !p.capabilitiesLastChecked) return true
+            return Date.now() - p.capabilitiesLastChecked > 3600000
+          })
+          if (toDetect.length === 0) return
+
+          await detectAllProviderCapabilities(toDetect, (providerId, caps) => {
+            if (caps) {
+              get().updateProvider(providerId, {
+                capabilities: caps,
+                capabilitiesLastChecked: Date.now(),
+              })
+            }
+          })
+        } finally {
+          set({ isDetectingCapabilities: false })
+        }
       },
 
       clearCompletedTasks: () => {

@@ -73,6 +73,32 @@ export interface PoolProvider {
   customSystemPrompt?: string // Optional override for the persona system prompt
   // Per-provider memory/context
   providerMemory?: Record<string, unknown> // Persistent memory for this provider
+  // Provider capabilities - auto-detected
+  capabilities?: ProviderCapabilities
+  capabilitiesLastChecked?: number // timestamp of last capability check
+}
+
+// Capabilities of a provider - detected automatically
+export interface ProviderCapabilities {
+  // Core capabilities
+  supportsStreaming: boolean       // Can stream responses token-by-token
+  supportsThinking: boolean       // Has extended thinking/reasoning (e.g., o1, deepseek-r1)
+  supportsToolCalling: boolean   // Native function calling / tool use
+  supportsVision: boolean         // Image input support
+  supportsJsonMode: boolean       // Structured output / JSON mode
+  supportsSystemRole: boolean     // Supports system messages
+  
+  // Model limits
+  contextWindow: number          // Max context window in tokens (0 = unknown)
+  maxOutputTokens: number         // Max output tokens (0 = unknown)
+  
+  // Provider info
+  providerType: string            // e.g., 'openai', 'anthropic', 'gemini', 'ollama'
+  modelFamily: string             // e.g., 'gpt-4', 'claude-3', 'gemini-pro'
+  
+  // Detection metadata
+  detectedAt: number              // When these capabilities were detected
+  detectionMethod: 'probe' | 'inference' | 'known' // How detected
 }
 
 // Health check result

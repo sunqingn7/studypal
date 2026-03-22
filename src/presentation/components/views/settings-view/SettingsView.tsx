@@ -374,6 +374,7 @@ function LLMPoolTab() {
     getStatistics,
     updateConfig,
     updateProvider,
+    detectCapabilities,
     config: poolConfig,
   } = useLLMPoolStore();
 
@@ -491,9 +492,13 @@ function LLMPoolTab() {
         config: providerConfig,
         personaRole: newProviderPersona,
       });
+      // Re-detect capabilities since model may have changed
+      detectCapabilities(editingProviderId, true);
     } else {
       // Add new provider
-      addProvider(newProviderName.trim(), providerConfig, nickname, newProviderPersona);
+      const newId = addProvider(newProviderName.trim(), providerConfig, nickname, newProviderPersona);
+      // Detect capabilities for the new provider
+      detectCapabilities(newId);
     }
 
     // Reset form
@@ -831,6 +836,19 @@ function LLMPoolTab() {
             {provider.averageLatency > 0 && ` • ${provider.averageLatency}ms`}
             {provider.currentTasks > 0 && ` • ${provider.currentTasks} tasks`}
           </div>
+          {provider.capabilities && (
+            <div className="provider-capabilities">
+              {provider.capabilities.supportsStreaming && <span className="capability-badge streaming" title="Streaming">STREAM</span>}
+              {provider.capabilities.supportsThinking && <span className="capability-badge thinking" title="Thinking">THINK</span>}
+              {provider.capabilities.supportsToolCalling && <span className="capability-badge tools" title="Tool Calling">TOOLS</span>}
+              {provider.capabilities.supportsVision && <span className="capability-badge vision" title="Vision">👁</span>}
+              {provider.capabilities.contextWindow > 0 && (
+                <span className="capability-badge context" title="Context Window">
+                  {provider.capabilities.contextWindow >= 1000000 ? `${(provider.capabilities.contextWindow / 1000000).toFixed(0)}M` : `${(provider.capabilities.contextWindow / 1000).toFixed(0)}K`}
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div className="provider-actions">
           <button
