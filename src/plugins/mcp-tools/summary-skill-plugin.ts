@@ -151,6 +151,7 @@ export class SummarySkillMCPServerPlugin implements MCPServerPlugin {
         m.role === 'user' || m.role === 'assistant'
       );
 
+      console.log('[SummarySkill] Total messages in tab:', activeTab.messages.length, '→ discussion messages:', discussionMessages.length);
       if (discussionMessages.length === 0) {
         return { success: false, error: 'No discussion messages to summarize' };
       }
