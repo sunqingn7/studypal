@@ -175,17 +175,25 @@ function NoteView() {
     setIsEditing(!isEditing)
   }, [isEditing, activeNote, editContent, updateNoteContent])
 
+  const activeNoteIdRef = useRef(activeNote?.id)
+  useEffect(() => {
+    activeNoteIdRef.current = activeNote?.id
+  }, [activeNote?.id])
+
   const handleContentChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value
     setEditContent(value)
-    const noteId = activeNote?.id
-    if (noteId) {
+    const currentNoteId = activeNoteIdRef.current
+    if (currentNoteId) {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
       saveTimeoutRef.current = setTimeout(() => {
-        updateNoteContent(noteId, value)
+        const currentNoteIdNow = activeNoteIdRef.current
+        if (currentNoteIdNow) {
+          updateNoteContent(currentNoteIdNow, value)
+        }
       }, 500)
     }
-  }, [activeNote, updateNoteContent])
+  }, [updateNoteContent])
 
   const insertMarkdown = useCallback((prefix: string, suffix: string = '') => {
     const textarea = textareaRef.current

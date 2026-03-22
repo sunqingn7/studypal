@@ -5,6 +5,7 @@ import Placeholder from '@tiptap/extension-placeholder'
 import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
+import DOMPurify from 'dompurify'
 import 'katex/dist/katex.min.css'
 import { useAIChatStore } from '../../../../application/store/ai-chat-store'
 import { useFileStore } from '../../../../application/store/file-store'
@@ -1363,10 +1364,10 @@ ${personaPrompt.systemPrompt}`,
       )}
                 </div>
               )}
-              <div className="message-content" style={{ fontSize: `${fontSize}px` }}>
-                {msg.role === 'user' ? (
-                  // User messages are HTML from TipTap editor
-                  <div dangerouslySetInnerHTML={{ __html: msg.content }} />
+<div className="message-content" style={{ fontSize: `${fontSize}px` }}>
+                      {msg.role === 'user' ? (
+                        // User messages are HTML from TipTap editor - sanitize to prevent XSS
+                        <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(msg.content) }} />
                 ) : (
               // AI messages are Markdown
               <div className="markdown-content">
