@@ -16,23 +16,23 @@
 - "Primary" checkbox to mark the primary LLM
 - Color-coded borders in chat for different providers
 
-## Recent Changes
+## Commands
+- `npm run dev` - Start development server
+- `npm run build` - Build for production (includes TypeScript check)
+
+## Completed
 
 ### Chat Routing Integration
 - Added `parseChatMessage()` to detect @mentions
 - Supports `@nickname`, `@everyone`, `@all`
 - Discuss mode sends message to all providers in parallel
 
+### Discuss Mode
+- Streaming support: each provider streams independently with 50ms debounced UI updates
+- Visual grouping: CSS grid layout with auto-fit columns, per-provider color borders
+- Tool calling: `chatWithTools()` called when provider supports native function calling
+
 ### Bug Fixes
 - Fixed `providerConfig` usage (was using global `config` instead)
 - Added better error handling for Gemini and OpenRouter
 - Fixed @mention autocomplete to add ": " after selection
-
-## Commands
-- `npm run dev` - Start development server
-- `npm run build` - Build for production (includes TypeScript check)
-
-## Next Steps
-- Add streaming support for discuss mode
-- Consider grouping responses visually
-- Add tool calling support for discuss mode
