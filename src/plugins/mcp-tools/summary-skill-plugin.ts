@@ -190,9 +190,8 @@ export class SummarySkillMCPServerPlugin implements MCPServerPlugin {
       // 4. Generate summary by calling the provider directly (bypass task queue)
       const style = (params.style as string) || 'bullet_points';
       const maxLength = (params.max_length as number) || this.maxSummaryLength;
-      const includeThinking = (params.include_thinking as boolean) || false;
 
-      const prompt = this.buildSummaryPrompt(formattedDiscussion, style, maxLength, includeThinking);
+      const prompt = this.buildSummaryPrompt(formattedDiscussion, style, maxLength, false);
 
       const aiProvider = getProvider(selectedProvider.config.provider);
       const config = {
@@ -208,17 +207,13 @@ export class SummarySkillMCPServerPlugin implements MCPServerPlugin {
       }
       messages.push({ id: crypto.randomUUID(), role: 'user', content: prompt, timestamp: Date.now() });
 
-      // 5. Stream summary to note view progressively
+      // 5. Generate and write summary to note
       const timestamp = new Date().toLocaleString();
       const providerName = selectedProvider.nickname || selectedProvider.name;
       
       const summaryHeader = `\n\n---\n📋 **Discussion Summary** (${timestamp})\n*Summarized by: ${providerName}*\n\n`;
       const summaryFooter = `\n---\n`;
       
-      // Get current content and prepend header
-      const currentContent = noteStore.getNoteContent(activeNote.id);
-      noteStore.updateNoteContent(activeNote.id, currentContent + summaryHeader);
-
       // Find and activate the tab for this note
       const tabs = noteStore.tabs;
       const noteTab = tabs.find(t => t.noteId === activeNote.id);
@@ -229,34 +224,44 @@ export class SummarySkillMCPServerPlugin implements MCPServerPlugin {
         noteStore.setActiveTab(newTabId);
       }
 
-      // Stream chunks to note progressively
-      let accumulated = '';
+      // Get current content
+      const currentContent = noteStore.getNoteContent(activeNote.id);
+
+      // Get full response (non-streaming for reliability + clean format)
+      let response: string;
       try {
-        await aiProvider.streamChat(messages, config, (chunk: string) => {
-          // Normalize: LLM might output literal \n or real newlines
-          const normalized = chunk.replace(/\\n/g, '\n');
-          accumulated += normalized;
-          const fullContent = currentContent + summaryHeader + accumulated;
-          noteStore.updateNoteContent(activeNote.id, fullContent);
-        });
+        response = await aiProvider.chat(messages, config);
       } catch (err) {
-        console.error('[SummarySkill] Stream failed:', err);
-        return { success: false, error: err instanceof Error ? err.message : 'Failed to stream summary' };
+        console.error('[SummarySkill] Provider call failed:', err);
+        return { success: false, error: err instanceof Error ? err.message : 'Failed to generate summary' };
       }
 
-      // Append footer
-      const fullContent = currentContent + summaryHeader + accumulated + summaryFooter;
-      noteStore.updateNoteContent(activeNote.id, fullContent);
+      // Clean the response: strip thinking JSON, tool calls, markdown code fences if any
+      let summaryText = response.trim()
+        // Remove JSON thinking blocks: {"content":"...","thinking":"..."} or {"thinking":"..."}
+        .replace(/\{[^{]*?"content"\s*:\s*""[^{]*?"thinking"\s*:\s*"[\s\S]*?"[\s\S]*?\}/g, '')
+        .replace(/\{[^{]*?"thinking"\s*:\s*"[\s\S]*?"[\s\S]*?\}/g, '')
+        // Remove triple backtick code fences
+        .replace(/```[\s\S]*?```/g, '')
+        // Remove leading/trailing markdown code fences
+        .replace(/^```markdown\s*/i, '')
+        .replace(/^```\s*/m, '')
+        .replace(/```\s*$/gm, '')
+        .trim();
+
+      const fullSummary = summaryHeader + summaryText + summaryFooter;
+      const newContent = currentContent + fullSummary;
+      noteStore.updateNoteContent(activeNote.id, newContent);
 
       return {
         success: true,
         data: {
           noteId: activeNote.id,
           noteTitle: activeNote.title,
-          summaryLength: accumulated.length,
+          summaryLength: summaryText.length,
           provider: providerName,
           messagesSummarized: discussionMessages.length,
-          message: `Summary successfully written to note "${activeNote.title}"`
+          message: `Summary written to note "${activeNote.title}"`
         }
       };
 
@@ -323,31 +328,30 @@ export class SummarySkillMCPServerPlugin implements MCPServerPlugin {
     discussion: string, 
     style: string, 
     maxLength: number,
-    includeThinking: boolean
+    _includeThinking: boolean
   ): string {
     const styleInstructions: Record<string, string> = {
-      bullet_points: `Create a structured summary using bullet points. Group related points together and organize them logically.`,
-      concise: `Provide a brief, concise summary in 2-3 paragraphs capturing the key points and conclusions.`,
-      detailed: `Provide a detailed summary covering main points, conclusions, and key insights from the discussion. Organize by themes if appropriate.`
+      bullet_points: `Use bullet points. Group related points together.`,
+      concise: `Brief, 2-3 paragraphs capturing key points and conclusions.`,
+      detailed: `Cover main points, conclusions, and key insights. Organize by themes.`
     };
 
-    const thinkingInstruction = includeThinking 
-      ? `Include key reasoning and thought processes from the discussion.` 
-      : `Focus on the main conclusions and key points, not the reasoning process.`;
+    return `You are a skilled summarizer. Summarize the following chat discussion.
 
-    return `You are a skilled summarizer. Your task is to summarize the following chat discussion.
-
-Requirements:
+IMPORTANT RULES:
+- Output ONLY the summary in Markdown. NO thinking, NO reasoning, NO JSON, NO tool calls.
+- Just the clean formatted summary text.
+- Maximum ${maxLength} characters.
+- Preserve key technical details.
 - ${styleInstructions[style] || styleInstructions.bullet_points}
-- ${thinkingInstruction}
-- Maximum length: ${maxLength} characters
-- Be objective and capture the essence of the discussion
-- Preserve important technical details and key insights
-- Format the output in Markdown
 
-Discussion to summarize:
+---
+
+Discussion:
 
 ${discussion}
+
+---
 
 Summary:`;
   }
