@@ -47,7 +47,7 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   topicNotes: new Map(),
 
   addTab: (topicId, title) => {
-    const note = get().createNote(topicId, title || '', title ? 'note' : 'note')
+    const note = get().createNote(topicId, title || '', 'note')
     const noteTitle = title || generateDefaultTitle(
       topicId ? get().topicNotes.get(topicId) || [] : get().globalNotes,
       'note'

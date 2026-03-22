@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
 import { FileReadingService } from '../../infrastructure/file-handlers/file-reading-service';
+import DOMPurify from 'dompurify';
 import './HTMLViewer.css';
 
 interface HTMLViewerProps {
@@ -188,7 +189,7 @@ export const HTMLViewer: React.FC<HTMLViewerProps> = ({ filePath }) => {
           <div
             className="html-content"
             ref={contentRef}
-            dangerouslySetInnerHTML={{ __html: content }}
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(content) }}
           />
         </div>
       </div>
