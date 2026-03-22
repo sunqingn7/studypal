@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
@@ -8,6 +8,117 @@ import { useTopicStore } from '../../../../application/store/topic-store'
 import './NoteView.css'
 
 const FONT_SIZES = [12, 14, 16, 18, 20, 22, 24, 28, 32]
+
+function isHtmlContent(text: string): boolean {
+  return /^<(p|div|span|h[1-6]|ul|ol|li|br|b|i|strong|em|blockquote|pre|code|table|tr|td|th|a|img)[^>]*>/i.test(text.trim())
+}
+
+function htmlToMarkdown(html: string): string {
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html')
+  const el = doc.body.firstElementChild as HTMLElement
+  if (!el) return html
+
+  function processEl(node: Node, inList = false): string {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return (node.textContent || '').replace(/\n+/g, ' ').trim()
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return ''
+
+    const el = node as HTMLElement
+    const tag = el.tagName.toLowerCase()
+    const inner = Array.from(el.childNodes).map(n => processEl(n, inList || tag === 'ul' || tag === 'ol')).join('')
+
+    switch (tag) {
+      case 'p':
+      case 'div': {
+        const text = inner.trim()
+        if (!text) return ''
+        const parts = text.split(/\n{2,}/).map(p => p.replace(/\n/g, ' ').trim()).filter(Boolean)
+        return parts.map(p => p + '\n').join('')
+      }
+      case 'br': return '\n'
+      case 'strong':
+      case 'b': return `**${inner}**`
+      case 'em':
+      case 'i': return `*${inner}*`
+      case 'u': return `<u>${inner}</u>`
+      case 's':
+      case 'del': return `~~${inner}~~`
+      case 'code': {
+        const code = el.querySelector('br') ? inner.replace(/\n/g, ' ') : inner
+        return code.includes(' ') && !code.startsWith(' ') && !code.endsWith(' ') ? `\`${code}\`` : code
+      }
+      case 'pre': return `\`\`\`\n${inner.replace(/\n+$/, '')}\n\`\`\`\n`
+      case 'blockquote': {
+        const lines = inner.split('\n').filter(l => l.trim())
+        return lines.map(l => `> ${l}`).join('\n') + '\n'
+      }
+      case 'h1': return `# ${inner.trim()}\n`
+      case 'h2': return `## ${inner.trim()}\n`
+      case 'h3': return `### ${inner.trim()}\n`
+      case 'h4': return `#### ${inner.trim()}\n`
+      case 'h5': return `##### ${inner.trim()}\n`
+      case 'h6': return `###### ${inner.trim()}\n`
+      case 'ul': {
+        const items = Array.from(el.querySelectorAll(':scope > li')).map(li => {
+          return '  - ' + Array.from(li.childNodes).map(n => processEl(n, true)).join('').trim()
+        })
+        return items.join('\n') + '\n'
+      }
+      case 'ol': {
+        const items = Array.from(el.querySelectorAll(':scope > li')).map((li, i) => {
+          return `  ${i + 1}. ` + Array.from(li.childNodes).map(n => processEl(n, true)).join('').trim()
+        })
+        return items.join('\n') + '\n'
+      }
+      case 'li': {
+        const children = Array.from(el.childNodes).filter(n => n.nodeType !== Node.TEXT_NODE || n.textContent?.trim())
+        return children.map(n => processEl(n, true)).join('')
+      }
+      case 'a': {
+        const href = el.getAttribute('href') || ''
+        const text = inner.trim()
+        return href === text ? `<${href}>` : `[${text}](${href})`
+      }
+      case 'img': {
+        const src = el.getAttribute('src') || ''
+        const alt = el.getAttribute('alt') || ''
+        return `![${alt}](${src})`
+      }
+      case 'table': {
+        const rows = el.querySelectorAll('tr')
+        if (!rows.length) return inner
+        const lines: string[] = []
+        rows.forEach((row, ri) => {
+          const cells = row.querySelectorAll('th, td')
+          const rowText = Array.from(cells).map(c => {
+            const cEl = c as HTMLElement
+            return cEl.textContent?.trim() || ''
+          }).map(t => ` ${t} |`).join('')
+          lines.push('|' + rowText)
+          if (ri === 0) {
+            const sep = Array.from(cells).map(() => '---|').join('')
+            lines.push('|' + sep)
+          }
+        })
+        return lines.join('\n') + '\n'
+      }
+      case 'script':
+      case 'style':
+      case 'head':
+      case 'html':
+      case 'body': return inner
+      default: {
+        if (el.childNodes.length === 1 && el.firstChild?.nodeType === Node.TEXT_NODE) {
+          return inner
+        }
+        return inner
+      }
+    }
+  }
+
+  return processEl(el).replace(/\n{3,}/g, '\n\n').trim()
+}
 
 function NoteView() {
   const { tabs, activeTabId, addTab, removeTab, setActiveTab, renameTab, updateNoteContent, getActiveNote } = useNoteStore()
@@ -20,9 +131,27 @@ function NoteView() {
 
   const activeNote = getActiveNote()
 
+  const noteContent = activeNote?.content || ''
+
+  const displayContent = useMemo(() => {
+    if (!noteContent) return ''
+    if (isHtmlContent(noteContent)) {
+      return noteContent
+    }
+    return noteContent
+  }, [noteContent])
+
+  const isHtmlNote = useMemo(() => isHtmlContent(noteContent), [noteContent])
+
   useEffect(() => {
     if (activeNote) {
-      setEditContent(activeNote.content || '')
+      const raw = activeNote.content || ''
+      if (isHtmlContent(raw)) {
+        const md = htmlToMarkdown(raw)
+        setEditContent(md)
+      } else {
+        setEditContent(raw)
+      }
     }
   }, [activeNote?.id])
 
@@ -33,7 +162,14 @@ function NoteView() {
       }
     } else {
       if (activeNote) {
-        setEditContent(activeNote.content || '')
+        const raw = activeNote.content || ''
+        if (isHtmlContent(raw)) {
+          const md = htmlToMarkdown(raw)
+          setEditContent(md)
+          updateNoteContent(activeNote.id, md)
+        } else {
+          setEditContent(raw)
+        }
       }
     }
     setIsEditing(!isEditing)
@@ -73,6 +209,10 @@ function NoteView() {
   }, [activeNote, updateNoteContent])
 
   const handleAddTab = useCallback(() => {
+    addTab(activeTopicId)
+  }, [addTab, activeTopicId])
+
+  const handleCreateNote = useCallback(() => {
     addTab(activeTopicId)
   }, [addTab, activeTopicId])
 
@@ -119,10 +259,6 @@ function NoteView() {
   const increaseFontSize = () => setFontSize((prev) => Math.min(48, prev + 2))
   const setSpecificFontSize = (size: number) => setFontSize(size)
 
-  const handleCreateNote = useCallback(() => {
-    addTab(activeTopicId)
-  }, [addTab, activeTopicId])
-
   if (!activeNote) {
     return (
       <div className="view-container note-view">
@@ -140,8 +276,6 @@ function NoteView() {
       </div>
     )
   }
-
-  const displayContent = activeNote.content || ''
 
   return (
     <div className="view-container note-view">
@@ -214,12 +348,16 @@ function NoteView() {
         ) : (
           <div className="note-preview" style={{ fontSize: `${fontSize}px` }}>
             {displayContent ? (
-              <ReactMarkdown
-                remarkPlugins={[remarkMath]}
-                rehypePlugins={[rehypeKatex]}
-              >
-                {displayContent}
-              </ReactMarkdown>
+              isHtmlNote ? (
+                <div dangerouslySetInnerHTML={{ __html: displayContent }} />
+              ) : (
+                <ReactMarkdown
+                  remarkPlugins={[remarkMath]}
+                  rehypePlugins={[rehypeKatex]}
+                >
+                  {displayContent}
+                </ReactMarkdown>
+              )
             ) : (
               <p className="note-placeholder">Start taking notes...</p>
             )}
