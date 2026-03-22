@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
+import DOMPurify from 'dompurify'
 import 'katex/dist/katex.min.css'
 import { useNoteStore } from '../../../../application/store/note-store'
 import { useTopicStore } from '../../../../application/store/topic-store'
@@ -154,6 +155,13 @@ function NoteView() {
       }
     }
   }, [activeNote?.id])
+
+  // Clean up save timeout on unmount to prevent timers firing on unmounted components
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
+    }
+  }, [])
 
   const handleEditToggle = useCallback(() => {
     if (isEditing) {
@@ -357,7 +365,7 @@ function NoteView() {
           <div className="note-preview" style={{ fontSize: `${fontSize}px` }}>
             {displayContent ? (
               isHtmlNote ? (
-                <div dangerouslySetInnerHTML={{ __html: displayContent }} />
+                <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(displayContent) }} />
               ) : (
                 <ReactMarkdown
                   remarkPlugins={[remarkMath]}

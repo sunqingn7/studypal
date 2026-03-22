@@ -76,7 +76,8 @@ export class OpenAIProvider implements AIProvider {
   async streamChat(
     messages: ChatMessage[],
     config: AIConfig,
-    onChunk: (chunk: string) => void | Promise<void>
+    onChunk: (chunk: string) => void | Promise<void>,
+    signal?: AbortSignal
   ): Promise<void> {
     console.log('[openai-provider] streamChat() called - using true streaming')
 
@@ -118,6 +119,16 @@ export class OpenAIProvider implements AIProvider {
         onChunk(event.payload.content)
       }
     })
+
+    // Handle abort signal
+    if (signal) {
+      signal.addEventListener('abort', () => {
+        if (unlisten) {
+          unlisten()
+          unlisten = null
+        }
+      })
+    }
 
     // Start the streaming request
     await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'openai' })

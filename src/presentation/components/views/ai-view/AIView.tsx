@@ -162,10 +162,6 @@ function AIView() {
     }
   }, [tabs.length]);
 
-  useEffect(() => {
-    scrollToBottom()
-  }, [activeMessages])
-
   // Track if we've ever been in discuss mode - once set, never turns off
   const everInDiscussMode = useRef(false)
   useEffect(() => {
@@ -394,6 +390,7 @@ const handleSend = async () => {
       abortControllerRef.current.abort()
     }
     abortControllerRef.current = new AbortController()
+    const signal = abortControllerRef.current.signal
 
     const htmlContent = editor.getHTML()
     const textContent = editor.getText().trim()
@@ -662,7 +659,8 @@ ${personaPrompt.systemPrompt}`,
                   nickname: targetProvider.nickname || targetProvider.name
                 })
               }
-            }
+            },
+            signal
           )
         } else if (supportsThinking) {
           await provider.streamChatWithThinking!(
@@ -697,7 +695,8 @@ ${personaPrompt.systemPrompt}`,
                   })
                 }
               }
-            }
+            },
+            signal
           )
         } else {
           await provider.streamChat(
@@ -716,7 +715,8 @@ ${personaPrompt.systemPrompt}`,
                   nickname: targetProvider.nickname || targetProvider.name
                 })
               }
-            }
+            },
+            signal
           )
         }
 
@@ -860,7 +860,8 @@ ${personaPrompt.systemPrompt}`,
             localContent += chunk
             const displayContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
             setStreamingContent(displayContent)
-          }
+          },
+          signal
         )
       } else if (supportsThinking) {
         // Use streamChatWithThinking for models that return thinking
@@ -879,7 +880,8 @@ ${personaPrompt.systemPrompt}`,
               localThinking = filteredThinking
               setStreamingThinking(localThinking)
             }
-          }
+          },
+          signal
         )
       } else {
         // Fallback for llama.cpp, vLLM, etc.
@@ -891,7 +893,8 @@ ${personaPrompt.systemPrompt}`,
             localContent += chunk
             const displayContent = localContent.replace(/\{\s*"tool_call"\s*:[\s\S]*?\}\s*\}/g, '')
             setStreamingContent(displayContent)
-          }
+          },
+          signal
         )
       }
 
