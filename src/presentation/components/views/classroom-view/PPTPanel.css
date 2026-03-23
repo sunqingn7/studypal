@@ -116,3 +116,37 @@
   font-size: 13px;
   margin-top: 8px;
 }
+
+.generate-slide-btn {
+  margin-top: 16px;
+  padding: 10px 20px;
+  background: var(--accent-color);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+}
+
+.generate-slide-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.generate-slide-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.generation-error {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 4px;
+  color: #ef4444;
+  font-size: 13px;
+  max-width: 80%;
+  text-align: center;
+}

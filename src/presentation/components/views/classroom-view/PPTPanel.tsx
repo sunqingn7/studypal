@@ -1,10 +1,40 @@
+import { useState } from 'react'
 import { useClassroomStore } from '../../../../application/store/classroom-store'
+import { classroomMCPServerPlugin } from '../../../../plugins/mcp-tools/classroom-mcp-plugin'
 import './PPTPanel.css'
 
 export function PPTPanel() {
-  const { pptSlides, currentPage, nextPage, prevPage, isPaused, pauseClassroom, resumeClassroom } = useClassroomStore()
+  const { pptSlides, currentPage, nextPage, prevPage, isPaused, pauseClassroom, resumeClassroom, documentPath } = useClassroomStore()
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [generationError, setGenerationError] = useState<string | null>(null)
 
   const currentSlide = pptSlides.find((s) => s.pageNumber === currentPage)
+
+  const handleGenerateSlide = async () => {
+    if (!documentPath) {
+      setGenerationError('No document loaded')
+      return
+    }
+
+    setIsGenerating(true)
+    setGenerationError(null)
+
+    try {
+      const result = await classroomMCPServerPlugin.executeTool('generate_ppt_slide', {
+        page_number: currentPage,
+        section_title: `Page ${currentPage}`,
+        max_key_points: 5
+      })
+
+      if (!result.success) {
+        setGenerationError(result.error || 'Failed to generate slide')
+      }
+    } catch (error) {
+      setGenerationError(error instanceof Error ? error.message : 'Unknown error')
+    } finally {
+      setIsGenerating(false)
+    }
+  }
 
   return (
     <div className="ppt-panel">
@@ -14,8 +44,8 @@ export function PPTPanel() {
           <button className="ppt-nav-btn" onClick={prevPage} disabled={currentPage <= 1}>
             ← Previous
           </button>
-          <button 
-            className="ppt-pause-btn" 
+          <button
+            className="ppt-pause-btn"
             onClick={isPaused ? resumeClassroom : pauseClassroom}
           >
             {isPaused ? '▶ Resume' : '⏸ Pause'}
@@ -25,7 +55,7 @@ export function PPTPanel() {
           </button>
         </div>
       </div>
-      
+
       <div className="ppt-content">
         {currentSlide ? (
           <div className="slide">
@@ -43,7 +73,16 @@ export function PPTPanel() {
           <div className="slide-placeholder">
             <div className="placeholder-icon">📊</div>
             <p>No slide generated yet</p>
-            <p className="placeholder-hint">Ask AI to generate slides for this page</p>
+            <button
+              className="generate-slide-btn"
+              onClick={handleGenerateSlide}
+              disabled={isGenerating || !documentPath}
+            >
+              {isGenerating ? '⏳ Generating...' : '🎯 Generate Slide'}
+            </button>
+            {generationError && (
+              <p className="generation-error">{generationError}</p>
+            )}
           </div>
         )}
       </div>
