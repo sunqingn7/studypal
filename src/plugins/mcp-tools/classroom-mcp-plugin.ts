@@ -6,27 +6,33 @@ import { useNotificationStore } from '../../application/store/notification-store
 export class ClassroomMCPServerPlugin implements MCPServerPlugin {
   private healthCheckInterval?: ReturnType<typeof setInterval>;
   private lastHealthStatus: Map<string, boolean> = new Map();
+  private healthCheckInProgress = new Set<string>();
 
   private startHealthChecks() {
     if (this.healthCheckInterval) return;
     const { config } = useLLMPoolStore.getState();
-    this.healthCheckInterval = setInterval(() => {
+    this.healthCheckInterval = setInterval(async () => {
       const { providers, setProviderHealth } = useLLMPoolStore.getState();
-      providers.forEach(async (provider) => {
-        if (!provider.isEnabled) return;
+
+      // Check each provider with concurrency control
+      for (const provider of providers) {
+        if (!provider.isEnabled) continue;
+        if (this.healthCheckInProgress.has(provider.id)) continue;
+
+        this.healthCheckInProgress.add(provider.id);
         try {
           const { checkProviderHealth } = await import('../../application/services/llm-pool-health-check');
           const result = await checkProviderHealth(provider);
           setProviderHealth(provider.id, result.isHealthy, result.latency, result.error);
-          
+
           const prevHealth = this.lastHealthStatus.get(provider.id);
           const notifications = useNotificationStore.getState();
-          
+
           if (prevHealth === true && !result.isHealthy) {
             notifications.addNotification({
               type: 'warning',
               title: 'Provider Offline',
-              message: `${provider.nickname || provider.name} is not responding. Last check: ${result.latency}ms`,
+              message: `${provider.nickname || provider.name} is not responding.`,
               autoClose: true,
               duration: 8000,
             });
@@ -39,12 +45,14 @@ export class ClassroomMCPServerPlugin implements MCPServerPlugin {
               duration: 5000,
             });
           }
-          
+
           this.lastHealthStatus.set(provider.id, result.isHealthy);
         } catch (e) {
           setProviderHealth(provider.id, false, undefined, String(e));
+        } finally {
+          this.healthCheckInProgress.delete(provider.id);
         }
-      });
+      }
     }, config.healthCheckInterval);
   }
 

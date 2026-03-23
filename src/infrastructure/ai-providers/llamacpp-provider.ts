@@ -58,9 +58,9 @@ export class LlamaCppProvider implements AIProvider {
       try {
         const result = await invoke<string>('chat_with_provider', { request: payload, provider: 'llamacpp' })
         return String(result)
-      } catch (error: any) {
-        lastError = error
-        console.warn(`[llamacpp-provider] Chat attempt ${attempt + 1} failed:`, error?.message || error)
+    } catch (error: unknown) {
+      lastError = error instanceof Error ? error : new Error(String(error))
+      console.warn(`[llamacpp-provider] Chat attempt ${attempt + 1} failed:`, lastError.message)
         
         if (attempt < MAX_RETRIES) {
           console.log(`[llamacpp-provider] Retrying in ${RETRY_DELAY}ms...`)

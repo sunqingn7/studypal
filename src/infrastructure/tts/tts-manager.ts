@@ -9,59 +9,99 @@ export class AudioPlayer {
   private isPaused = false;
   private currentTime = 0;
   private duration = 0;
+  private cleanupListeners: (() => void)[] = [];
+  private currentAudioUrl: string | null = null;
 
   play(audioData: AudioData): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
-        if (this.audio) {
-          this.audio.pause();
-          this.audio.remove();
-          this.audio = null;
-        }
+        // Clean up previous audio and listeners
+        this.cleanup();
 
         const audioBlob = this.base64ToBlob(audioData.data, `audio/${audioData.format}`);
         const audioUrl = URL.createObjectURL(audioBlob);
+        this.currentAudioUrl = audioUrl;
 
         this.audio = new Audio(audioUrl);
         this.audio.playbackRate = this.playbackRate;
         this.audio.volume = this.volume;
 
-        this.audio.addEventListener('play', () => {
-          this.isPlaying = true;
-          this.isPaused = false;
-        });
+        const handlers = {
+          play: () => {
+            this.isPlaying = true;
+            this.isPaused = false;
+          },
+          pause: () => {
+            this.isPlaying = false;
+            this.isPaused = true;
+          },
+          ended: () => {
+            this.isPlaying = false;
+            this.isPaused = false;
+            this.currentTime = 0;
+            this.cleanup();
+            resolve();
+          },
+          timeupdate: () => {
+            this.currentTime = this.audio?.currentTime || 0;
+          },
+          loadedmetadata: () => {
+            this.duration = this.audio?.duration || 0;
+          },
+          error: (e: Event) => {
+            this.isPlaying = false;
+            this.cleanup();
+            reject(new Error(`Audio playback error: ${(e.target as HTMLAudioElement).error?.message || 'Unknown error'}`));
+          }
+        };
 
-        this.audio.addEventListener('pause', () => {
-          this.isPlaying = false;
-          this.isPaused = true;
-        });
+        // Add listeners and track for cleanup
+        this.audio.addEventListener('play', handlers.play);
+        this.audio.addEventListener('pause', handlers.pause);
+        this.audio.addEventListener('ended', handlers.ended);
+        this.audio.addEventListener('timeupdate', handlers.timeupdate);
+        this.audio.addEventListener('loadedmetadata', handlers.loadedmetadata);
+        this.audio.addEventListener('error', handlers.error);
 
-        this.audio.addEventListener('ended', () => {
-          this.isPlaying = false;
-          this.isPaused = false;
-          this.currentTime = 0;
-          URL.revokeObjectURL(audioUrl);
-          resolve();
-        });
+        // Track cleanup functions
+        this.cleanupListeners = [
+          () => this.audio?.removeEventListener('play', handlers.play),
+          () => this.audio?.removeEventListener('pause', handlers.pause),
+          () => this.audio?.removeEventListener('ended', handlers.ended),
+          () => this.audio?.removeEventListener('timeupdate', handlers.timeupdate),
+          () => this.audio?.removeEventListener('loadedmetadata', handlers.loadedmetadata),
+          () => this.audio?.removeEventListener('error', handlers.error),
+        ];
 
-        this.audio.addEventListener('timeupdate', () => {
-          this.currentTime = this.audio?.currentTime || 0;
+        this.audio.play().catch((err) => {
+          this.cleanup();
+          reject(err);
         });
-
-        this.audio.addEventListener('loadedmetadata', () => {
-          this.duration = this.audio?.duration || 0;
-        });
-
-        this.audio.addEventListener('error', () => {
-          this.isPlaying = false;
-          reject(new Error('Audio playback error'));
-        });
-
-        this.audio.play().catch(reject);
       } catch (error) {
+        this.cleanup();
         reject(error);
       }
     });
+  }
+
+  private cleanup(): void {
+    // Remove all event listeners
+    this.cleanupListeners.forEach(cleanup => cleanup());
+    this.cleanupListeners = [];
+
+    // Revoke blob URL
+    if (this.currentAudioUrl) {
+      URL.revokeObjectURL(this.currentAudioUrl);
+      this.currentAudioUrl = null;
+    }
+
+    // Stop and remove audio element
+    if (this.audio) {
+      this.audio.pause();
+      this.audio.currentTime = 0;
+      this.audio.remove();
+      this.audio = null;
+    }
   }
 
   pause(): void {
@@ -77,15 +117,10 @@ export class AudioPlayer {
   }
 
   stop(): void {
-    if (this.audio) {
-      this.audio.pause();
-      this.audio.currentTime = 0;
-      this.audio.remove();
-      this.audio = null;
-      this.isPlaying = false;
-      this.isPaused = false;
-      this.currentTime = 0;
-    }
+    this.cleanup();
+    this.isPlaying = false;
+    this.isPaused = false;
+    this.currentTime = 0;
   }
 
   seek(time: number): void {

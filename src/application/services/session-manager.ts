@@ -108,10 +108,10 @@ export function updateProviderConfigs(providerConfigs: ProviderConfigs): void {
   saveSessionThrottled();
 
   // Re-detect capabilities after model change
-  setTimeout(() => {
+  setTimeout(async () => {
     const poolStore = useLLMPoolStore.getState()
     if (poolStore.providers.length > 0) {
-      poolStore.detectAllCapabilities(true) // Force re-detect
+      await poolStore.detectAllCapabilities(true) // Force re-detect
     }
   }, 1000)
 }

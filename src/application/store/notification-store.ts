@@ -14,7 +14,8 @@ export interface Notification {
 interface NotificationState {
   notifications: Notification[]
   unreadCount: number
-  
+  autoCloseTimers: Map<string, ReturnType<typeof setTimeout>>
+
   addNotification: (notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => string
   markAsRead: (id: string) => void
   markAllAsRead: () => void
@@ -25,6 +26,7 @@ interface NotificationState {
 export const useNotificationStore = create<NotificationState>((set, get) => ({
   notifications: [],
   unreadCount: 0,
+  autoCloseTimers: new Map(),
 
   addNotification: (notification) => {
     const id = crypto.randomUUID()
@@ -42,9 +44,12 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
     if (notification.autoClose !== false) {
       const duration = notification.duration || 5000
-      setTimeout(() => {
+      const timer = setTimeout(() => {
+        // Clear the timer reference before removing
+        get().autoCloseTimers.delete(id)
         get().removeNotification(id)
       }, duration)
+      get().autoCloseTimers.set(id, timer)
     }
 
     return id
@@ -72,18 +77,28 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   },
 
   removeNotification: (id) => {
+    // Clear any pending auto-close timer
+    const timer = get().autoCloseTimers.get(id)
+    if (timer) {
+      clearTimeout(timer)
+      get().autoCloseTimers.delete(id)
+    }
+
     set((state) => {
       const notification = state.notifications.find(n => n.id === id)
       return {
         notifications: state.notifications.filter(n => n.id !== id),
-        unreadCount: notification && !notification.read 
-          ? Math.max(0, state.unreadCount - 1) 
+        unreadCount: notification && !notification.read
+          ? Math.max(0, state.unreadCount - 1)
           : state.unreadCount,
       }
     })
   },
 
   clearAll: () => {
+    // Clear all pending timers
+    get().autoCloseTimers.forEach(timer => clearTimeout(timer))
+    get().autoCloseTimers.clear()
     set({ notifications: [], unreadCount: 0 })
   },
 }))
