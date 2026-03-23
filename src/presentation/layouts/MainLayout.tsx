@@ -14,7 +14,9 @@ import { SidebarTabs } from '../../plugins/file-browser-view/SidebarTabs'
 import FileView from '../components/views/file-view/FileView'
 import NoteView from '../components/views/note-view/NoteView'
 import AIView from '../components/views/ai-view/AIView'
-import { Sun, Moon, Settings } from 'lucide-react'
+import { ClassroomView } from '../components/views/classroom-view'
+import { useClassroomStore } from '../../application/store/classroom-store'
+import { Sun, Moon, Settings, GraduationCap } from 'lucide-react'
 import { FileMetadata } from '../../domain/models/file'
 import { SettingsView } from '../components/views/settings-view/SettingsView'
 import { NotificationBell } from '../components/NotificationBell'
@@ -24,6 +26,7 @@ function MainLayout() {
   const { theme, toggleTheme } = useThemeStore()
   const { session, setPanelSize, setShowFileBrowser: setSessionShowBrowser, setTheme: setSessionTheme, addToFileHistory } = useSessionStore()
   const { updateGlobal } = useSettingsStore()
+  const { isActive: isClassroomActive } = useClassroomStore()
   const [showFileBrowser, setShowFileBrowser] = useState(session.showFileBrowser)
   const [hasFileBrowser, setHasFileBrowser] = useState(false)
   const [isHydrated, setIsHydrated] = useState(false)
@@ -361,40 +364,49 @@ function MainLayout() {
     }
   }
 
+  // Classroom mode overlay
+  if (isClassroomActive) {
+    return (
+      <div className="app-container h-screen w-screen overflow-hidden">
+        <ClassroomView />
+      </div>
+    )
+  }
+
   return (
     <div className="app-container h-screen w-screen overflow-hidden">
       <Group orientation="horizontal" className="h-full" id="main-group" groupRef={mainGroupRef} onLayoutChanged={handleMainGroupLayoutChange}>
         {/* Left Sidebar: File Browser */}
-        <Panel 
-          id="sidebar" 
-          defaultSize={session.panels.sidebar} 
+        <Panel
+          id="sidebar"
+          defaultSize={session.panels.sidebar}
           minSize={5}
           className="sidebar-panel"
         >
-        {showFileBrowser && hasFileBrowser && <SidebarTabs context={pluginContext} />}
-        {showFileBrowser && !hasFileBrowser && (
-          <div className="flex items-center justify-center h-full text-[var(--sidebar-fg)] opacity-50 p-4">
-            <p>Loading file browser...</p>
-          </div>
-        )}
-          </Panel>
+          {showFileBrowser && hasFileBrowser && <SidebarTabs context={pluginContext} />}
+          {showFileBrowser && !hasFileBrowser && (
+            <div className="flex items-center justify-center h-full text-[var(--sidebar-fg)] opacity-50 p-4">
+              <p>Loading file browser...</p>
+            </div>
+          )}
+        </Panel>
         <Separator className="panel-resize-handle" />
-        
+
         {/* Main Content Area: File View */}
-        <Panel 
-          id="file" 
-          defaultSize={session.panels.file} 
+        <Panel
+          id="file"
+          defaultSize={session.panels.file}
           minSize={20}
         >
           <FileView />
         </Panel>
-        
+
         <Separator className="panel-resize-handle" />
-        
+
         {/* Right Panel: AI + Notes (vertical) */}
-        <Panel 
-          id="right" 
-          defaultSize={session.panels.ai + session.panels.note} 
+        <Panel
+          id="right"
+          defaultSize={session.panels.ai + session.panels.note}
           minSize={20}
         >
           <Group orientation="vertical" className="h-full" groupRef={rightGroupRef} onLayoutChanged={handleRightGroupLayoutChange}>
@@ -408,15 +420,15 @@ function MainLayout() {
           </Group>
         </Panel>
       </Group>
-       
-       {/* Toggle button for file browser */}
-       <button
-         onClick={() => handleShowFileBrowser(!showFileBrowser)}
-         className="fixed left-2 top-20 z-50 p-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded shadow-md hover:bg-[var(--bg-tertiary)] transition-colors"
-         title={showFileBrowser ? 'Hide File Browser' : 'Show File Browser'}
-       >
-         {showFileBrowser ? '◀' : '▶'}
-       </button>
+
+      {/* Toggle button for file browser */}
+      <button
+        onClick={() => handleShowFileBrowser(!showFileBrowser)}
+        className="fixed left-2 top-20 z-50 p-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded shadow-md hover:bg-[var(--bg-tertiary)] transition-colors"
+        title={showFileBrowser ? 'Hide File Browser' : 'Show File Browser'}
+      >
+        {showFileBrowser ? '◀' : '▶'}
+      </button>
 
       {/* Theme toggle button */}
       <button
@@ -435,6 +447,21 @@ function MainLayout() {
       >
         <Settings className="w-4 h-4" />
       </button>
+
+      {/* Classroom Mode button - only show when a file is open */}
+      {currentFile && (
+        <button
+          onClick={() => {
+            // Get document content from the file store - simplified for now
+            // The classroom store will fetch content when needed via MCP tools
+            useClassroomStore.getState().startClassroom(currentFile.path, '', 1)
+          }}
+          className="fixed right-4 top-4 z-50 p-2 bg-[var(--accent-color)] text-white border border-[var(--accent-color)] rounded shadow-md hover:opacity-90 transition-opacity"
+          title="Enter Classroom Mode"
+        >
+          <GraduationCap className="w-5 h-5" />
+        </button>
+      )}
 
       {/* Notification Bell */}
       <NotificationBell />
