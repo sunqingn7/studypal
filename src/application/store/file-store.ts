@@ -143,13 +143,25 @@ export const useFileStore = create<FileStore>((set, get) => ({
         }
         console.log('[FileStore] ✅ Saved', allNotes.length, 'notes as markdown files');
 
-      // ===== SAVE DOCUMENT METADATA =====
-      const metadataStore = useDocumentMetadataStore.getState()
-      await metadataStore.saveMetadata({
-        documentPath: currentFile.path,
-        currentPage: get().currentPage,
-      })
-      console.log('[FileStore] ✅ Saved document metadata');
+    // ===== SAVE DOCUMENT METADATA =====
+    const metadataStore = useDocumentMetadataStore.getState()
+    // When saving a specific file (fileToSave), get its page from the metadata cache
+    // because get().currentPage may already be set to the new file's page
+    let pageToSave = get().currentPage
+    if (fileToSave) {
+      const cachedMetadata = metadataStore.getMetadata(fileToSave.path)
+      if (cachedMetadata) {
+        pageToSave = cachedMetadata.currentPage
+        console.log('[FileStore] Using cached page from metadata store:', pageToSave, 'for file:', fileToSave.path)
+      } else {
+        console.log('[FileStore] No cached metadata found, using current page:', pageToSave)
+      }
+    }
+    await metadataStore.saveMetadata({
+      documentPath: currentFile.path,
+      currentPage: pageToSave,
+    })
+    console.log('[FileStore] ✅ Saved document metadata with page:', pageToSave);
       
       // Debug: verify save by listing all metadata
       try {
