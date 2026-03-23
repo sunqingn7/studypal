@@ -421,15 +421,6 @@ function MainLayout() {
         </Panel>
       </Group>
 
-      {/* Toggle button for file browser */}
-      <button
-        onClick={() => handleShowFileBrowser(!showFileBrowser)}
-        className="fixed left-2 top-20 z-50 p-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded shadow-md hover:bg-[var(--bg-tertiary)] transition-colors"
-        title={showFileBrowser ? 'Hide File Browser' : 'Show File Browser'}
-      >
-        {showFileBrowser ? '◀' : '▶'}
-      </button>
-
       {/* Theme toggle button */}
       <button
         onClick={handleThemeToggle}
@@ -442,13 +433,22 @@ function MainLayout() {
       {/* Settings button */}
       <button
         onClick={() => setShowSettings(true)}
-        className="fixed left-2 top-12 z-50 p-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded shadow-md hover:bg-[var(--bg-tertiary)] transition-colors"
+        className="fixed left-2 top-[52px] z-50 p-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded shadow-md hover:bg-[var(--bg-tertiary)] transition-colors"
         title="Open Settings"
       >
         <Settings className="w-4 h-4" />
       </button>
 
-      {/* Classroom Mode button - only show when a file is open */}
+      {/* Toggle button for file browser */}
+      <button
+        onClick={() => handleShowFileBrowser(!showFileBrowser)}
+        className="fixed left-2 top-[88px] z-50 p-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded shadow-md hover:bg-[var(--bg-tertiary)] transition-colors"
+        title={showFileBrowser ? 'Hide File Browser' : 'Show File Browser'}
+      >
+        {showFileBrowser ? '◀' : '▶'}
+      </button>
+
+      {/* Classroom Mode button - only show when a file is open, positioned in header area */}
       {currentFile && (
         <button
           onClick={() => {
@@ -456,10 +456,11 @@ function MainLayout() {
             // The classroom store will fetch content when needed via MCP tools
             useClassroomStore.getState().startClassroom(currentFile.path, '', 1)
           }}
-          className="fixed right-4 top-4 z-50 p-2 bg-[var(--accent-color)] text-white border border-[var(--accent-color)] rounded shadow-md hover:opacity-90 transition-opacity"
+          className="fixed right-20 top-4 z-50 px-3 py-2 bg-[var(--accent-color)] text-white border border-[var(--accent-color)] rounded shadow-md hover:opacity-90 transition-opacity flex items-center gap-2"
           title="Enter Classroom Mode"
         >
-          <GraduationCap className="w-5 h-5" />
+          <GraduationCap className="w-4 h-4" />
+          <span className="text-sm font-medium">Classroom</span>
         </button>
       )}
 
