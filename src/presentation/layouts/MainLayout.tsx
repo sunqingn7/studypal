@@ -107,7 +107,7 @@ function MainLayout() {
   useEffect(() => {
     // Check if store already hydrated
     console.log('[MainLayout] Checking hydration, hasHydrated:', useSessionStore.persist.hasHydrated())
-    const { setCurrentFile, setCurrentPage } = useFileStore.getState()
+    const { setCurrentFile } = useFileStore.getState()
     const appWindow = getCurrentWindow()
     
     if (useSessionStore.persist.hasHydrated()) {
@@ -125,9 +125,8 @@ function MainLayout() {
           type: 'pdf',
           size: 0,
         }
-      console.log('[MainLayout] Restoring file:', fileData, 'with page:', state.session.currentPage)
-      setCurrentPage(state.session.currentPage)
-      setCurrentFile(fileData, true) // preservePage=true to keep the session page
+        // setCurrentFile with preservePage=true will load the saved page from metadata
+        setCurrentFile(fileData, true)
         
         // Load document-bound notes and chat
         const { loadDocumentState } = useFileStore.getState()
@@ -170,14 +169,13 @@ function MainLayout() {
             type: 'pdf',
             size: 0,
           }
-      console.log('[MainLayout] Restoring file:', fileData, 'with page:', state.session.currentPage)
-      setCurrentPage(state.session.currentPage)
-      setCurrentFile(fileData, true) // preservePage=true to keep the session page
+          // setCurrentFile with preservePage=true will load the saved page from metadata
+          setCurrentFile(fileData, true)
 
-      // Load document-bound notes and chat
-      const { loadDocumentState } = useFileStore.getState()
-      loadDocumentState(fileData.path, useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState())
-    }
+          // Load document-bound notes and chat
+          const { loadDocumentState } = useFileStore.getState()
+          loadDocumentState(fileData.path, useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState())
+        }
 
     // AI config is now loaded via initializeSession() from session-manager (Rust backend)
     // Chat history is document-bound now, so no need to restore from here
