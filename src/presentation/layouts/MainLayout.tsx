@@ -16,15 +16,13 @@ import NoteView from '../components/views/note-view/NoteView'
 import AIView from '../components/views/ai-view/AIView'
 import { ClassroomView } from '../components/views/classroom-view'
 import { useClassroomStore } from '../../application/store/classroom-store'
-import { Sun, Moon, Settings, GraduationCap } from 'lucide-react'
 import { FileMetadata } from '../../domain/models/file'
 import { SettingsView } from '../components/views/settings-view/SettingsView'
-import { NotificationBell } from '../components/NotificationBell'
 
 function MainLayout() {
   const { currentFile } = useFileStore()
   const { theme, toggleTheme } = useThemeStore()
-  const { session, setPanelSize, setShowFileBrowser: setSessionShowBrowser, setTheme: setSessionTheme, addToFileHistory } = useSessionStore()
+  const { session, setPanelSize, setTheme: setSessionTheme, addToFileHistory } = useSessionStore()
   const { updateGlobal } = useSettingsStore()
   const { isActive: isClassroomActive } = useClassroomStore()
   const [showFileBrowser, setShowFileBrowser] = useState(session.showFileBrowser)
@@ -327,11 +325,6 @@ function MainLayout() {
     }
   }, [chatHistory, isHydrated])
 
-  const handleShowFileBrowser = (show: boolean) => {
-    setShowFileBrowser(show)
-    setSessionShowBrowser(show)
-  }
-
   const handleThemeToggle = () => {
     const newTheme = theme === 'light' ? 'dark' : 'light'
     toggleTheme()
@@ -374,104 +367,59 @@ function MainLayout() {
   }
 
   return (
-    <div className="app-container h-screen w-screen overflow-hidden flex flex-col">
-      {/* Header Bar with all controls */}
-      <div className="h-12 flex items-center justify-between px-3 bg-[var(--bg-secondary)] border-b border-[var(--border-color)] z-50">
-        {/* Left controls: Theme, Settings, File Browser toggle */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleThemeToggle}
-            className="p-2 bg-[var(--bg-tertiary)] border border-[var(--border-color)] rounded hover:bg-[var(--bg-hover)] transition-colors"
-            title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-          >
-            {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-          </button>
-          <button
-            onClick={() => setShowSettings(true)}
-            className="p-2 bg-[var(--bg-tertiary)] border border-[var(--border-color)] rounded hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-1"
-            title="Open Settings"
-          >
-            <Settings className="w-4 h-4" />
-            <span className="text-sm">Settings</span>
-          </button>
-          <button
-            onClick={() => handleShowFileBrowser(!showFileBrowser)}
-            className="p-2 bg-[var(--bg-tertiary)] border border-[var(--border-color)] rounded hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-1"
-            title={showFileBrowser ? 'Hide File Browser' : 'Show File Browser'}
-          >
-            <span>{showFileBrowser ? '◀' : '▶'}</span>
-            <span className="text-sm">Files</span>
-          </button>
-        </div>
-
-        {/* Right controls: Classroom, Notifications */}
-        <div className="flex items-center gap-2">
-          {currentFile && (
-            <button
-              onClick={() => {
-                // Get document content from the file store - simplified for now
-                // The classroom store will fetch content when needed via MCP tools
-                useClassroomStore.getState().startClassroom(currentFile.path, '', 1)
-              }}
-              className="px-3 py-2 bg-[var(--accent-color)] text-white border border-[var(--accent-color)] rounded hover:opacity-90 transition-opacity flex items-center gap-2"
-              title="Enter Classroom Mode"
-            >
-              <GraduationCap className="w-4 h-4" />
-              <span className="text-sm font-medium">Classroom</span>
-            </button>
+    <div className="app-container h-screen w-screen overflow-hidden">
+      <Group orientation="horizontal" className="h-full" id="main-group" groupRef={mainGroupRef} onLayoutChanged={handleMainGroupLayoutChange}>
+        {/* Left Sidebar: File Browser */}
+        <Panel
+          id="sidebar"
+          defaultSize={session.panels.sidebar}
+          minSize={5}
+          className="sidebar-panel"
+        >
+          {showFileBrowser && hasFileBrowser && (
+            <SidebarTabs 
+              context={pluginContext}
+              onToggleTheme={handleThemeToggle}
+              onOpenSettings={() => setShowSettings(true)}
+              theme={theme}
+            />
           )}
-          <NotificationBell />
-        </div>
-      </div>
+          {showFileBrowser && !hasFileBrowser && (
+            <div className="flex items-center justify-center h-full text-[var(--sidebar-fg)] opacity-50 p-4">
+              <p>Loading file browser...</p>
+            </div>
+          )}
+        </Panel>
+        <Separator className="panel-resize-handle" />
 
-      {/* Main content area with resizable panels */}
-      <div className="flex-1 overflow-hidden">
-        <Group orientation="horizontal" className="h-full" id="main-group" groupRef={mainGroupRef} onLayoutChanged={handleMainGroupLayoutChange}>
-          {/* Left Sidebar: File Browser */}
-          <Panel
-            id="sidebar"
-            defaultSize={session.panels.sidebar}
-            minSize={5}
-            className="sidebar-panel"
-          >
-            {showFileBrowser && hasFileBrowser && <SidebarTabs context={pluginContext} />}
-            {showFileBrowser && !hasFileBrowser && (
-              <div className="flex items-center justify-center h-full text-[var(--sidebar-fg)] opacity-50 p-4">
-                <p>Loading file browser...</p>
-              </div>
-            )}
-          </Panel>
-          <Separator className="panel-resize-handle" />
+        {/* Main Content Area: File View */}
+        <Panel
+          id="file"
+          defaultSize={session.panels.file}
+          minSize={20}
+        >
+          <FileView />
+        </Panel>
 
-          {/* Main Content Area: File View */}
-          <Panel
-            id="file"
-            defaultSize={session.panels.file}
-            minSize={20}
-          >
-            <FileView />
-          </Panel>
+        <Separator className="panel-resize-handle" />
 
-          <Separator className="panel-resize-handle" />
-
-          {/* Right Panel: AI + Notes (vertical) */}
-          <Panel
-            id="right"
-            defaultSize={session.panels.ai + session.panels.note}
-            minSize={20}
-          >
-            <Group orientation="vertical" className="h-full" groupRef={rightGroupRef} onLayoutChanged={handleRightGroupLayoutChange}>
-              <Panel id="ai" defaultSize={session.panels.ai} minSize={20}>
-                <AIView />
-              </Panel>
-              <Separator className="panel-resize-handle-vertical" />
-              <Panel id="note" defaultSize={session.panels.note} minSize={20}>
-                <NoteView />
-              </Panel>
-            </Group>
-          </Panel>
-        </Group>
-      </div>
+        {/* Right Panel: AI + Notes (vertical) */}
+        <Panel
+          id="right"
+          defaultSize={session.panels.ai + session.panels.note}
+          minSize={20}
+        >
+          <Group orientation="vertical" className="h-full" groupRef={rightGroupRef} onLayoutChanged={handleRightGroupLayoutChange}>
+            <Panel id="ai" defaultSize={session.panels.ai} minSize={20}>
+              <AIView />
+            </Panel>
+            <Separator className="panel-resize-handle-vertical" />
+            <Panel id="note" defaultSize={session.panels.note} minSize={20}>
+              <NoteView />
+            </Panel>
+          </Group>
+        </Panel>
+      </Group>
 
       {/* Settings Modal */}
       <SettingsView isOpen={showSettings} onClose={() => setShowSettings(false)} />

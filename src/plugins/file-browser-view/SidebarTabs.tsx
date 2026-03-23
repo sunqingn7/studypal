@@ -2,15 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { FileBrowserView } from './FileBrowserView';
 import { HistoryView } from './HistoryView';
 import { PluginContext } from '../../domain/models/plugin';
-import { Folder, Clock } from 'lucide-react';
+import { Folder, Clock, Sun, Moon, Settings } from 'lucide-react';
 
 interface SidebarTabsProps {
   context: PluginContext;
+  onToggleTheme?: () => void;
+  onOpenSettings?: () => void;
+  theme?: 'light' | 'dark';
 }
 
 type TabId = 'explorer' | 'history';
 
-export const SidebarTabs: React.FC<SidebarTabsProps> = ({ context }) => {
+export const SidebarTabs: React.FC<SidebarTabsProps> = ({ context, onToggleTheme, onOpenSettings, theme }) => {
   const [activeTab, setActiveTab] = useState<TabId>(() => context.filePath ? 'explorer' : 'history');
 
   useEffect(() => {
@@ -28,7 +31,7 @@ export const SidebarTabs: React.FC<SidebarTabsProps> = ({ context }) => {
 
   return (
     <div className="h-full flex flex-col bg-[var(--sidebar-bg)]">
-      {/* Tab Bar */}
+      {/* Tab Bar with integrated settings and theme controls */}
       <div className="flex items-center h-[28px] bg-[var(--sidebar-bg)] border-b border-[var(--sidebar-border)]">
         {tabs.map((tab) => (
           <button
@@ -49,6 +52,35 @@ export const SidebarTabs: React.FC<SidebarTabsProps> = ({ context }) => {
             {tab.label}
           </button>
         ))}
+        
+        {/* Spacer to push controls to right */}
+        <div className="flex-1"></div>
+        
+        {/* Theme toggle icon */}
+        {onToggleTheme && (
+          <button
+            onClick={onToggleTheme}
+            className="p-1.5 hover:bg-[var(--sidebar-hover-bg)] rounded mx-1 transition-colors"
+            title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+          >
+            {theme === 'light' ? (
+              <Moon className="w-3.5 h-3.5 text-[var(--sidebar-fg)]" />
+            ) : (
+              <Sun className="w-3.5 h-3.5 text-[var(--sidebar-fg)]" />
+            )}
+          </button>
+        )}
+        
+        {/* Settings icon */}
+        {onOpenSettings && (
+          <button
+            onClick={onOpenSettings}
+            className="p-1.5 hover:bg-[var(--sidebar-hover-bg)] rounded mr-1 transition-colors"
+            title="Open Settings"
+          >
+            <Settings className="w-3.5 h-3.5 text-[var(--sidebar-fg)]" />
+          </button>
+        )}
       </div>
 
       {/* Tab Content */}
