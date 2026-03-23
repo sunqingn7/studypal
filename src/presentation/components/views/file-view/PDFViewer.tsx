@@ -33,17 +33,16 @@ function PDFViewer({ path, fileData, initialPage = 1 }: PDFViewerProps) {
   const renderTasksRef = useRef<Map<number, { cancel: () => void }>>(new Map())
   const prevPathRef = useRef<string>('')
 
-  // Update page when initialPage changes or when file path changes
+  // Update page when initialPage changes (from file store) or when file path changes
   useEffect(() => {
-    // Reset when path changes (new file opened)
     if (path !== prevPathRef.current) {
+      // New file opened - always use initialPage
       prevPathRef.current = path
+      if (initialPage && initialPage > 0) {
+        setCurrentPageState(initialPage)
+      }
     }
-    
-    if (initialPage && initialPage !== currentPage) {
-      setCurrentPageState(initialPage)
-    }
-  }, [initialPage, path, currentPage])
+  }, [initialPage, path])
 
   // Load metadata when PDF opens - only apply view settings, not page (page comes from file store)
   useEffect(() => {
@@ -329,6 +328,16 @@ useEffect(() => {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [loading, error, totalPages])
 
+  const goToPrevPage = useCallback(() => {
+    const step = pageMode === 'double' ? 2 : 1
+    setCurrentPage((prev) => Math.max(1, prev - step))
+  }, [pageMode])
+
+  const goToNextPage = useCallback(() => {
+    const step = pageMode === 'double' ? 2 : 1
+    setCurrentPage((prev) => Math.min(totalPages, prev + step))
+  }, [pageMode, totalPages])
+
   const handleWheel = useCallback((e: React.WheelEvent) => {
     if (loading || error) return
 
@@ -349,17 +358,7 @@ useEffect(() => {
         goToPrevPage()
       }
     }
-  }, [loading, error])
-
-  const goToPrevPage = useCallback(() => {
-    const step = pageMode === 'double' ? 2 : 1
-    setCurrentPage((prev) => Math.max(1, prev - step))
-  }, [pageMode])
-
-  const goToNextPage = useCallback(() => {
-    const step = pageMode === 'double' ? 2 : 1
-    setCurrentPage((prev) => Math.min(totalPages, prev + step))
-  }, [pageMode, totalPages])
+  }, [loading, error, goToNextPage, goToPrevPage])
 
   const zoomIn = () => {
     setScale((prev) => {
