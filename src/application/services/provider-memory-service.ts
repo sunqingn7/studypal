@@ -92,13 +92,6 @@ export async function loadProviderMemory(
     const content = await readTextFile(filePath)
     const memory = JSON.parse(content) as ProviderMemory
     
-    console.log(`[ProviderMemory] Loaded memory for ${providerName}:`, {
-      ideas: memory.ideas.length,
-      facts: memory.facts.length,
-      learnings: memory.learnings.length,
-      peerInsights: memory.peerInsights.length
-    })
-    
     return memory
   } catch (error) {
     console.error('[ProviderMemory] Failed to load memory:', error)
@@ -120,8 +113,6 @@ export async function saveProviderMemory(memory: ProviderMemory): Promise<void> 
     // Save to file
     const content = JSON.stringify(memory, null, 2)
     await writeTextFile(filePath, content)
-    
-    console.log(`[ProviderMemory] Saved memory for ${memory.providerName}`)
   } catch (error) {
     console.error('[ProviderMemory] Failed to save memory:', error)
     throw error
@@ -291,7 +282,6 @@ export async function extractAndStoreMemory(
 export async function clearProviderMemory(providerId: string, providerName: string): Promise<void> {
   const memory = createDefaultMemory(providerId, providerName)
   await saveProviderMemory(memory)
-  console.log(`[ProviderMemory] Cleared memory for ${providerName}`)
 }
 
 /**

@@ -16,11 +16,9 @@ export class EPUBSupportPlugin implements FileHandlerPlugin {
   supportedExtensions = ['.epub'];
 
   async initialize(): Promise<void> {
-    console.log('EPUB Support plugin initialized');
   }
 
   async destroy(): Promise<void> {
-    console.log('EPUB Support plugin destroyed');
   }
 
   canHandle(filePath: string): boolean {

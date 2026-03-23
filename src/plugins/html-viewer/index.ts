@@ -15,11 +15,9 @@ export class HTMLViewerPlugin implements FileHandlerPlugin {
   supportedExtensions = ['.html', '.htm'];
 
   async initialize(): Promise<void> {
-    console.log('HTML Viewer plugin initialized');
   }
 
   async destroy(): Promise<void> {
-    console.log('HTML Viewer plugin destroyed');
   }
 
   canHandle(filePath: string): boolean {

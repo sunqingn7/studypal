@@ -63,7 +63,6 @@ export class LlamaCppProvider implements AIProvider {
       console.warn(`[llamacpp-provider] Chat attempt ${attempt + 1} failed:`, lastError.message)
         
         if (attempt < MAX_RETRIES) {
-          console.log(`[llamacpp-provider] Retrying in ${RETRY_DELAY}ms...`)
           await new Promise(resolve => setTimeout(resolve, RETRY_DELAY))
         }
       }
@@ -125,7 +124,6 @@ export class LlamaCppProvider implements AIProvider {
         }
         
         if (attempt < MAX_RETRIES) {
-          console.log(`[llamacpp-provider] Retrying in ${RETRY_DELAY}ms...`)
           await new Promise(resolve => setTimeout(resolve, RETRY_DELAY))
         }
       }
@@ -141,8 +139,6 @@ export class LlamaCppProvider implements AIProvider {
     onChunk: (chunk: string) => void | Promise<void>,
     onThinking: (thinking: string) => void | Promise<void>
   ): Promise<void> {
-    console.log('[llamacpp-provider] streamChatWithThinking() called - using true streaming')
-
     const payload: ChatRequestPayload = {
       endpoint: config.endpoint,
       model: config.model,
@@ -170,7 +166,6 @@ export class LlamaCppProvider implements AIProvider {
 
         unlisten = await listen<StreamChunkData>(streamId, (event) => {
           if (event.payload.done) {
-            console.log('[llamacpp-provider] Stream complete, content:', fullContent.length, 'chars, thinking:', fullThinking.length, 'chars')
             return
           }
 
@@ -197,7 +192,6 @@ export class LlamaCppProvider implements AIProvider {
         }
         
         if (attempt < MAX_RETRIES) {
-          console.log(`[llamacpp-provider] Retrying in ${RETRY_DELAY}ms...`)
           await new Promise(resolve => setTimeout(resolve, RETRY_DELAY))
         }
       }

@@ -15,11 +15,9 @@ export class LaTeXViewerPlugin implements FileHandlerPlugin {
   supportedExtensions = ['.tex', '.latex'];
 
   async initialize(): Promise<void> {
-    console.log('LaTeX Viewer plugin initialized');
   }
 
   async destroy(): Promise<void> {
-    console.log('LaTeX Viewer plugin destroyed');
   }
 
   canHandle(filePath: string): boolean {

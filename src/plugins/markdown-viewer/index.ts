@@ -14,11 +14,9 @@ export class MarkdownViewerPlugin implements ViewPlugin {
   type: 'view' = 'view';
 
   async initialize(): Promise<void> {
-    console.log('Markdown Viewer plugin initialized');
   }
 
   async destroy(): Promise<void> {
-    console.log('Markdown Viewer plugin destroyed');
   }
 
   getViewComponent() {

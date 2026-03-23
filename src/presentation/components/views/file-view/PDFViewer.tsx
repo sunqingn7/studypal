@@ -31,16 +31,19 @@ function PDFViewer({ path, fileData, initialPage = 1 }: PDFViewerProps) {
   const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map())
   const textLayerRefs = useRef<Map<number, HTMLDivElement>>(new Map())
   const renderTasksRef = useRef<Map<number, { cancel: () => void }>>(new Map())
-  const isInitialPageSetRef = useRef(false)
+  const prevPathRef = useRef<string>('')
 
-  // Update page when initialPage changes (from file store) - only on mount
+  // Update page when initialPage changes or when file path changes
   useEffect(() => {
-    if (initialPage && initialPage !== currentPage && !isInitialPageSetRef.current) {
-      console.log('[PDFViewer] Setting page from initialPage:', initialPage)
-      setCurrentPageState(initialPage)
-      isInitialPageSetRef.current = true
+    // Reset when path changes (new file opened)
+    if (path !== prevPathRef.current) {
+      prevPathRef.current = path
     }
-  }, [initialPage])
+    
+    if (initialPage && initialPage !== currentPage) {
+      setCurrentPageState(initialPage)
+    }
+  }, [initialPage, path, currentPage])
 
   // Load metadata when PDF opens - only apply view settings, not page (page comes from file store)
   useEffect(() => {

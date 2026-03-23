@@ -3,7 +3,6 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { AIConfig, ChatMessage } from '../../domain/models/ai-context'
 import { NoteTab, GlobalNote, TopicNote } from '../../domain/models/note'
 
-console.log('[SessionStore] Module loaded')
 
 export interface SerializedNoteState {
   tabs: NoteTab[]
@@ -99,23 +98,16 @@ interface SessionStore {
 // Simple storage wrapper using localStorage
 const storageWrapper = {
   getItem: (name: string): string | null => {
-    const value = localStorage.getItem(name)
-    console.log('[SessionStorage] getItem:', name, value ? 'found' : 'not found')
-    return value
+    return localStorage.getItem(name)
   },
   setItem: (name: string, value: string): void => {
-    console.log('[SessionStorage] setItem:', name, value.substring(0, 80))
     localStorage.setItem(name, value)
   },
   removeItem: (name: string): void => {
     localStorage.removeItem(name)
-    console.log('[SessionStorage] removeItem:', name)
   },
 }
 
-const logAction = (action: string) => {
-  console.log('[SessionStore]', action)
-}
 
 export const useSessionStore = create<SessionStore>()(
   persist(
@@ -123,7 +115,6 @@ export const useSessionStore = create<SessionStore>()(
       session: DEFAULT_SESSION,
 
       setPanelSize: (panel, size) => {
-        logAction('setPanelSize ' + panel + ' = ' + size)
         set({
           session: {
             ...get().session,
@@ -134,7 +125,6 @@ export const useSessionStore = create<SessionStore>()(
       },
 
       setWindowState: (windowState) => {
-        logAction('setWindowState')
         set({
           session: {
             ...get().session,
@@ -145,7 +135,6 @@ export const useSessionStore = create<SessionStore>()(
       },
 
       setCurrentFile: (file, filePath = null, page = 1, scroll = 0) => {
-        logAction('setCurrentFile')
         set({
           session: {
             ...get().session,
@@ -159,7 +148,6 @@ export const useSessionStore = create<SessionStore>()(
       },
 
       setShowFileBrowser: (show) => {
-        logAction('setShowFileBrowser ' + show)
         set({
           session: {
             ...get().session,
@@ -170,7 +158,6 @@ export const useSessionStore = create<SessionStore>()(
       },
 
       setTheme: (theme) => {
-        logAction('setTheme ' + theme)
         set({
           session: {
             ...get().session,
@@ -181,7 +168,6 @@ export const useSessionStore = create<SessionStore>()(
       },
 
       setAIConfig: (config) => {
-        logAction('setAIConfig')
         set({
           session: {
             ...get().session,
@@ -192,7 +178,6 @@ export const useSessionStore = create<SessionStore>()(
       },
 
       setChatHistory: (history) => {
-        logAction('setChatHistory')
         set({
           session: {
             ...get().session,
@@ -203,7 +188,6 @@ export const useSessionStore = create<SessionStore>()(
       },
 
       setDocumentNotes: (documentId, notes) => {
-        logAction('setDocumentNotes ' + documentId)
         set({
           session: {
             ...get().session,
@@ -221,7 +205,6 @@ export const useSessionStore = create<SessionStore>()(
       },
 
       setDocumentChat: (documentId, chat) => {
-        logAction('setDocumentChat ' + documentId)
         set({
           session: {
             ...get().session,
@@ -286,7 +269,6 @@ export const useSessionStore = create<SessionStore>()(
       },
 
       clearSessionData: () => {
-        console.log('[SessionStore] Clearing all session data')
         set({
           session: {
             ...DEFAULT_SESSION,
@@ -295,7 +277,6 @@ export const useSessionStore = create<SessionStore>()(
             lastUpdated: Date.now(),
           }
         })
-        console.log('[SessionStore] Session data cleared')
       },
     }),
     {

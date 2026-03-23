@@ -29,12 +29,6 @@ export class OllamaProvider implements AIProvider {
   name = 'Ollama'
 
   async chat(messages: ChatMessage[], config: AIConfig): Promise<string> {
-    console.log('[ollama-provider] chat() called with:', {
-      endpoint: config.endpoint,
-      model: config.model,
-      messageCount: messages.length,
-    })
-
     const payload: ChatRequestPayload = {
       endpoint: config.endpoint,
       model: config.model,
@@ -49,19 +43,9 @@ export class OllamaProvider implements AIProvider {
       extraBody: config.extraBody,
     }
 
-    console.log('[ollama-provider] Calling invoke with payload:', JSON.stringify(payload, null, 2))
-
     try {
-      console.log('[ollama-provider] About to call invoke...')
       const result = await invoke<string>('chat_with_provider', { request: payload, provider: 'ollama' })
-      console.log('[ollama-provider] invoke returned!')
-      console.log('[ollama-provider] result type:', typeof result)
-      console.log('[ollama-provider] result:', result)
-
-      // Force convert to string if needed
-      const resultStr = String(result)
-      console.log('[ollama-provider] converted to string, length:', resultStr.length)
-      return resultStr
+      return String(result)
     } catch (error: any) {
       console.error('[ollama-provider] invoke failed with error:', error)
       console.error('[ollama-provider] error name:', error?.name)
@@ -76,8 +60,6 @@ export class OllamaProvider implements AIProvider {
     config: AIConfig,
     onChunk: (chunk: string) => void | Promise<void>
   ): Promise<void> {
-    console.log('[ollama-provider] streamChat() called - using true streaming')
-
     const payload: ChatRequestPayload = {
       endpoint: config.endpoint,
       model: config.model,
@@ -92,32 +74,25 @@ export class OllamaProvider implements AIProvider {
       extraBody: config.extraBody,
     }
 
-    // Set up event listener for streaming chunks
     let unlisten: UnlistenFn | null = null
     let fullContent = ''
 
-  try {
-    // Generate unique stream ID for this streaming session
-    const streamId = `ollama-stream-${crypto.randomUUID()}`
+    try {
+      const streamId = `ollama-stream-${crypto.randomUUID()}`
+      const payloadWithStream = { ...payload, streamEvent: streamId }
 
-    // Add streamEvent to payload
-    const payloadWithStream = { ...payload, streamEvent: streamId }
+      unlisten = await listen<StreamChunkData>(streamId, (event) => {
+        if (event.payload.done) {
+          return
+        }
 
-    // Listen for stream chunks from the backend
-    unlisten = await listen<StreamChunkData>(streamId, (event) => {
-      if (event.payload.done) {
-        console.log('[ollama-provider] Stream complete, received', fullContent.length, 'chars')
-        return
-      }
+        if (event.payload.content) {
+          fullContent += event.payload.content
+          onChunk(event.payload.content)
+        }
+      })
 
-      if (event.payload.content) {
-        fullContent += event.payload.content
-        onChunk(event.payload.content)
-      }
-    })
-
-    // Start the streaming request
-    await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'ollama' })
+      await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'ollama' })
     } catch (error: any) {
       console.error('[ollama-provider] streamChat error:', error)
       throw error
@@ -134,8 +109,6 @@ export class OllamaProvider implements AIProvider {
     onChunk: (chunk: string) => void | Promise<void>,
     onThinking: (thinking: string) => void | Promise<void>
   ): Promise<void> {
-    console.log('[ollama-provider] streamChatWithThinking() called - using true streaming')
-
     const payload: ChatRequestPayload = {
       endpoint: config.endpoint,
       model: config.model,
@@ -150,38 +123,31 @@ export class OllamaProvider implements AIProvider {
       extraBody: config.extraBody,
     }
 
-    // Set up event listener for streaming chunks
     let unlisten: UnlistenFn | null = null
     let fullContent = ''
     let fullThinking = ''
 
-  try {
-    // Generate unique stream ID for this streaming session
-    const streamId = `ollama-stream-${crypto.randomUUID()}`
+    try {
+      const streamId = `ollama-stream-${crypto.randomUUID()}`
+      const payloadWithStream = { ...payload, streamEvent: streamId }
 
-    // Add streamEvent to payload
-    const payloadWithStream = { ...payload, streamEvent: streamId }
+      unlisten = await listen<StreamChunkData>(streamId, (event) => {
+        if (event.payload.done) {
+          return
+        }
 
-    // Listen for stream chunks from the backend
-    unlisten = await listen<StreamChunkData>(streamId, (event) => {
-      if (event.payload.done) {
-        console.log('[ollama-provider] Stream complete, content:', fullContent.length, 'chars, thinking:', fullThinking.length, 'chars')
-        return
-      }
+        if (event.payload.thinking) {
+          fullThinking += event.payload.thinking
+          onThinking(fullThinking)
+        }
 
-      if (event.payload.thinking) {
-        fullThinking += event.payload.thinking
-        onThinking(fullThinking)
-      }
+        if (event.payload.content) {
+          fullContent += event.payload.content
+          onChunk(event.payload.content)
+        }
+      })
 
-      if (event.payload.content) {
-        fullContent += event.payload.content
-        onChunk(event.payload.content)
-      }
-    })
-
-    // Start the streaming request
-    await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'ollama' })
+      await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'ollama' })
     } catch (error: any) {
       console.error('[ollama-provider] streamChatWithThinking error:', error)
       throw error

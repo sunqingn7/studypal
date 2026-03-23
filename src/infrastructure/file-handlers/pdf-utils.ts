@@ -28,23 +28,14 @@ export async function loadPdf(path: string): Promise<pdfjsLib.PDFDocumentProxy> 
 
 export async function getPdfText(path: string, pageNumbers: number[]): Promise<string> {
   try {
-    console.log('[pdf-utils] Extracting PDF text via Rust backend for:', path)
-    console.log('[pdf-utils] Requesting pages:', pageNumbers)
-    
-    // Create cache key based on path and pages
     const cacheKey = `${path}:${pageNumbers.join(',')}`
     
-    // Check cache first
     if (textCache.has(cacheKey)) {
-      console.log('[pdf-utils] Using cached text')
       return textCache.get(cacheKey)!
     }
     
-    // Extract text using Rust backend with page numbers
     const pageText = await invoke<string>('extract_pdf_text', { path, pageNumbers })
-    console.log('[pdf-utils] Extracted', pageText.length, 'characters')
     
-    // Cache the result
     textCache.set(cacheKey, pageText)
     
     return pageText
@@ -63,7 +54,6 @@ export async function getCurrentPageText(path: string, currentPage: number): Pro
   }
   pages.push(currentPage + 1); // Next page (backend will handle if it doesn't exist)
   
-  console.log('[pdf-utils] Getting pages for context:', pages)
   return getPdfText(path, pages)
 }
 

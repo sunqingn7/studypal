@@ -24,8 +24,6 @@ export class PluginRegistry {
       }
       this.pluginsByType.get(type)!.push(plugin);
     }
-    
-    console.log(`Plugin registered: ${id} (${types.join(', ')})`);
   }
   
   unregister(pluginId: string): void {

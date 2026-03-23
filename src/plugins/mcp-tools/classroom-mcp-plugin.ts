@@ -83,13 +83,11 @@ export class ClassroomMCPServerPlugin implements MCPServerPlugin {
     }
     // Start health checks for LLM pool providers
     this.startHealthChecks();
-    console.log('Classroom MCP plugin initialized');
   }
 
   async destroy(): Promise<void> {
     // Stop health checks
     this.stopHealthChecks();
-    console.log('Classroom MCP plugin destroyed');
   }
 
   getConfig(): Record<string, unknown> {
@@ -199,8 +197,6 @@ export class ClassroomMCPServerPlugin implements MCPServerPlugin {
   }
 
   async executeTool(toolName: string, params: Record<string, unknown>): Promise<MCPToolResult> {
-    console.log(`[Classroom MCP] Executing tool: ${toolName}`, params);
-
     const store = useClassroomStore.getState();
 
     try {

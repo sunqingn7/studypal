@@ -21,11 +21,9 @@ export class TTSMCPServerPlugin implements MCPServerPlugin {
   }
 
   async initialize(): Promise<void> {
-    console.log('TTS MCP Server initialized');
   }
 
   async destroy(): Promise<void> {
-    console.log('TTS MCP Server destroyed');
   }
 
   getServerName(): string {

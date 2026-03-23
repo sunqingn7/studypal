@@ -22,11 +22,9 @@ export class NoteMCPServerPlugin implements MCPServerPlugin {
     if (config?.requireConfirmationForModify !== undefined) {
       this.requireConfirmationForModify = config.requireConfirmationForModify as boolean;
     }
-    console.log('Notes MCP plugin initialized');
   }
 
   async destroy(): Promise<void> {
-    console.log('Notes MCP plugin destroyed');
   }
 
   getConfig(): Record<string, unknown> {

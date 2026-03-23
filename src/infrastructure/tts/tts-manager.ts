@@ -240,21 +240,17 @@ export class TTSManager {
       const utterance = new SpeechSynthesisUtterance(text);
       
       const voices = window.speechSynthesis!.getVoices();
-      console.log('[TTS] Available voices:', voices.map(v => ({ name: v.name, lang: v.lang })));
       
       // Get voice name from config, or auto-detect based on language
       let voiceName = config?.voice;
       
       if (!voiceName || voiceName === 'auto') {
-        const detectedLang = this.detectLanguage(text);
-        console.log('[TTS] Detected language:', detectedLang);
+        this.detectLanguage(text);
         voiceName = this.selectVoiceForLanguage(text, voices);
-        console.log('[TTS] Selected voice:', voiceName);
       } else {
         // Try to find exact match first
         const exactMatch = voices.find(v => v.name === voiceName);
         if (!exactMatch) {
-          console.log('[TTS] Voice not found:', voiceName, 'falling back to auto');
           voiceName = this.selectVoiceForLanguage(text, voices);
         }
       }
@@ -263,9 +259,6 @@ export class TTSManager {
       if (matchedVoice) {
         utterance.voice = matchedVoice;
         utterance.lang = matchedVoice.lang;
-        console.log('[TTS] Using voice:', matchedVoice.name, 'lang:', matchedVoice.lang);
-      } else {
-        console.log('[TTS] No matching voice found, using default');
       }
       
       utterance.rate = config?.speed || 1;

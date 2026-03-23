@@ -25,12 +25,6 @@ export class GeminiProvider implements AIProvider {
   name = 'Google Gemini'
 
   async chat(messages: ChatMessage[], config: AIConfig): Promise<string> {
-    console.log('[gemini-provider] chat() called with:', {
-      endpoint: config.endpoint,
-      model: config.model,
-      messageCount: messages.length,
-    })
-
     const payload: ChatRequestPayload = {
       endpoint: config.endpoint,
       model: config.model,
@@ -46,21 +40,11 @@ export class GeminiProvider implements AIProvider {
       extraBody: config.extraBody,
     }
 
-    console.log('[gemini-provider] Calling invoke with payload:', JSON.stringify(payload, null, 2))
-
     try {
-      console.log('[gemini-provider] About to call invoke...')
       const result = await invoke<string>('chat_with_provider', { request: payload, provider: 'gemini' })
-      console.log('[gemini-provider] invoke returned!')
-      console.log('[gemini-provider] result type:', typeof result)
-      console.log('[gemini-provider] result:', result)
-
-      const resultStr = String(result)
-      console.log('[gemini-provider] converted to string, length:', resultStr.length)
-      return resultStr
+      return String(result)
     } catch (error: any) {
       console.error('[gemini-provider] invoke failed with error:', error)
-      // Check for specific Gemini errors
       const errorStr = String(error)
       if (errorStr.includes('404') || errorStr.includes('not_found')) {
         throw new Error(
@@ -87,8 +71,6 @@ export class GeminiProvider implements AIProvider {
     config: AIConfig,
     onChunk: (chunk: string) => void | Promise<void>
   ): Promise<void> {
-    console.log('[gemini-provider] streamChat() called - using true streaming')
-
     const payload: ChatRequestPayload = {
       endpoint: config.endpoint,
       model: config.model,
@@ -107,29 +89,24 @@ export class GeminiProvider implements AIProvider {
     let unlisten: UnlistenFn | null = null
     let fullContent = ''
 
-  try {
-    // Generate unique stream ID for this streaming session
-    const streamId = `gemini-stream-${crypto.randomUUID()}`
+    try {
+      const streamId = `gemini-stream-${crypto.randomUUID()}`
+      const payloadWithStream = { ...payload, streamEvent: streamId }
 
-    // Add streamEvent to payload
-    const payloadWithStream = { ...payload, streamEvent: streamId }
+      unlisten = await listen<StreamChunkData>(streamId, (event) => {
+        if (event.payload.done) {
+          return
+        }
 
-    unlisten = await listen<StreamChunkData>(streamId, (event) => {
-      if (event.payload.done) {
-        console.log('[gemini-provider] Stream complete, received', fullContent.length, 'chars')
-        return
-      }
+        if (event.payload.content) {
+          fullContent += event.payload.content
+          onChunk(event.payload.content)
+        }
+      })
 
-      if (event.payload.content) {
-        fullContent += event.payload.content
-        onChunk(event.payload.content)
-      }
-    })
-
-    await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'gemini' })
+      await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'gemini' })
     } catch (error: any) {
       console.error('[gemini-provider] streamChat error:', error)
-      // Check for specific Gemini errors
       const errorStr = String(error)
       if (errorStr.includes('404') || errorStr.includes('not_found')) {
         throw new Error(
@@ -161,8 +138,6 @@ export class GeminiProvider implements AIProvider {
     onChunk: (chunk: string) => void | Promise<void>,
     onThinking: (thinking: string) => void | Promise<void>
   ): Promise<void> {
-    console.log('[gemini-provider] streamChatWithThinking() called - using true streaming')
-
     const payload: ChatRequestPayload = {
       endpoint: config.endpoint,
       model: config.model,
@@ -178,37 +153,33 @@ export class GeminiProvider implements AIProvider {
       extraBody: config.extraBody,
     }
 
-    // Generate unique stream ID for this streaming session
     const streamId = `gemini-stream-${crypto.randomUUID()}`
     let unlisten: UnlistenFn | null = null
     let fullContent = ''
     let fullThinking = ''
 
-  try {
-    // Add streamEvent to payload
-    const payloadWithStream = { ...payload, streamEvent: streamId }
+    try {
+      const payloadWithStream = { ...payload, streamEvent: streamId }
 
-    unlisten = await listen<StreamChunkData>(streamId, (event) => {
-      if (event.payload.done) {
-        console.log('[gemini-provider] Stream complete, content:', fullContent.length, 'chars, thinking:', fullThinking.length, 'chars')
-        return
-      }
+      unlisten = await listen<StreamChunkData>(streamId, (event) => {
+        if (event.payload.done) {
+          return
+        }
 
-      if (event.payload.thinking) {
-        fullThinking += event.payload.thinking
-        onThinking(fullThinking)
-      }
+        if (event.payload.thinking) {
+          fullThinking += event.payload.thinking
+          onThinking(fullThinking)
+        }
 
-      if (event.payload.content) {
-        fullContent += event.payload.content
-        onChunk(event.payload.content)
-      }
-    })
+        if (event.payload.content) {
+          fullContent += event.payload.content
+          onChunk(event.payload.content)
+        }
+      })
 
-    await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'gemini' })
+      await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'gemini' })
     } catch (error: any) {
       console.error('[gemini-provider] streamChatWithThinking error:', error)
-      // Check for specific Gemini errors
       const errorStr = String(error)
       if (errorStr.includes('404') || errorStr.includes('not_found')) {
         throw new Error(

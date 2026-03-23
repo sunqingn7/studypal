@@ -39,15 +39,12 @@ IMPORTANT RULES:
 }
 
 export function parseToolCalls(response: string): ToolCall[] {
-  console.log('[parseToolCalls] Input:', response.slice(0, 200))
-  
   const toolCalls: ToolCall[] = [];
   
   // Find tool call JSON in response - handle nested braces properly
   const toolCallMatch = response.match(/\{\s*"tool_call"\s*:/);
   
   if (!toolCallMatch) {
-    console.log('[parseToolCalls] No tool call found')
     return toolCalls;
   }
   
@@ -90,28 +87,23 @@ export function parseToolCalls(response: string): ToolCall[] {
   }
   
   if (endIdx === -1) {
-    console.log('[parseToolCalls] Could not find matching closing brace')
     return toolCalls;
   }
   
   const jsonStr = response.slice(startIdx, endIdx);
-  console.log('[parseToolCalls] Extracted JSON:', jsonStr.slice(0, 100))
   
   try {
     const parsed = JSON.parse(jsonStr);
-    console.log('[parseToolCalls] Parsed:', parsed)
     if (parsed.tool_call && parsed.tool_call.name) {
       toolCalls.push({
         name: parsed.tool_call.name,
         arguments: parsed.tool_call.parameters || {}
       });
-      console.log('[parseToolCalls] Added tool:', parsed.tool_call.name)
     }
   } catch (e) {
-    console.log('[parseToolCalls] Parse error:', e)
+    // Ignore parse errors
   }
   
-  console.log('[parseToolCalls] Total tools found:', toolCalls.length)
   return toolCalls;
 }
 
@@ -129,7 +121,6 @@ export function extractFinalResponse(response: string, _toolCalls: ToolCall[]): 
     if (parsed.content && typeof parsed.content === 'string') {
       finalResponse = parsed.content;
       if (parsed.thinking && typeof parsed.thinking === 'string') {
-        console.log('[ToolCalling] Extracted thinking:', parsed.thinking.slice(0, 50));
         return { content: finalResponse, thinking: parsed.thinking };
       }
       return { content: finalResponse };
@@ -162,8 +153,6 @@ export async function executeToolCalls(
   const results: MCPToolResult[] = [];
   
   for (const toolCall of toolCalls) {
-    console.log(`[ToolCalling] Executing tool: ${toolCall.name}`, toolCall.arguments);
-    
     try {
       const result = await executor.executeTool(toolCall.name, toolCall.arguments);
       results.push(result);
@@ -173,8 +162,6 @@ export async function executeToolCalls(
         role: 'system',
         content: `[Tool: ${toolCall.name}] Result: ${JSON.stringify(result)}`
       });
-      
-      console.log(`[ToolCalling] Tool ${toolCall.name} result:`, result.success ? 'success' : 'error');
     } catch (error) {
       const errorResult: MCPToolResult = {
         success: false,
@@ -186,8 +173,6 @@ export async function executeToolCalls(
         role: 'system',
         content: `[Tool: ${toolCall.name}] Error: ${errorResult.error}`
       });
-      
-      console.error(`[ToolCalling] Tool ${toolCall.name} error:`, error);
     }
   }
   

@@ -61,7 +61,6 @@ export async function initializeSession(): Promise<void> {
       capabilityDetectionTimer = null
       const poolStore = useLLMPoolStore.getState()
       if (poolStore.providers.length > 0) {
-        console.log('[Session] Detecting capabilities for', poolStore.providers.length, 'providers')
         poolStore.detectAllCapabilities()
       }
     }, 2000) // Delay to let providers initialize first

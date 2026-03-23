@@ -30,12 +30,6 @@ export class OpenAIProvider implements AIProvider {
   name = 'OpenAI'
 
   async chat(messages: ChatMessage[], config: AIConfig): Promise<string> {
-    console.log('[openai-provider] chat() called with:', {
-      endpoint: config.endpoint,
-      model: config.model,
-      messageCount: messages.length,
-    })
-
     const payload: ChatRequestPayload = {
       endpoint: config.endpoint,
       model: config.model,
@@ -51,24 +45,11 @@ export class OpenAIProvider implements AIProvider {
       extraBody: config.extraBody,
     }
 
-    console.log('[openai-provider] Calling invoke with payload:', JSON.stringify(payload, null, 2))
-
     try {
-      console.log('[openai-provider] About to call invoke...')
       const result = await invoke<string>('chat_with_provider', { request: payload, provider: 'openai' })
-      console.log('[openai-provider] invoke returned!')
-      console.log('[openai-provider] result type:', typeof result)
-      console.log('[openai-provider] result:', result)
-
-      // Force convert to string if needed
-      const resultStr = String(result)
-      console.log('[openai-provider] converted to string, length:', resultStr.length)
-      return resultStr
+      return String(result)
     } catch (error: any) {
       console.error('[openai-provider] invoke failed with error:', error)
-      console.error('[openai-provider] error name:', error?.name)
-      console.error('[openai-provider] error message:', error?.message)
-      console.error('[openai-provider] error stack:', error?.stack)
       throw error
     }
   }
@@ -79,8 +60,6 @@ export class OpenAIProvider implements AIProvider {
     onChunk: (chunk: string) => void | Promise<void>,
     signal?: AbortSignal
   ): Promise<void> {
-    console.log('[openai-provider] streamChat() called - using true streaming')
-
     const payload: ChatRequestPayload = {
       endpoint: config.endpoint,
       model: config.model,
@@ -96,42 +75,32 @@ export class OpenAIProvider implements AIProvider {
       extraBody: config.extraBody,
     }
 
-    // Set up event listener for streaming chunks
     let unlisten: UnlistenFn | null = null
-    let fullContent = ''
 
-  try {
-    // Generate unique stream ID for this streaming session
-    const streamId = `openai-stream-${crypto.randomUUID()}`
+    try {
+      const streamId = `openai-stream-${crypto.randomUUID()}`
+      const payloadWithStream = { ...payload, streamEvent: streamId }
 
-    // Add streamEvent to payload
-    const payloadWithStream = { ...payload, streamEvent: streamId }
+      unlisten = await listen<StreamChunkData>(streamId, (event) => {
+        if (event.payload.done) {
+          return
+        }
 
-    // Listen for stream chunks from the backend
-    unlisten = await listen<StreamChunkData>(streamId, (event) => {
-      if (event.payload.done) {
-        console.log('[openai-provider] Stream complete, received', fullContent.length, 'chars')
-        return
-      }
-
-      if (event.payload.content) {
-        fullContent += event.payload.content
-        onChunk(event.payload.content)
-      }
-    })
-
-    // Handle abort signal
-    if (signal) {
-      signal.addEventListener('abort', () => {
-        if (unlisten) {
-          unlisten()
-          unlisten = null
+        if (event.payload.content) {
+          onChunk(event.payload.content)
         }
       })
-    }
 
-    // Start the streaming request
-    await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'openai' })
+      if (signal) {
+        signal.addEventListener('abort', () => {
+          if (unlisten) {
+            unlisten()
+            unlisten = null
+          }
+        })
+      }
+
+      await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'openai' })
     } catch (error: any) {
       console.error('[openai-provider] streamChat error:', error)
       throw error
@@ -148,8 +117,6 @@ export class OpenAIProvider implements AIProvider {
     onChunk: (chunk: string) => void | Promise<void>,
     onThinking: (thinking: string) => void | Promise<void>
   ): Promise<void> {
-    console.log('[openai-provider] streamChatWithThinking() called - using true streaming')
-
     const payload: ChatRequestPayload = {
       endpoint: config.endpoint,
       model: config.model,
@@ -165,38 +132,29 @@ export class OpenAIProvider implements AIProvider {
       extraBody: config.extraBody,
     }
 
-    // Set up event listener for streaming chunks
     let unlisten: UnlistenFn | null = null
-    let fullContent = ''
     let fullThinking = ''
 
-  try {
-    // Generate unique stream ID for this streaming session
-    const streamId = `openai-stream-${crypto.randomUUID()}`
+    try {
+      const streamId = `openai-stream-${crypto.randomUUID()}`
+      const payloadWithStream = { ...payload, streamEvent: streamId }
 
-    // Add streamEvent to payload
-    const payloadWithStream = { ...payload, streamEvent: streamId }
+      unlisten = await listen<StreamChunkData>(streamId, (event) => {
+        if (event.payload.done) {
+          return
+        }
 
-    // Listen for stream chunks from the backend
-    unlisten = await listen<StreamChunkData>(streamId, (event) => {
-      if (event.payload.done) {
-        console.log('[openai-provider] Stream complete, content:', fullContent.length, 'chars, thinking:', fullThinking.length, 'chars')
-        return
-      }
+        if (event.payload.thinking) {
+          fullThinking += event.payload.thinking
+          onThinking(fullThinking)
+        }
 
-      if (event.payload.thinking) {
-        fullThinking += event.payload.thinking
-        onThinking(fullThinking)
-      }
+        if (event.payload.content) {
+          onChunk(event.payload.content)
+        }
+      })
 
-      if (event.payload.content) {
-        fullContent += event.payload.content
-        onChunk(event.payload.content)
-      }
-    })
-
-    // Start the streaming request
-    await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'openai' })
+      await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'openai' })
     } catch (error: any) {
       console.error('[openai-provider] streamChatWithThinking error:', error)
       throw error

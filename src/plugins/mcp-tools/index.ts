@@ -14,11 +14,9 @@ export class MCPToolsPlugin implements MCPServerPlugin {
   type: 'mcp-server' = 'mcp-server';
 
   async initialize(): Promise<void> {
-    console.log('MCP Tools plugin initialized');
   }
 
   async destroy(): Promise<void> {
-    console.log('MCP Tools plugin destroyed');
   }
 
   getServerName(): string {
@@ -85,8 +83,6 @@ export class MCPToolsPlugin implements MCPServerPlugin {
   }
 
   async executeTool(toolName: string, params: Record<string, unknown>): Promise<MCPToolResult> {
-    console.log(`[MCP] Executing tool: ${toolName}`, params);
-    
     try {
       switch (toolName) {
         case 'web_search': {

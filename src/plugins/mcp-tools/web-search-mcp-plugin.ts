@@ -62,11 +62,9 @@ export class WebSearchMCPServerPlugin implements MCPServerPlugin {
     if (config?.maxResults !== undefined) {
       this.maxResults = config.maxResults as number;
     }
-    console.log('[WebSearchMCP] Plugin initialized');
   }
 
   async destroy(): Promise<void> {
-    console.log('[WebSearchMCP] Plugin destroyed');
   }
 
   getConfig(): Record<string, unknown> {
@@ -280,8 +278,6 @@ export class WebSearchMCPServerPlugin implements MCPServerPlugin {
           // Enhance query based on search type
           const enhancedQuery = this.enhanceQuery(query, searchType);
 
-          console.log(`[WebSearchMCP] Searching: ${enhancedQuery} (provider: ${config.provider})`);
-
           // Call Rust backend for search
           const result = await invoke<string>('search_web', {
             query: enhancedQuery,
@@ -317,8 +313,6 @@ export class WebSearchMCPServerPlugin implements MCPServerPlugin {
 
           // Enhance query for paper search
           const paperQuery = `${topic} paper research arxiv pdf`;
-
-          console.log(`[WebSearchMCP] Searching papers: ${topic}`);
 
           const result = await invoke<string>('search_web', {
             query: paperQuery,
@@ -358,8 +352,6 @@ export class WebSearchMCPServerPlugin implements MCPServerPlugin {
         case 'fetch_web_content': {
           const url = params.url as string;
           const maxLength = (params.max_length as number) || 50000;
-
-          console.log(`[WebSearchMCP] Fetching content from: ${url}`);
 
           const content = await invoke<string>('fetch_web_content', { url });
 
@@ -408,7 +400,7 @@ export class WebSearchMCPServerPlugin implements MCPServerPlugin {
               metadata.title = titleMatch[1].trim();
             }
           } catch (e) {
-            console.log(`[WebSearchMCP] Could not fetch metadata: ${e}`);
+            // Ignore fetch errors
           }
 
           return {

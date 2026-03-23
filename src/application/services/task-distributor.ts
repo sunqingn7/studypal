@@ -76,16 +76,13 @@ export class TaskDistributor {
 
     const timeout = pendingTask.timeout || store.config.taskTimeout
     const timeoutId = setTimeout(() => {
-      console.log('[TaskDistributor] Task timed out:', taskId)
       abortController.abort()
     }, timeout)
 
     const startTime = Date.now()
 
     try {
-      console.log('[TaskDistributor] Calling provider:', provider.name, provider.config.provider)
       const result = await this.callProvider(provider, pendingTask, abortController.signal)
-      console.log('[TaskDistributor] Provider returned, result length:', result.length)
 
       clearTimeout(timeoutId)
       const latency = Date.now() - startTime

@@ -70,7 +70,6 @@ export const useDocumentMetadataStore = create<DocumentMetadataStore>()(
               metadataCache: new Map(state.metadataCache).set(documentPath, metadata),
             }))
 
-            console.log('[DocumentMetadata] Loaded metadata for:', documentPath, metadata)
             return metadata
           }
 
@@ -88,7 +87,6 @@ export const useDocumentMetadataStore = create<DocumentMetadataStore>()(
             metadataCache: new Map(state.metadataCache).set(documentPath, defaultMetadata),
           }))
 
-          console.log('[DocumentMetadata] Using default metadata for:', documentPath)
           return defaultMetadata
         } catch (e) {
           console.error('[DocumentMetadata] Error loading metadata:', e)
@@ -136,15 +134,12 @@ export const useDocumentMetadataStore = create<DocumentMetadataStore>()(
             currentMetadata: fullMetadata,
             metadataCache: new Map(state.metadataCache).set(metadata.documentPath, fullMetadata),
           }))
-
-          console.log('[DocumentMetadata] Saved metadata for:', metadata.documentPath)
         } catch (e) {
           console.error('[DocumentMetadata] Error saving metadata:', e)
         }
       },
 
       updateMetadata: async (updates) => {
-        console.log('[DocumentMetadata] updateMetadata called with:', updates)
         const current = get().currentMetadata
         if (!current) {
           console.warn('[DocumentMetadata] No current metadata to update')

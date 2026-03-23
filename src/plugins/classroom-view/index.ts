@@ -15,11 +15,9 @@ export class ClassroomViewPlugin implements ViewPlugin {
   type: 'view' = 'view';
 
   async initialize(): Promise<void> {
-    console.log('Classroom view plugin initialized');
   }
 
   async destroy(): Promise<void> {
-    console.log('Classroom view plugin destroyed');
   }
 
   getViewComponent() {

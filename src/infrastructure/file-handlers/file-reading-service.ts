@@ -36,17 +36,13 @@ export class FileReadingService {
       const cached = fileCache.get(filePath)!
       // Validate cached content is a proper Uint8Array
       if (cached.content instanceof Uint8Array && cached.content.length > 0) {
-        console.log('[FileReadingService] Using cached file:', filePath)
         return cached
       } else {
-        console.log('[FileReadingService] Cache invalid for:', filePath, 're-reading from disk')
         fileCache.delete(filePath)
       }
     }
 
     try {
-      console.log('[FileReadingService] Reading file via Rust backend:', filePath)
-      
       const result = await invoke<FileOpenResult>('read_file', {
         filePath,
       })
@@ -74,7 +70,6 @@ export class FileReadingService {
         this.addToCache(filePath, fileResult)
       }
 
-      console.log('[FileReadingService] Successfully read file:', result.name, `(${result.size} bytes)`)
       return fileResult
     } catch (error) {
       console.error('[FileReadingService] Error reading file:', error)
@@ -108,7 +103,6 @@ export class FileReadingService {
    * Clear the file cache
    */
   static clearCache(): void {
-    console.log('[FileReadingService] Clearing file cache')
     fileCache.clear()
   }
 
@@ -135,8 +129,6 @@ export class FileReadingService {
       const decoder = new TextDecoder('utf-8', { fatal: true })
       return decoder.decode(binaryContent)
     } catch {
-      // Fall back to latin1 if UTF-8 fails
-      console.log('[FileReadingService] UTF-8 decoding failed, trying latin1')
       const decoder = new TextDecoder('latin1')
       return decoder.decode(binaryContent)
     }

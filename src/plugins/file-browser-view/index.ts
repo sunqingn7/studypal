@@ -14,11 +14,9 @@ export class FileBrowserViewPlugin implements ViewPlugin {
   type: 'view' = 'view';
 
   async initialize(): Promise<void> {
-    console.log('File Browser View plugin initialized');
   }
 
   async destroy(): Promise<void> {
-    console.log('File Browser View plugin destroyed');
   }
 
   getViewComponent() {

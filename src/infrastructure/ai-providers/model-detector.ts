@@ -17,8 +17,6 @@ export async function fetchAvailableModels(
   endpoint: string,
   apiKey?: string
 ): Promise<ModelInfo[]> {
-  console.log('[model-detector] Fetching models from:', endpoint)
-
   try {
     const result = await invoke<ModelInfo[]>('fetch_models', {
       request: {
@@ -27,7 +25,6 @@ export async function fetchAvailableModels(
       },
     })
 
-    console.log('[model-detector] Found', result.length, 'models')
     return result
   } catch (error: any) {
     console.error('[model-detector] Failed to fetch models:', error)

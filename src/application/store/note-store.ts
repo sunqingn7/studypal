@@ -228,13 +228,11 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
   },
 
   clear: () => {
-    console.log('[NoteStore] Clearing all notes and tabs')
     set({
       tabs: [],
       activeTabId: null,
       globalNotes: [],
       topicNotes: new Map(),
     })
-    console.log('[NoteStore] Clear complete')
   },
 }))

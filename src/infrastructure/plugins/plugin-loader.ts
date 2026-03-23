@@ -17,8 +17,6 @@ import { summarySkillMCPServerPlugin } from '../../plugins/mcp-tools/summary-ski
 import { useSettingsStore } from '../../application/store/settings-store';
 
 export async function loadAllPlugins(): Promise<void> {
-  console.log('[PluginLoader] Starting plugin loading...');
-
   const { plugins: savedConfigs, updatePluginConfig } = useSettingsStore.getState();
 
   const edgeTTSPlugin = new EdgeTTSBackendPlugin();
@@ -47,25 +45,14 @@ export async function loadAllPlugins(): Promise<void> {
     const enabled = savedConfig?.enabled ?? true;
 
     if (enabled) {
-      console.log(`[PluginLoader] Loading ${pluginId}...`);
       const config = savedConfig || { enabled: true, config: {} };
-      const result = await pluginManager.loadPlugin(plugin, config);
-      
-      if (result.success) {
-        console.log(`[PluginLoader] ✓ ${pluginId} loaded successfully`);
-      } else {
-        console.error(`[PluginLoader] ✗ ${pluginId} failed:`, result.error);
-      }
+      await pluginManager.loadPlugin(plugin, config);
     } else {
       if (!savedConfig) {
         updatePluginConfig(pluginId, { enabled: false, config: {} });
       }
-      console.log(`[PluginLoader] ⊘ ${pluginId} disabled by user`);
     }
   }
-  
-  console.log('[PluginLoader] Plugin loading complete');
-  console.log('[PluginLoader] Loaded plugins:', pluginManager.getLoadedPlugins());
 }
 
 export function getPluginRegistry() {

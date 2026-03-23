@@ -59,11 +59,9 @@ export class SummarySkillMCPServerPlugin implements MCPServerPlugin {
     if (config?.maxSummaryLength !== undefined) {
       this.maxSummaryLength = config.maxSummaryLength as number;
     }
-    console.log('[SummarySkill] MCP plugin initialized');
   }
 
   async destroy(): Promise<void> {
-    console.log('[SummarySkill] MCP plugin destroyed');
   }
 
   getConfig(): Record<string, unknown> {
@@ -151,7 +149,6 @@ export class SummarySkillMCPServerPlugin implements MCPServerPlugin {
         m.role === 'user' || m.role === 'assistant'
       );
 
-      console.log('[SummarySkill] Total messages in tab:', activeTab.messages.length, '→ discussion messages:', discussionMessages.length);
       if (discussionMessages.length === 0) {
         return { success: false, error: 'No discussion messages to summarize' };
       }
@@ -185,8 +182,6 @@ export class SummarySkillMCPServerPlugin implements MCPServerPlugin {
       if (!selectedProvider) {
         return { success: false, error: 'No available LLM providers for summarization' };
       }
-
-      console.log(`[SummarySkill] Selected provider for summarization: ${selectedProvider.nickname || selectedProvider.name}`);
 
       // 4. Generate summary by calling the provider directly (bypass task queue)
       const style = (params.style as string) || 'bullet_points';
