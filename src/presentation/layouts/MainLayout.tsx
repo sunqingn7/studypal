@@ -374,98 +374,104 @@ function MainLayout() {
   }
 
   return (
-    <div className="app-container h-screen w-screen overflow-hidden">
-      <Group orientation="horizontal" className="h-full" id="main-group" groupRef={mainGroupRef} onLayoutChanged={handleMainGroupLayoutChange}>
-        {/* Left Sidebar: File Browser */}
-        <Panel
-          id="sidebar"
-          defaultSize={session.panels.sidebar}
-          minSize={5}
-          className="sidebar-panel"
-        >
-          {showFileBrowser && hasFileBrowser && <SidebarTabs context={pluginContext} />}
-          {showFileBrowser && !hasFileBrowser && (
-            <div className="flex items-center justify-center h-full text-[var(--sidebar-fg)] opacity-50 p-4">
-              <p>Loading file browser...</p>
-            </div>
+    <div className="app-container h-screen w-screen overflow-hidden flex flex-col">
+      {/* Header Bar with all controls */}
+      <div className="h-12 flex items-center justify-between px-3 bg-[var(--bg-secondary)] border-b border-[var(--border-color)] z-50">
+        {/* Left controls: Theme, Settings, File Browser toggle */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleThemeToggle}
+            className="p-2 bg-[var(--bg-tertiary)] border border-[var(--border-color)] rounded hover:bg-[var(--bg-hover)] transition-colors"
+            title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+          >
+            {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+          </button>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="p-2 bg-[var(--bg-tertiary)] border border-[var(--border-color)] rounded hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-1"
+            title="Open Settings"
+          >
+            <Settings className="w-4 h-4" />
+            <span className="text-sm">Settings</span>
+          </button>
+          <button
+            onClick={() => handleShowFileBrowser(!showFileBrowser)}
+            className="p-2 bg-[var(--bg-tertiary)] border border-[var(--border-color)] rounded hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-1"
+            title={showFileBrowser ? 'Hide File Browser' : 'Show File Browser'}
+          >
+            <span>{showFileBrowser ? '◀' : '▶'}</span>
+            <span className="text-sm">Files</span>
+          </button>
+        </div>
+
+        {/* Right controls: Classroom, Notifications */}
+        <div className="flex items-center gap-2">
+          {currentFile && (
+            <button
+              onClick={() => {
+                // Get document content from the file store - simplified for now
+                // The classroom store will fetch content when needed via MCP tools
+                useClassroomStore.getState().startClassroom(currentFile.path, '', 1)
+              }}
+              className="px-3 py-2 bg-[var(--accent-color)] text-white border border-[var(--accent-color)] rounded hover:opacity-90 transition-opacity flex items-center gap-2"
+              title="Enter Classroom Mode"
+            >
+              <GraduationCap className="w-4 h-4" />
+              <span className="text-sm font-medium">Classroom</span>
+            </button>
           )}
-        </Panel>
-        <Separator className="panel-resize-handle" />
+          <NotificationBell />
+        </div>
+      </div>
 
-        {/* Main Content Area: File View */}
-        <Panel
-          id="file"
-          defaultSize={session.panels.file}
-          minSize={20}
-        >
-          <FileView />
-        </Panel>
+      {/* Main content area with resizable panels */}
+      <div className="flex-1 overflow-hidden">
+        <Group orientation="horizontal" className="h-full" id="main-group" groupRef={mainGroupRef} onLayoutChanged={handleMainGroupLayoutChange}>
+          {/* Left Sidebar: File Browser */}
+          <Panel
+            id="sidebar"
+            defaultSize={session.panels.sidebar}
+            minSize={5}
+            className="sidebar-panel"
+          >
+            {showFileBrowser && hasFileBrowser && <SidebarTabs context={pluginContext} />}
+            {showFileBrowser && !hasFileBrowser && (
+              <div className="flex items-center justify-center h-full text-[var(--sidebar-fg)] opacity-50 p-4">
+                <p>Loading file browser...</p>
+              </div>
+            )}
+          </Panel>
+          <Separator className="panel-resize-handle" />
 
-        <Separator className="panel-resize-handle" />
+          {/* Main Content Area: File View */}
+          <Panel
+            id="file"
+            defaultSize={session.panels.file}
+            minSize={20}
+          >
+            <FileView />
+          </Panel>
 
-        {/* Right Panel: AI + Notes (vertical) */}
-        <Panel
-          id="right"
-          defaultSize={session.panels.ai + session.panels.note}
-          minSize={20}
-        >
-          <Group orientation="vertical" className="h-full" groupRef={rightGroupRef} onLayoutChanged={handleRightGroupLayoutChange}>
-            <Panel id="ai" defaultSize={session.panels.ai} minSize={20}>
-              <AIView />
-            </Panel>
-            <Separator className="panel-resize-handle-vertical" />
-            <Panel id="note" defaultSize={session.panels.note} minSize={20}>
-              <NoteView />
-            </Panel>
-          </Group>
-        </Panel>
-      </Group>
+          <Separator className="panel-resize-handle" />
 
-      {/* Theme toggle button */}
-      <button
-        onClick={handleThemeToggle}
-        className="fixed left-2 top-4 z-50 p-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded shadow-md hover:bg-[var(--bg-tertiary)] transition-colors"
-        title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-      >
-        {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-      </button>
-
-      {/* Settings button */}
-      <button
-        onClick={() => setShowSettings(true)}
-        className="fixed left-2 top-[52px] z-50 p-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded shadow-md hover:bg-[var(--bg-tertiary)] transition-colors"
-        title="Open Settings"
-      >
-        <Settings className="w-4 h-4" />
-      </button>
-
-      {/* Toggle button for file browser */}
-      <button
-        onClick={() => handleShowFileBrowser(!showFileBrowser)}
-        className="fixed left-2 top-[88px] z-50 p-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded shadow-md hover:bg-[var(--bg-tertiary)] transition-colors"
-        title={showFileBrowser ? 'Hide File Browser' : 'Show File Browser'}
-      >
-        {showFileBrowser ? '◀' : '▶'}
-      </button>
-
-      {/* Classroom Mode button - only show when a file is open, positioned in header area */}
-      {currentFile && (
-        <button
-          onClick={() => {
-            // Get document content from the file store - simplified for now
-            // The classroom store will fetch content when needed via MCP tools
-            useClassroomStore.getState().startClassroom(currentFile.path, '', 1)
-          }}
-          className="fixed right-20 top-4 z-50 px-3 py-2 bg-[var(--accent-color)] text-white border border-[var(--accent-color)] rounded shadow-md hover:opacity-90 transition-opacity flex items-center gap-2"
-          title="Enter Classroom Mode"
-        >
-          <GraduationCap className="w-4 h-4" />
-          <span className="text-sm font-medium">Classroom</span>
-        </button>
-      )}
-
-      {/* Notification Bell */}
-      <NotificationBell />
+          {/* Right Panel: AI + Notes (vertical) */}
+          <Panel
+            id="right"
+            defaultSize={session.panels.ai + session.panels.note}
+            minSize={20}
+          >
+            <Group orientation="vertical" className="h-full" groupRef={rightGroupRef} onLayoutChanged={handleRightGroupLayoutChange}>
+              <Panel id="ai" defaultSize={session.panels.ai} minSize={20}>
+                <AIView />
+              </Panel>
+              <Separator className="panel-resize-handle-vertical" />
+              <Panel id="note" defaultSize={session.panels.note} minSize={20}>
+                <NoteView />
+              </Panel>
+            </Group>
+          </Panel>
+        </Group>
+      </div>
 
       {/* Settings Modal */}
       <SettingsView isOpen={showSettings} onClose={() => setShowSettings(false)} />
