@@ -18,6 +18,7 @@ function FileView() {
 
   // Get available file handlers from plugins
   const getPluginHandler = useCallback((filePath: string): FileHandlerPlugin | undefined => {
+    console.log('[FileView] Rendering with currentPage:', currentPage)
     const handlers = pluginRegistry.getFileHandlers()
     return handlers.find(h => h.canHandle(filePath))
   }, [])

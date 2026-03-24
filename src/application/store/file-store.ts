@@ -512,6 +512,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
         // Always use the saved page from metadata database
         // (the page is already saved there when user navigates)
         const savedPage = metadata.currentPage || 1
+        console.log('[FileStore] setCurrentFile setting page to:', savedPage)
         set({
           currentFile: file,
           currentPage: savedPage
