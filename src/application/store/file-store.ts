@@ -481,7 +481,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
     }
   },
 
-  setCurrentFile: async (file, preservePage = false) => {
+  setCurrentFile: async (file) => {
     const prevFile = get().currentFile
 
     // Save metadata for previous file before switching
@@ -508,13 +508,12 @@ export const useFileStore = create<FileStore>((set, get) => ({
       const metadata = await metadataStore.loadMetadata(file.path)
 
       if (metadata) {
-        // If preservePage is true (session restore), use the current page from file store
-        // Otherwise, use the saved page from metadata
+        // Always use the saved page from metadata database
+        // (the page is already saved there when user navigates)
         const savedPage = metadata.currentPage || 1
-        const pageToUse = preservePage ? get().currentPage : savedPage
         set({
           currentFile: file,
-          currentPage: pageToUse
+          currentPage: savedPage
         })
       } else {
         set({ currentFile: file, currentPage: 1 })

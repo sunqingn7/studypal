@@ -126,7 +126,7 @@ function MainLayout() {
           size: 0,
         }
         // setCurrentFile with preservePage=true will load the saved page from metadata
-        setCurrentFile(fileData, true)
+        setCurrentFile(fileData)
         
         // Load document-bound notes and chat
         const { loadDocumentState } = useFileStore.getState()
@@ -170,7 +170,7 @@ function MainLayout() {
             size: 0,
           }
           // setCurrentFile with preservePage=true will load the saved page from metadata
-          setCurrentFile(fileData, true)
+          setCurrentFile(fileData)
 
           // Load document-bound notes and chat
           const { loadDocumentState } = useFileStore.getState()
