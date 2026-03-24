@@ -180,16 +180,12 @@ export const useDocumentMetadataStore = create<DocumentMetadataStore>()(
     }),
     {
       name: 'document-metadata-store',
-      // Only persist the cache, not the current metadata
-      partialize: (state) => ({ metadataCache: Array.from(state.metadataCache.entries()) }),
+      // Don't persist the cache - always load fresh from database
+      partialize: () => ({}),
       onRehydrateStorage: () => {
         return (state) => {
           if (state) {
-            // Convert array back to Map
-            const cacheArray = (state as any).metadataCache
-            if (Array.isArray(cacheArray)) {
-              state.metadataCache = new Map(cacheArray)
-            }
+            state.metadataCache = new Map()
           }
         }
       },
