@@ -60,13 +60,14 @@ export const SidebarTabs: React.FC<SidebarTabsProps> = ({ context, onToggleTheme
         {onToggleTheme && (
           <button
             onClick={onToggleTheme}
-            className="p-1.5 hover:bg-[var(--sidebar-hover-bg)] rounded mx-1 transition-colors"
+            className="p-1.5 rounded mx-1 transition-colors"
+            style={{ backgroundColor: 'transparent' }}
             title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
           >
             {theme === 'light' ? (
-              <Moon className="w-3.5 h-3.5 text-[var(--sidebar-fg)]" />
+              <Moon className="w-3.5 h-3.5" style={{ color: 'var(--sidebar-fg)' }} />
             ) : (
-              <Sun className="w-3.5 h-3.5 text-[var(--sidebar-fg)]" />
+              <Sun className="w-3.5 h-3.5" style={{ color: 'var(--sidebar-fg)' }} />
             )}
           </button>
         )}
@@ -75,10 +76,11 @@ export const SidebarTabs: React.FC<SidebarTabsProps> = ({ context, onToggleTheme
         {onOpenSettings && (
           <button
             onClick={onOpenSettings}
-            className="p-1.5 hover:bg-[var(--sidebar-hover-bg)] rounded mr-1 transition-colors"
+            className="p-1.5 rounded mr-1 transition-colors"
+            style={{ backgroundColor: 'transparent' }}
             title="Open Settings"
           >
-            <Settings className="w-3.5 h-3.5 text-[var(--sidebar-fg)]" />
+            <Settings className="w-3.5 h-3.5" style={{ color: 'var(--sidebar-fg)' }} />
           </button>
         )}
       </div>
