@@ -46,9 +46,12 @@ export const useDocumentMetadataStore = create<DocumentMetadataStore>()(
       metadataCache: new Map(),
 
       loadMetadata: async (documentPath: string) => {
+        console.log('[DocumentMetadata] loadMetadata called for:', documentPath)
+        
         try {
           const { invoke } = await import('@tauri-apps/api/core')
           const result = await invoke('load_document_metadata', { documentPath })
+          console.log('[DocumentMetadata] loadMetadata raw result, current_page:', (result as any)?.current_page)
 
           if (result) {
             // Convert from Rust format to TypeScript format
@@ -65,6 +68,8 @@ export const useDocumentMetadataStore = create<DocumentMetadataStore>()(
               updatedAt: (result as any).updated_at,
             }
 
+            console.log('[DocumentMetadata] loadMetadata returning metadata with currentPage:', metadata.currentPage)
+            
             set((state) => ({
               currentMetadata: metadata,
               metadataCache: new Map(state.metadataCache).set(documentPath, metadata),
