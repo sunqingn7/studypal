@@ -106,6 +106,12 @@ export const useDocumentMetadataStore = create<DocumentMetadataStore>()(
           const now = Date.now()
           const existing = get().metadataCache.get(metadata.documentPath)
           
+          // Skip if page is already the same (avoid unnecessary writes)
+          if (existing && existing.currentPage === metadata.currentPage && metadata.currentPage !== undefined) {
+            console.log('[DocumentMetadata] saveMetadata SKIPPED - same page:', metadata.currentPage)
+            return
+          }
+
           console.log('[DocumentMetadata] saveMetadata STACK TRACE - capturing stack...')
           console.trace()
 
