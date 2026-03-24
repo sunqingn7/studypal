@@ -634,28 +634,52 @@ impl Database {
             metadata.scale
         );
 
-        let rows_affected = self.connection.execute(
-            "INSERT OR REPLACE INTO document_metadata 
-             (id, document_path, chat_id, view_mode, scale, current_page, scroll_position, settings_json, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            rusqlite::params![
-                metadata.id,
-                metadata.document_path,
-                metadata.chat_id,
-                metadata.view_mode,
-                metadata.scale,
-                metadata.current_page,
-                metadata.scroll_position,
-                metadata.settings_json,
-                metadata.created_at,
-                metadata.updated_at,
-            ],
-        )?;
+        // Check if entry exists first
+        let existing: Option<String> = self
+            .connection
+            .query_row(
+                "SELECT id FROM document_metadata WHERE document_path = ?",
+                [&metadata.document_path],
+                |row| row.get(0),
+            )
+            .ok();
 
-        println!(
-            "[DB] save_document_metadata: rows_affected={}",
-            rows_affected
-        );
+        if existing.is_some() {
+            // Update existing
+            self.connection.execute(
+                "UPDATE document_metadata SET current_page = ?, view_mode = ?, scale = ?, updated_at = ? WHERE document_path = ?",
+                rusqlite::params![
+                    metadata.current_page,
+                    metadata.view_mode,
+                    metadata.scale,
+                    metadata.updated_at,
+                    metadata.document_path
+                ],
+            )?;
+            println!("[DB] save_document_metadata: UPDATED existing row");
+        } else {
+            // Insert new
+            self.connection.execute(
+                "INSERT INTO document_metadata (id, document_path, chat_id, view_mode, scale, current_page, scroll_position, settings_json, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                rusqlite::params![
+                    metadata.id,
+                    metadata.document_path,
+                    metadata.chat_id,
+                    metadata.view_mode,
+                    metadata.scale,
+                    metadata.current_page,
+                    metadata.scroll_position,
+                    metadata.settings_json,
+                    metadata.created_at,
+                    metadata.updated_at
+                ],
+            )?;
+            println!("[DB] save_document_metadata: INSERTED new row");
+        }
+
+        let rows = self.connection.changes();
+        println!("[DB] save_document_metadata: rows_affected={}", rows);
         Ok(())
     }
 
@@ -688,8 +712,8 @@ impl Database {
         match result {
             Ok(metadata) => {
                 println!(
-                    "[DB] load_document_metadata: FOUND - page={}, view_mode={}",
-                    metadata.current_page, metadata.view_mode
+                    "[DB] load_document_metadata: FOUND - id={}, page={}, view_mode={}",
+                    metadata.id, metadata.current_page, metadata.view_mode
                 );
                 Ok(Some(metadata))
             }
