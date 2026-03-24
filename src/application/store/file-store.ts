@@ -506,6 +506,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
       // Load metadata for new file
       const metadata = await metadataStore.loadMetadata(file.path)
+      console.log('[FileStore] setCurrentFile loaded metadata:', metadata?.currentPage, 'for:', file.path)
 
       if (metadata) {
         // Always use the saved page from metadata database
