@@ -101,7 +101,7 @@ export const useDocumentMetadataStore = create<DocumentMetadataStore>()(
           const now = Date.now()
           const existing = get().metadataCache.get(metadata.documentPath)
           
-          console.log('[DocumentMetadata] saveMetadata called:', metadata.currentPage, 'existing:', existing?.currentPage)
+          console.log('[DocumentMetadata] saveMetadata called for:', metadata.documentPath, 'page:', metadata.currentPage, 'existing page:', existing?.currentPage)
 
           const fullMetadata: DocumentMetadata = {
             id: existing?.id || crypto.randomUUID(),
@@ -148,13 +148,13 @@ export const useDocumentMetadataStore = create<DocumentMetadataStore>()(
           return
         }
 
+        console.log('[DocumentMetadata] updateMetadata BEFORE:', { currentPage: current.currentPage, updates })
         const updated = {
           ...current,
           ...updates,
           updatedAt: Date.now(),
         }
-
-        console.log('[DocumentMetadata] updateMetadata:', updates, 'for:', current.documentPath)
+        console.log('[DocumentMetadata] updateMetadata AFTER:', { currentPage: updated.currentPage })
         await get().saveMetadata(updated)
       },
 
