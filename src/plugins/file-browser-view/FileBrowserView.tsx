@@ -324,10 +324,11 @@ const renderTreeNode = (node: TreeNode, index: number, depth: number = 0, parent
         </span>
         <button
           onClick={refresh}
-          className="w-5 h-5 flex items-center justify-center rounded hover:bg-[var(--sidebar-hover-bg)] text-[var(--sidebar-fg)]"
+          className="w-5 h-5 flex items-center justify-center rounded transition-colors"
+          style={{ backgroundColor: 'transparent' }}
           title="Refresh"
         >
-          <RefreshCw className="w-3 h-3" />
+          <RefreshCw className="w-3 h-3" style={{ color: 'var(--sidebar-fg)' }} />
         </button>
       </div>
 
