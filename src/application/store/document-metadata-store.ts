@@ -106,7 +106,8 @@ export const useDocumentMetadataStore = create<DocumentMetadataStore>()(
           const now = Date.now()
           const existing = get().metadataCache.get(metadata.documentPath)
           
-          console.log('[DocumentMetadata] saveMetadata called for:', metadata.documentPath, 'page:', metadata.currentPage, 'existing page:', existing?.currentPage)
+          console.log('[DocumentMetadata] saveMetadata STACK TRACE - capturing stack...')
+          console.trace()
 
           const fullMetadata: DocumentMetadata = {
             id: existing?.id || crypto.randomUUID(),
