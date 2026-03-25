@@ -43,7 +43,7 @@ export class GeminiProvider implements AIProvider {
     try {
       const result = await invoke<string>('chat_with_provider', { request: payload, provider: 'gemini' })
       return String(result)
-    } catch (error: any) {
+    } catch (error) {
       console.error('[gemini-provider] invoke failed with error:', error)
       const errorStr = String(error)
       if (errorStr.includes('404') || errorStr.includes('not_found')) {
@@ -105,7 +105,7 @@ export class GeminiProvider implements AIProvider {
       })
 
       await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'gemini' })
-    } catch (error: any) {
+    } catch (error) {
       console.error('[gemini-provider] streamChat error:', error)
       const errorStr = String(error)
       if (errorStr.includes('404') || errorStr.includes('not_found')) {
@@ -178,7 +178,7 @@ export class GeminiProvider implements AIProvider {
       })
 
       await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'gemini' })
-    } catch (error: any) {
+    } catch (error) {
       console.error('[gemini-provider] streamChatWithThinking error:', error)
       const errorStr = String(error)
       if (errorStr.includes('404') || errorStr.includes('not_found')) {

@@ -37,13 +37,15 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
   model: 'Qwen3.5-27B',
 }
 
+import { AI_PROVIDER_ENDPOINTS } from '../../config/endpoints'
+
 export const PROVIDER_DEFAULTS: Record<AIProviderType, Partial<AIConfig>> = {
   llamacpp: {
-    endpoint: 'http://localhost:8080',
+    endpoint: AI_PROVIDER_ENDPOINTS.llamacpp.defaultEndpoint,
     model: 'llama-3.2-1b-instruct',
   },
   ollama: {
-    endpoint: 'http://localhost:11434',
+    endpoint: AI_PROVIDER_ENDPOINTS.ollama.defaultEndpoint,
     model: 'llama3.2',
   },
   openai: {
@@ -55,7 +57,7 @@ export const PROVIDER_DEFAULTS: Record<AIProviderType, Partial<AIConfig>> = {
     model: 'claude-3-5-sonnet-20241022',
   },
   vllm: {
-    endpoint: 'http://localhost:8000/v1',
+    endpoint: AI_PROVIDER_ENDPOINTS.vllm.defaultEndpoint,
     model: 'meta-llama/Llama-3.2-1B-Instruct',
   },
   nvidia: {
@@ -71,7 +73,7 @@ export const PROVIDER_DEFAULTS: Record<AIProviderType, Partial<AIConfig>> = {
     model: 'gemini-1.5-flash',
   },
   custom: {
-    endpoint: 'http://localhost:8080/v1',
+    endpoint: AI_PROVIDER_ENDPOINTS.custom.defaultEndpoint,
     model: 'default-model',
   },
 }

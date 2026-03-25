@@ -26,7 +26,7 @@ export async function fetchAvailableModels(
     })
 
     return result
-  } catch (error: any) {
+  } catch (error) {
     console.error('[model-detector] Failed to fetch models:', error)
     throw error
   }

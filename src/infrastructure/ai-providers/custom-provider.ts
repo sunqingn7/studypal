@@ -51,13 +51,11 @@ export class CustomProvider implements AIProvider {
     try {
       const result = await invoke<string>('chat_with_provider', { request: payload, provider: 'openai' })
       return String(result)
-    } catch (error: any) {
-      console.error('[custom-provider] invoke failed with error:', error)
-      console.error('[custom-provider] error name:', error?.name)
-      console.error('[custom-provider] error message:', error?.message)
-      console.error('[custom-provider] error stack:', error?.stack)
-      throw error
-    }
+  } catch (error) {
+    console.error('[custom-provider] invoke failed with error:', error)
+    console.error('[custom-provider] error:', error instanceof Error ? error.message : String(error))
+    throw error
+  }
   }
 
   async streamChat(
@@ -102,7 +100,7 @@ export class CustomProvider implements AIProvider {
       })
 
       await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'openai' })
-    } catch (error: any) {
+    } catch (error) {
       console.error('[custom-provider] streamChat error:', error)
       throw error
     } finally {
@@ -161,7 +159,7 @@ export class CustomProvider implements AIProvider {
       })
 
       await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'openai' })
-    } catch (error: any) {
+    } catch (error) {
       console.error('[custom-provider] streamChatWithThinking error:', error)
       throw error
     } finally {

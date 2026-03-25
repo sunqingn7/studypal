@@ -48,7 +48,7 @@ export class OpenAIProvider implements AIProvider {
     try {
       const result = await invoke<string>('chat_with_provider', { request: payload, provider: 'openai' })
       return String(result)
-    } catch (error: any) {
+    } catch (error) {
       console.error('[openai-provider] invoke failed with error:', error)
       throw error
     }
@@ -101,10 +101,10 @@ export class OpenAIProvider implements AIProvider {
       }
 
       await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'openai' })
-    } catch (error: any) {
-      console.error('[openai-provider] streamChat error:', error)
-      throw error
-    } finally {
+  } catch (error) {
+    console.error('[openai-provider] streamChat error:', error)
+    throw error
+  } finally {
       if (unlisten) {
         unlisten()
       }
@@ -155,7 +155,7 @@ export class OpenAIProvider implements AIProvider {
       })
 
       await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'openai' })
-    } catch (error: any) {
+    } catch (error) {
       console.error('[openai-provider] streamChatWithThinking error:', error)
       throw error
     } finally {

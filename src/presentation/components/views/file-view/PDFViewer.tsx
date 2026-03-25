@@ -74,16 +74,13 @@ function PDFViewer({ path, fileData, initialPage = 1 }: PDFViewerProps) {
   }, [metadataStore])
 
   const setCurrentPage = useCallback((page: number | ((prev: number) => number)) => {
-    console.log('[PDFViewer] setCurrentPage called with:', typeof page === 'function' ? '(function)' : page)
     if (typeof page === 'function') {
       setCurrentPageState((prev) => {
         const newPage = page(prev)
-        console.log('[PDFViewer] setCurrentPage function updater: prev=', prev, 'newPage=', newPage)
         metadataStore.updateMetadata({ currentPage: newPage })
         return newPage
       })
     } else {
-      console.log('[PDFViewer] setCurrentPage direct call: page=', page)
       metadataStore.updateMetadata({ currentPage: page })
       setCurrentPageState(page)
     }

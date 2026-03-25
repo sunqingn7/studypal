@@ -48,13 +48,11 @@ export class VLLMProvider implements AIProvider {
     try {
       const result = await invoke<string>('chat_with_provider', { request: payload, provider: 'vllm' })
       return String(result)
-    } catch (error: any) {
-      console.error('[vllm-provider] invoke failed with error:', error)
-      console.error('[vllm-provider] error name:', error?.name)
-      console.error('[vllm-provider] error message:', error?.message)
-      console.error('[vllm-provider] error stack:', error?.stack)
-      throw error
-    }
+  } catch (error) {
+    console.error('[vllm-provider] invoke failed with error:', error)
+    console.error('[vllm-provider] error:', error instanceof Error ? error.message : String(error))
+    throw error
+  }
   }
 
   async streamChat(
@@ -96,7 +94,7 @@ export class VLLMProvider implements AIProvider {
       })
 
       await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'vllm' })
-    } catch (error: any) {
+    } catch (error) {
       console.error('[vllm-provider] streamChat error:', error)
       throw error
     } finally {
@@ -152,7 +150,7 @@ export class VLLMProvider implements AIProvider {
       })
 
       await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'vllm' })
-    } catch (error: any) {
+    } catch (error) {
       console.error('[vllm-provider] streamChatWithThinking error:', error)
       throw error
     } finally {

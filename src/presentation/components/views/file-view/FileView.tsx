@@ -2,8 +2,10 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useFileStore, createFileMetadata } from '../../../../application/store/file-store'
 import { useTopicStore } from '../../../../application/store/topic-store'
+import { useClassroomStore } from '../../../../application/store/classroom-store'
 import { pluginRegistry } from '../../../../infrastructure/plugins/plugin-registry'
 import { FileHandlerPlugin, PluginContext } from '../../../../domain/models/plugin'
+import { loadPdf } from '../../../../infrastructure/file-handlers/pdf-utils'
 import PDFViewer from './PDFViewer'
 import PagedDocumentViewer from '../paged-viewer/PagedDocumentViewer'
 import './FileView.css'
@@ -12,6 +14,7 @@ import type { FileType } from '../../../../domain/models/file'
 function FileView() {
   const { currentFile, setCurrentFile, currentPage } = useFileStore()
   const { activeTopicId, addFileToTopic } = useTopicStore()
+  const { startClassroom } = useClassroomStore()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [PluginComponent, setPluginComponent] = useState<React.ComponentType<{ filePath: string }> | null>(null)
@@ -185,6 +188,44 @@ let fileType: FileType
     return getViewPlugins(context)
   }, [currentFile, getViewPlugins])
 
+  const handleStartClassroom = async () => {
+    if (!currentFile) {
+      // Need to open a file first
+      await handleOpenFile()
+      return
+    }
+    
+    // Get file content for classroom
+    try {
+      const { FileReadingService } = await import('../../../../infrastructure/file-handlers/file-reading-service')
+      const { getCurrentPageText } = await import('../../../../infrastructure/file-handlers/pdf-utils')
+      
+      let content = ''
+      let totalPages = 1
+      
+      // Save current file page before entering classroom
+      const currentFilePage = currentPage || 1
+      const scrollPosition = 0 // We don't have scroll tracking yet, use 0 as default
+      
+      if (currentFile.type === 'pdf') {
+        // For PDFs, load the document to get page count and extract first page text
+        const pdf = await loadPdf(currentFile.path)
+        totalPages = pdf.numPages
+        content = await getCurrentPageText(currentFile.path, 1)
+      } else {
+        // For text files, read content normally
+        const fileResult = await FileReadingService.readFile(currentFile.path)
+        content = fileResult.textContent || ''
+        totalPages = 1 // For text files, treat as single page
+      }
+      
+      startClassroom(currentFile.path, content, totalPages, currentFilePage, scrollPosition)
+    } catch (err) {
+      console.error('Failed to start classroom mode:', err)
+      setError('Failed to start classroom mode')
+    }
+  }
+
   const renderContent = () => {
     if (!currentFile) {
       return (
@@ -192,9 +233,11 @@ let fileType: FileType
           <div className="empty-icon">📄</div>
           <h3>No file open</h3>
           <p>Open a PDF, EPUB, or text file to start studying</p>
-          <button className="open-button" onClick={handleOpenFile}>
-            Open File
-          </button>
+          <div className="file-view-actions">
+            <button className="open-button" onClick={handleOpenFile}>
+              Open File
+            </button>
+          </div>
         </div>
       )
     }
@@ -254,6 +297,15 @@ let fileType: FileType
                 </option>
               ))}
             </select>
+          )}
+          {currentFile && (
+            <button 
+              className="header-button classroom-btn" 
+              onClick={handleStartClassroom} 
+              title="Enter Classroom Mode"
+            >
+              🎓 Classroom
+            </button>
           )}
           <button className="header-button" onClick={handleOpenFile} title="Open File">
             📂

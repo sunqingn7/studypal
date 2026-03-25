@@ -1,5 +1,6 @@
 import { MCPServerPlugin, MCPTool, MCPToolResult, PluginMetadata } from '../../domain/models/plugin';
 import { invoke } from '@tauri-apps/api/core';
+import { FileReadingService } from '../../infrastructure/file-handlers/file-reading-service';
 
 export class MCPToolsPlugin implements MCPServerPlugin {
   metadata: PluginMetadata = {
@@ -116,17 +117,34 @@ export class MCPToolsPlugin implements MCPServerPlugin {
           };
         }
         
-        case 'read_file': {
-          const filePath = params.file_path as string;
-          // This would use the existing file reading logic
+      case 'read_file': {
+        const filePath = params.file_path as string;
+        try {
+          const fileResult = await FileReadingService.readFile(filePath);
+          
+          // Return text content if available, otherwise indicate it's binary
+          const content = fileResult.textContent || 
+            (fileResult.content ? '[Binary file - content not readable as text]' : '[Empty file]');
+          
           return {
             success: true,
             data: {
-              filePath,
-              message: 'File reading would be implemented here',
+              filePath: fileResult.path,
+              fileName: fileResult.name,
+              fileSize: fileResult.size,
+              fileExtension: fileResult.extension,
+              content: content.slice(0, 50000), // Limit content size
+              contentLength: content.length,
+              isText: fileResult.textContent !== null,
             },
           };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to read file',
+          };
         }
+      }
         
         case 'list_directory': {
           const path = params.path as string;

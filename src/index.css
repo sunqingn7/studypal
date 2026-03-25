@@ -54,6 +54,24 @@
   box-sizing: border-box;
 }
 
+.sidebar-icon-button {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  margin: 0 2px;
+}
+
+.sidebar-icon-button:hover {
+  background-color: var(--sidebar-hover-bg);
+}
+
 html, body, #root {
   height: 100%;
   width: 100%;

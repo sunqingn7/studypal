@@ -81,7 +81,13 @@ export interface ClassroomState {
   ttsVoice: string
   ttsSpeed: number
 
-  startClassroom: (documentPath: string, content: string, totalPages: number) => void
+  // State to restore when exiting classroom
+  previousState: {
+    filePage: number
+    scrollPosition: number
+  } | null
+
+  startClassroom: (documentPath: string, content: string, totalPages: number, previousPage?: number, previousScroll?: number) => void
   stopClassroom: () => void
   nextPage: () => void
   prevPage: () => void
@@ -149,7 +155,9 @@ export const useClassroomStore = create<ClassroomState>((set, get) => ({
   ttsVoice: 'en-US-AriaNeural',
   ttsSpeed: 1.0,
 
-  startClassroom: (documentPath: string, content: string, totalPages: number) => {
+  previousState: null,
+
+  startClassroom: (documentPath: string, content: string, totalPages: number, previousPage = 1, previousScroll = 0) => {
     set({
       isActive: true,
       currentPage: 1,
@@ -157,6 +165,7 @@ export const useClassroomStore = create<ClassroomState>((set, get) => ({
       isPaused: false,
       documentPath,
       documentContent: content,
+      previousState: { filePage: previousPage, scrollPosition: previousScroll },
       coveredPages: [],
       completionPercentage: 0,
       sessionStartTime: Date.now(),

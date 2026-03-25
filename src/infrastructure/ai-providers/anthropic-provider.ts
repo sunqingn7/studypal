@@ -50,13 +50,12 @@ export class AnthropicProvider implements AIProvider {
     try {
       const result = await invoke<string>('chat_with_provider', { request: payload, provider: 'anthropic' })
       return String(result)
-    } catch (error: any) {
-      console.error('[anthropic-provider] invoke failed with error:', error)
-      console.error('[anthropic-provider] error name:', error?.name)
-      console.error('[anthropic-provider] error message:', error?.message)
-      console.error('[anthropic-provider] error stack:', error?.stack)
-      throw error
-    }
+  } catch (error) {
+    console.error('[anthropic-provider] invoke failed with error:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error('[anthropic-provider] error:', errorMsg)
+    throw error
+  }
   }
 
   async streamChat(
@@ -99,7 +98,7 @@ export class AnthropicProvider implements AIProvider {
       })
 
       await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'anthropic' })
-    } catch (error: any) {
+    } catch (error) {
       console.error('[anthropic-provider] streamChat error:', error)
       throw error
     } finally {
@@ -156,7 +155,7 @@ export class AnthropicProvider implements AIProvider {
       })
 
       await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'anthropic' })
-    } catch (error: any) {
+    } catch (error) {
       console.error('[anthropic-provider] streamChatWithThinking error:', error)
       throw error
     } finally {

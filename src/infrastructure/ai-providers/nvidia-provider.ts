@@ -48,13 +48,11 @@ export class NvidiaProvider implements AIProvider {
     try {
       const result = await invoke<string>('chat_with_provider', { request: payload, provider: 'openai' })
       return String(result)
-    } catch (error: any) {
-      console.error('[nvidia-provider] invoke failed with error:', error)
-      console.error('[nvidia-provider] error name:', error?.name)
-      console.error('[nvidia-provider] error message:', error?.message)
-      console.error('[nvidia-provider] error stack:', error?.stack)
-      throw error
-    }
+  } catch (error) {
+    console.error('[nvidia-provider] invoke failed with error:', error)
+    console.error('[nvidia-provider] error:', error instanceof Error ? error.message : String(error))
+    throw error
+  }
   }
 
   async streamChat(
@@ -96,7 +94,7 @@ export class NvidiaProvider implements AIProvider {
       })
 
       await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'openai' })
-    } catch (error: any) {
+    } catch (error) {
       console.error('[nvidia-provider] streamChat error:', error)
       throw error
     } finally {
@@ -152,7 +150,7 @@ export class NvidiaProvider implements AIProvider {
       })
 
       await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'openai' })
-    } catch (error: any) {
+    } catch (error) {
       console.error('[nvidia-provider] streamChatWithThinking error:', error)
       throw error
     } finally {

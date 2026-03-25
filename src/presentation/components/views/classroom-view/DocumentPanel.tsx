@@ -1,8 +1,11 @@
 import { useClassroomStore } from '../../../../application/store/classroom-store'
+import PDFViewer from '../file-view/PDFViewer'
 import './DocumentPanel.css'
 
 export function DocumentPanel() {
-  const { documentContent, currentPage, totalPages, nextPage, prevPage, isPaused, pauseClassroom, resumeClassroom } = useClassroomStore()
+  const { documentPath, documentContent, currentPage, totalPages, nextPage, prevPage, isPaused, pauseClassroom, resumeClassroom } = useClassroomStore()
+
+  const isPDF = documentPath?.toLowerCase().endsWith('.pdf')
 
   return (
     <div className="document-panel">
@@ -16,20 +19,24 @@ export function DocumentPanel() {
           <button className="doc-nav-btn" onClick={nextPage} disabled={currentPage >= totalPages}>
             →
           </button>
-          <button 
-            className="doc-pause-btn" 
+          <button
+            className="doc-pause-btn"
             onClick={isPaused ? resumeClassroom : pauseClassroom}
           >
             {isPaused ? '▶' : '⏸'}
           </button>
         </div>
       </div>
-      
+
       <div className="document-content">
-        {documentContent ? (
-          <div className="document-page">
-            <pre className="document-text">{documentContent}</pre>
-          </div>
+        {documentPath ? (
+          isPDF ? (
+            <PDFViewer path={documentPath} initialPage={currentPage} />
+          ) : (
+            <div className="document-page">
+              <pre className="document-text">{documentContent || 'Loading content...'}</pre>
+            </div>
+          )
         ) : (
           <div className="document-placeholder">
             <div className="placeholder-icon">📄</div>

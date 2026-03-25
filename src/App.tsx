@@ -29,7 +29,11 @@ function App() {
 
   // Expose theme toggle to window for Tauri
   useEffect(() => {
-    ;(window as any).toggleTheme = toggleTheme
+    const win = window as unknown as { toggleTheme?: () => void }
+    win.toggleTheme = toggleTheme
+    return () => {
+      delete win.toggleTheme
+    }
   }, [toggleTheme])
 
   // Load plugins on app start

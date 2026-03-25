@@ -20,11 +20,11 @@ import { FileMetadata } from '../../domain/models/file'
 import { SettingsView } from '../components/views/settings-view/SettingsView'
 
 function MainLayout() {
-  const { currentFile } = useFileStore()
+  const { currentFile, setCurrentPage } = useFileStore()
   const { theme, toggleTheme } = useThemeStore()
   const { session, setPanelSize, setTheme: setSessionTheme, addToFileHistory } = useSessionStore()
   const { updateGlobal } = useSettingsStore()
-  const { isActive: isClassroomActive } = useClassroomStore()
+  const { isActive: isClassroomActive, previousState } = useClassroomStore()
   const [showFileBrowser, setShowFileBrowser] = useState(session.showFileBrowser)
   const [hasFileBrowser, setHasFileBrowser] = useState(false)
   const [isHydrated, setIsHydrated] = useState(false)
@@ -268,6 +268,21 @@ function MainLayout() {
   }, [isHydrated, panelSizesRestored])
   
   const previousFileRef = useRef<FileMetadata | null>(null)
+  const previousClassroomStateRef = useRef<{ filePage: number; scrollPosition: number } | null>(null)
+
+  // Restore file page when exiting classroom mode
+  useEffect(() => {
+    if (!isClassroomActive && previousClassroomStateRef.current) {
+      // We just exited classroom mode - restore the previous page
+      console.log('[MainLayout] Restoring file page from classroom state:', previousClassroomStateRef.current)
+      setCurrentPage(previousClassroomStateRef.current.filePage)
+      previousClassroomStateRef.current = null
+    } else if (isClassroomActive && previousState) {
+      // We just entered classroom mode - save the state for restoration later
+      console.log('[MainLayout] Saving current state before entering classroom:', previousState)
+      previousClassroomStateRef.current = previousState
+    }
+  }, [isClassroomActive, previousState, setCurrentPage])
 
   // Handle system state when no file is open
   useEffect(() => {

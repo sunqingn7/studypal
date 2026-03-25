@@ -176,18 +176,18 @@ export const HistoryView: React.FC = () => {
           <button
             type="button"
             onClick={handleNewSession}
-            className="w-4 h-4 flex items-center justify-center rounded bg-[var(--sidebar-hover-bg)] hover:bg-[var(--sidebar-active-bg)] text-[var(--sidebar-fg)]"
+            className="sidebar-icon-button"
             title="New Session"
           >
-            <Plus className="w-3 h-3" />
+            <Plus className="w-3 h-3" style={{ color: 'var(--sidebar-fg)' }} />
           </button>
           <button
             type="button"
             onClick={handleClearHistory}
-            className="w-4 h-4 flex items-center justify-center rounded bg-[var(--sidebar-hover-bg)] hover:bg-[var(--sidebar-active-bg)] text-[var(--sidebar-fg)]"
+            className="sidebar-icon-button"
             title="Clear History"
           >
-            <Trash2 className="w-3 h-3" />
+            <Trash2 className="w-3 h-3" style={{ color: 'var(--sidebar-fg)' }} />
           </button>
         </div>
       </div>

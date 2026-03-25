@@ -2,6 +2,7 @@ import { loadSession, saveSession, SessionState, FilePosition } from '../../infr
 import { useAIChatStore } from '../store/ai-chat-store';
 import { useLLMPoolStore } from '../store/llm-pool-store';
 import { AIConfig, ProviderConfigs } from '../../domain/models/ai-context';
+import { AI_PROVIDER_ENDPOINTS } from '../../config/endpoints';
 
 // Re-export FilePosition for use in components
 export type { FilePosition };
@@ -25,16 +26,16 @@ export async function initializeSession(): Promise<void> {
 
     currentSession = session;
 
-    if (!currentSession.providerConfigs) {
-      currentSession.providerConfigs = {
-        llamacpp: { provider: 'llamacpp', endpoint: 'http://localhost:8080', model: 'llama-3.2-1b-instruct' },
-        ollama: { provider: 'ollama', endpoint: 'http://localhost:11434', model: 'llama3.2' },
-        openai: { provider: 'openai', endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-        anthropic: { provider: 'anthropic', endpoint: 'https://api.anthropic.com/v1', model: 'claude-3-5-sonnet-20241022' },
-        vllm: { provider: 'vllm', endpoint: 'http://localhost:8000/v1', model: 'meta-llama/Llama-3.2-1B-Instruct' },
-        custom: { provider: 'custom', endpoint: 'http://localhost:8080/v1', model: 'default-model' },
-      } as ProviderConfigs;
-    }
+  if (!currentSession.providerConfigs) {
+    currentSession.providerConfigs = {
+      llamacpp: { provider: 'llamacpp', endpoint: AI_PROVIDER_ENDPOINTS.llamacpp.defaultEndpoint, model: 'llama-3.2-1b-instruct' },
+      ollama: { provider: 'ollama', endpoint: AI_PROVIDER_ENDPOINTS.ollama.defaultEndpoint, model: 'llama3.2' },
+      openai: { provider: 'openai', endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+      anthropic: { provider: 'anthropic', endpoint: 'https://api.anthropic.com/v1', model: 'claude-3-5-sonnet-20241022' },
+      vllm: { provider: 'vllm', endpoint: AI_PROVIDER_ENDPOINTS.vllm.defaultEndpoint, model: 'meta-llama/Llama-3.2-1B-Instruct' },
+      custom: { provider: 'custom', endpoint: AI_PROVIDER_ENDPOINTS.custom.defaultEndpoint, model: 'default-model' },
+    } as ProviderConfigs;
+  }
 
     if (session.aiConfig) {
       useAIChatStore.getState().setConfig(session.aiConfig);

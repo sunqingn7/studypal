@@ -1,4 +1,5 @@
 import { TTSBackendPlugin, PluginMetadata, VoiceInfo, AudioData, TTSConfig } from '../../domain/models/plugin';
+import { SERVICE_ENDPOINTS } from '../../config/endpoints';
 
 export class QwenTTSBackendPlugin implements TTSBackendPlugin {
   readonly type = 'tts-backend';
@@ -8,7 +9,7 @@ export class QwenTTSBackendPlugin implements TTSBackendPlugin {
   private voices: VoiceInfo[] = [];
 
   constructor(serverUrl?: string) {
-    this.serverUrl = serverUrl || 'http://localhost:8083';
+    this.serverUrl = serverUrl || SERVICE_ENDPOINTS.tts.qwen;
     this._metadata = {
       id: 'qwen-tts-backend',
       name: 'Qwen TTS',

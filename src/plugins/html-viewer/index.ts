@@ -1,5 +1,6 @@
 import { FileHandlerPlugin, PluginMetadata } from '../../domain/models/plugin';
 import { HTMLViewer } from './HTMLViewer';
+import { FileReadingService } from '../../infrastructure/file-handlers/file-reading-service';
 
 export class HTMLViewerPlugin implements FileHandlerPlugin {
   metadata: PluginMetadata = {
@@ -35,9 +36,23 @@ export class HTMLViewerPlugin implements FileHandlerPlugin {
   }
 
   async extractText(filePath: string): Promise<string> {
-    // For text extraction, we could parse HTML and return text content
-    // For now, return a placeholder
-    return `[HTML file: ${filePath}]`;
+    try {
+      const htmlContent = await FileReadingService.readTextFile(filePath);
+      // Extract text by removing HTML tags and decoding entities
+      const textContent = htmlContent
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/\s+/g, ' ')
+        .trim();
+      return textContent || `[HTML file: ${filePath} - no text content found]`;
+    } catch {
+      return `[HTML file: ${filePath} - error extracting text]`;
+    }
   }
 }
 

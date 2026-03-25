@@ -52,7 +52,7 @@ export class OpenRouterProvider implements AIProvider {
     try {
       const result = await invoke<string>('chat_with_provider', { request: payload, provider: 'openai' })
       return String(result)
-    } catch (error: any) {
+    } catch (error) {
       console.error('[openrouter-provider] invoke failed with error:', error)
       
       const errorStr = String(error)
@@ -121,7 +121,7 @@ export class OpenRouterProvider implements AIProvider {
       })
 
       await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'openai' })
-    } catch (error: any) {
+    } catch (error) {
       console.error('[openrouter-provider] streamChat error:', error)
       throw error
     } finally {
@@ -181,7 +181,7 @@ export class OpenRouterProvider implements AIProvider {
       })
 
       await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'openai' })
-    } catch (error: any) {
+    } catch (error) {
       console.error('[openrouter-provider] streamChatWithThinking error:', error)
       throw error
     } finally {

@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
+let saveMetadataTimeout: ReturnType<typeof setTimeout> | null = null
+
 export interface DocumentMetadata {
   id: string
   documentPath: string
@@ -9,9 +11,23 @@ export interface DocumentMetadata {
   scale: number
   currentPage: number
   scrollPosition: number
-  settings: Record<string, any> // Flat JSON for extensibility
+  settings: Record<string, unknown> // Flat JSON for extensibility
   createdAt: number
   updatedAt: number
+}
+
+// Rust database response type
+interface RustDocumentMetadata {
+  id: string
+  document_path: string
+  chat_id?: string
+  view_mode: string
+  scale: number
+  current_page: number
+  scroll_position: number
+  settings_json?: string
+  created_at: number
+  updated_at: number
 }
 
 export const getDefaultMetadata = (): Omit<DocumentMetadata, 'id' | 'documentPath' | 'createdAt' | 'updatedAt'> => ({
@@ -47,25 +63,25 @@ export const useDocumentMetadataStore = create<DocumentMetadataStore>()(
 
       loadMetadata: async (documentPath: string) => {
         console.log('[DocumentMetadata] loadMetadata called for:', documentPath)
-        
+
         try {
           const { invoke } = await import('@tauri-apps/api/core')
-          const result = await invoke('load_document_metadata', { documentPath })
-          console.log('[DocumentMetadata] loadMetadata raw result, current_page:', (result as any)?.current_page)
+          const result = await invoke<RustDocumentMetadata>('load_document_metadata', { documentPath })
+          console.log('[DocumentMetadata] loadMetadata raw result, current_page:', result?.current_page)
 
           if (result) {
             // Convert from Rust format to TypeScript format
             const metadata: DocumentMetadata = {
-              id: (result as any).id,
-              documentPath: (result as any).document_path,
-              chatId: (result as any).chat_id,
-              viewMode: (result as any).view_mode === 'double' ? 'double' : 'single',
-              scale: (result as any).scale,
-              currentPage: (result as any).current_page,
-              scrollPosition: (result as any).scroll_position,
-              settings: (result as any).settings_json ? JSON.parse((result as any).settings_json) : {},
-              createdAt: (result as any).created_at,
-              updatedAt: (result as any).updated_at,
+              id: result.id,
+              documentPath: result.document_path,
+              chatId: result.chat_id,
+              viewMode: result.view_mode === 'double' ? 'double' : 'single',
+              scale: result.scale,
+              currentPage: result.current_page,
+              scrollPosition: result.scroll_position,
+              settings: result.settings_json ? JSON.parse(result.settings_json) : {},
+              createdAt: result.created_at,
+              updatedAt: result.updated_at,
             }
 
             console.log('[DocumentMetadata] loadMetadata returning metadata with currentPage:', metadata.currentPage)
@@ -108,12 +124,8 @@ export const useDocumentMetadataStore = create<DocumentMetadataStore>()(
           
           // Skip if page is already the same (avoid unnecessary writes)
           if (existing && existing.currentPage === metadata.currentPage && metadata.currentPage !== undefined) {
-            console.log('[DocumentMetadata] saveMetadata SKIPPED - same page:', metadata.currentPage)
             return
           }
-
-          console.log('[DocumentMetadata] saveMetadata STACK TRACE - capturing stack...')
-          console.trace()
 
           const fullMetadata: DocumentMetadata = {
             id: existing?.id || crypto.randomUUID(),
@@ -156,18 +168,26 @@ export const useDocumentMetadataStore = create<DocumentMetadataStore>()(
       updateMetadata: async (updates) => {
         const current = get().currentMetadata
         if (!current) {
-          console.warn('[DocumentMetadata] No current metadata to update')
           return
         }
 
-        console.log('[DocumentMetadata] updateMetadata BEFORE:', { currentPage: current.currentPage, updates })
         const updated = {
           ...current,
           ...updates,
           updatedAt: Date.now(),
         }
-        console.log('[DocumentMetadata] updateMetadata AFTER:', { currentPage: updated.currentPage })
-        await get().saveMetadata(updated)
+
+        // Update state immediately
+        set((state) => ({
+          currentMetadata: updated,
+          metadataCache: new Map(state.metadataCache).set(current.documentPath, updated),
+        }))
+
+        // Debounce the save to backend
+        if (saveMetadataTimeout) clearTimeout(saveMetadataTimeout)
+        saveMetadataTimeout = setTimeout(() => {
+          get().saveMetadata(updated)
+        }, 500)
       },
 
       clearCurrentMetadata: () => {

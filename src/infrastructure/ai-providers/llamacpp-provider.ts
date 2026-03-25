@@ -114,9 +114,9 @@ export class LlamaCppProvider implements AIProvider {
 
         await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'llamacpp' })
         return
-      } catch (error: any) {
-        lastError = error
-        console.warn(`[llamacpp-provider] Stream attempt ${attempt + 1} failed:`, error?.message || error)
+  } catch (error: unknown) {
+    lastError = error instanceof Error ? error : new Error(String(error))
+    console.warn(`[llamacpp-provider] Stream attempt ${attempt + 1} failed:`, lastError.message)
         
         if (unlisten) {
           unlisten()
@@ -182,9 +182,9 @@ export class LlamaCppProvider implements AIProvider {
 
         await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'llamacpp' })
         return
-      } catch (error: any) {
-        lastError = error
-        console.warn(`[llamacpp-provider] StreamWithThinking attempt ${attempt + 1} failed:`, error?.message || error)
+  } catch (error: unknown) {
+    lastError = error instanceof Error ? error : new Error(String(error))
+    console.warn(`[llamacpp-provider] StreamWithThinking attempt ${attempt + 1} failed:`, lastError.message)
         
         if (unlisten) {
           unlisten()

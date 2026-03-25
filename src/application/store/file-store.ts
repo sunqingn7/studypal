@@ -121,8 +121,8 @@ export const useFileStore = create<FileStore>((set, get) => ({
             content: note.content,
             noteType: note.type,
             topicId: note.topicId || null,
-            createdAt: note.createdAt,
-            updatedAt: note.updatedAt
+            created_at: note.createdAt,
+            updated_at: note.updatedAt
           });
 
         }
@@ -258,8 +258,8 @@ export const useFileStore = create<FileStore>((set, get) => ({
                     content: note.content,
                     noteType: note.type || 'note',
                     topicId: note.topicId || null,
-                    createdAt: note.createdAt || Date.now(),
-                    updatedAt: note.updatedAt || Date.now()
+                    created_at: note.createdAt || Date.now(),
+                    updated_at: note.updatedAt || Date.now()
                   });
                 }
               }
@@ -410,7 +410,9 @@ export const useFileStore = create<FileStore>((set, get) => ({
               title: note.title,
               content: note.content,
               noteType: note.type || 'note',
-              topicId: note.topicId || null
+              topicId: note.topicId || null,
+              created_at: note.createdAt || Date.now(),
+              updated_at: note.updatedAt || Date.now()
             });
           } catch (e) {
             console.error('[FileStore] Error saving system note:', note.id, e);
@@ -573,126 +575,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
   },
 }))
 
-// Migration function: migrate sessionStorage data to database
-export async function migrateSessionStorageToDatabase(sessionStore: any): Promise<{ migrated: number; errors: number }> {
-  const session = sessionStore.getSession()
-  const { invoke } = await import('@tauri-apps/api/core')
-  
-  let migratedCount = 0
-  let errorCount = 0
-  
-  // Migrate document notes
-  if (session.documentNotes) {
-    for (const [documentPath, noteData] of Object.entries(session.documentNotes)) {
-      try {
-        if (!noteData || typeof noteData !== 'object') continue
-        
-        const data = noteData as any
-        const allNotes: any[] = [...(data.globalNotes || [])]
-        
-        // Add topic notes
-        if (data.topicNotes) {
-          for (const [, notes] of data.topicNotes) {
-            if (Array.isArray(notes)) {
-              allNotes.push(...notes)
-            }
-          }
-        }
-        
-        // Save notes to database
-        if (allNotes.length > 0) {
-          const notesForDb = allNotes.map((note: any) => ({
-            id: note.id,
-            title: note.title,
-            content: note.content,
-            noteType: note.type || 'note',
-            topicId: note.topicId || null,
-            createdAt: note.createdAt || Date.now(),
-            updatedAt: note.updatedAt || Date.now()
-          }))
-          
-          await invoke('save_notes', {
-            documentPath,
-            notes: notesForDb
-          })
-          
-          // Save note tabs
-          if (data.tabs && data.tabs.length > 0) {
-            const noteTabsForDb = data.tabs.map((tab: any) => ({
-              id: tab.id,
-              noteId: tab.noteId,
-              title: tab.title,
-              isActive: tab.isActive
-            }))
-            
-            await invoke('save_note_tabs', {
-              documentPath,
-              tabs: noteTabsForDb
-            })
-          }
-          
-          // Save markdown files
-          for (const note of allNotes) {
-            if (note.content && note.content.trim()) {
-              await invoke('save_note_as_markdown', {
-                documentPath,
-                noteId: note.id,
-                title: note.title,
-                content: note.content,
-                noteType: note.type || 'note',
-                topicId: note.topicId || null,
-                createdAt: note.createdAt || Date.now(),
-                updatedAt: note.updatedAt || Date.now()
-              })
-            }
-          }
-          
-          migratedCount++
-        }
-      } catch (e) {
-        console.error('[Migration] Error migrating notes for:', documentPath, e)
-        errorCount++
-      }
-    }
-  }
-  
-  // Migrate document chats
-  if (session.documentChat) {
-    for (const [documentPath, chatData] of Object.entries(session.documentChat)) {
-      try {
-        if (!chatData || typeof chatData !== 'object') continue
-        
-        const data = chatData as any
-        
-        if (data.tabs && data.tabs.length > 0) {
-          const chatTabs = data.tabs.map((tab: any) => ({
-            id: tab.id,
-            title: tab.title,
-            messages: tab.messages || [],
-            isActive: tab.isActive
-          }))
-          
-          await invoke('save_chats', {
-            documentPath,
-            tabs: chatTabs
-          })
-          
-          migratedCount++
-        }
-      } catch (e) {
-        console.error('[Migration] Error migrating chat for:', documentPath, e)
-        errorCount++
-      }
-    }
-  }
-  
-  return { migrated: migratedCount, errors: errorCount }
-}
 
-// Clear sessionStorage data after successful migration
-export function clearSessionStorageData(sessionStore: any): void {
-  sessionStore.clearSessionData()
-}
 
 export function createFileMetadata(path: string, name: string, size: number): FileMetadata {
   return {

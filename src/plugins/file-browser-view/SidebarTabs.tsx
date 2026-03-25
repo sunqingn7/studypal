@@ -60,8 +60,7 @@ export const SidebarTabs: React.FC<SidebarTabsProps> = ({ context, onToggleTheme
         {onToggleTheme && (
           <button
             onClick={onToggleTheme}
-            className="p-1.5 rounded mx-1 transition-colors"
-            style={{ backgroundColor: 'transparent' }}
+            className="sidebar-icon-button"
             title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
           >
             {theme === 'light' ? (
@@ -76,8 +75,7 @@ export const SidebarTabs: React.FC<SidebarTabsProps> = ({ context, onToggleTheme
         {onOpenSettings && (
           <button
             onClick={onOpenSettings}
-            className="p-1.5 rounded mr-1 transition-colors"
-            style={{ backgroundColor: 'transparent' }}
+            className="sidebar-icon-button"
             title="Open Settings"
           >
             <Settings className="w-3.5 h-3.5" style={{ color: 'var(--sidebar-fg)' }} />

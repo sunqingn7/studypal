@@ -7,7 +7,11 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
@@ -38,15 +42,19 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.1",
     "@tauri-apps/cli": "^2.10.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/dompurify": "^3.0.5",
     "@types/node": "^25.3.5",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.4",
     "autoprefixer": "^10.4.27",
+    "happy-dom": "^20.8.8",
     "postcss": "^8.5.8",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "vitest": "^4.1.1"
   }
 }
