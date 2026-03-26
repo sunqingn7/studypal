@@ -19,6 +19,61 @@
   color: var(--text-primary);
 }
 
+.note-toolbar-compact {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolbar-button {
+  padding: 4px 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.toolbar-button:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-color);
+}
+
+.toolbar-button strong {
+  font-weight: 600;
+}
+
+.toolbar-separator {
+  width: 1px;
+  height: 20px;
+  background: var(--border-color);
+  margin: 0 4px;
+}
+
+.font-size-controls-compact {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.font-size-select-compact {
+  padding: 2px 4px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
 .note-save-btn {
   padding: 6px 12px;
   background: var(--accent-color);
@@ -43,6 +98,7 @@
   flex: 1;
   padding: 16px;
   overflow: hidden;
+  display: flex;
 }
 
 .note-textarea {
@@ -66,9 +122,118 @@
 
 .note-textarea::placeholder {
   color: var(--text-tertiary);
+  white-space: pre-line;
+}
+
+.note-preview-compact {
+  width: 100%;
+  height: 100%;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  overflow-y: auto;
+  line-height: 1.6;
+}
+
+.note-preview-compact h1,
+.note-preview-compact h2,
+.note-preview-compact h3,
+.note-preview-compact h4,
+.note-preview-compact h5,
+.note-preview-compact h6 {
+  margin-top: 16px;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+
+.note-preview-compact h1 { font-size: 1.5em; }
+.note-preview-compact h2 { font-size: 1.3em; }
+.note-preview-compact h3 { font-size: 1.1em; }
+
+.note-preview-compact p {
+  margin: 0 0 12px 0;
+}
+
+.note-preview-compact p:last-child {
+  margin-bottom: 0;
+}
+
+.note-preview-compact ul,
+.note-preview-compact ol {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.note-preview-compact li {
+  margin: 4px 0;
+}
+
+.note-preview-compact code {
+  background: var(--bg-tertiary);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 0.9em;
+}
+
+.note-preview-compact pre {
+  background: var(--bg-tertiary);
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.note-preview-compact pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.note-preview-compact blockquote {
+  margin: 8px 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.note-preview-compact table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  width: 100%;
+}
+
+.note-preview-compact th,
+.note-preview-compact td {
+  border: 1px solid var(--border-color);
+  padding: 8px;
+  text-align: left;
+}
+
+.note-preview-compact th {
+  background: var(--bg-tertiary);
+  font-weight: 600;
+}
+
+.note-preview-compact a {
+  color: var(--accent-color);
+  text-decoration: none;
+}
+
+.note-preview-compact a:hover {
+  text-decoration: underline;
+}
+
+.note-placeholder {
+  color: var(--text-tertiary);
+  font-style: italic;
 }
 
 .note-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   padding: 8px 16px;
   background: var(--bg-secondary);
   border-top: 1px solid var(--border-color);
@@ -77,4 +242,10 @@
 .note-hint {
   font-size: 12px;
   color: var(--text-tertiary);
+}
+
+.note-stats {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }

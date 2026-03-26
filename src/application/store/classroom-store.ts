@@ -160,7 +160,7 @@ export const useClassroomStore = create<ClassroomState>((set, get) => ({
   startClassroom: (documentPath: string, content: string, totalPages: number, previousPage = 1, previousScroll = 0) => {
     set({
       isActive: true,
-      currentPage: 1,
+      currentPage: previousPage,
       totalPages,
       isPaused: false,
       documentPath,
