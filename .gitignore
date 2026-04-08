@@ -7,3 +7,4 @@ target
 .env
 .env.*
 session*.md
+PROJECT*.md
