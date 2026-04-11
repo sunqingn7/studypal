@@ -42,6 +42,8 @@ struct ProviderChatRequest {
     extra_body: Option<serde_json::Map<String, serde_json::Value>>,
     #[serde(rename = "streamEvent")]
     stream_event: Option<String>,
+    #[serde(rename = "tools")]
+    tools: Option<Vec<serde_json::Value>>,
 }
 
 #[tauri::command]
@@ -356,6 +358,481 @@ async fn stream_chat_with_provider(
     });
 
     result
+}
+
+#[tauri::command]
+async fn chat_with_tools(
+    request: ProviderChatRequest,
+    provider: String,
+) -> Result<serde_json::Value, String> {
+    println!("[RUST] chat_with_tools called for provider: {}", provider);
+    log::info!("Chat with tools request to provider: {}", provider);
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    match provider.as_str() {
+        "anthropic" => chat_with_tools_anthropic(&client, &request).await,
+        "openai" | "vllm" | "ollama" | "nvidia" | "openrouter" => {
+            chat_with_tools_openai_compatible(&client, &request).await
+        }
+        _ => Err(format!("Unknown provider for tool calling: {}", provider)),
+    }
+}
+
+async fn chat_with_tools_openai_compatible(
+    client: &reqwest::Client,
+    request: &ProviderChatRequest,
+) -> Result<serde_json::Value, String> {
+    let url = if request.endpoint.ends_with("/v1/chat/completions") {
+        request.endpoint.clone()
+    } else if request.endpoint.ends_with("/v1") {
+        format!("{}/chat/completions", request.endpoint)
+    } else {
+        format!("{}/v1/chat/completions", request.endpoint)
+    };
+
+    let mut payload = serde_json::Map::new();
+    payload.insert("model".to_string(), serde_json::json!(request.model));
+    payload.insert("messages".to_string(), serde_json::json!(request.messages));
+
+    if let Some(tools) = &request.tools {
+        payload.insert("tools".to_string(), serde_json::json!(tools));
+    }
+
+    if let Some(temp) = request.temperature {
+        payload.insert("temperature".to_string(), serde_json::json!(temp));
+    }
+
+    if let Some(max_tokens) = request.max_tokens {
+        payload.insert("max_tokens".to_string(), serde_json::json!(max_tokens));
+    }
+
+    if let Some(top_p) = request.top_p {
+        payload.insert("top_p".to_string(), serde_json::json!(top_p));
+    }
+
+    let mut request_builder = client
+        .post(&url)
+        .header("Content-Type", "application/json");
+
+    if let Some(api_key) = &request.api_key {
+        request_builder = request_builder.header("Authorization", format!("Bearer {}", api_key));
+    }
+
+    if let Some(headers) = &request.extra_headers {
+        for (key, value) in headers {
+            if let Some(val_str) = value.as_str() {
+                request_builder = request_builder.header(key, val_str);
+            }
+        }
+    }
+
+    let response = request_builder
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_default();
+        println!("[RUST] HTTP error: {} - {}", status, error_text);
+        return Err(format!("HTTP error: {} - {}", status, error_text));
+    }
+
+    let result: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+
+    // Extract content and tool calls from response
+    let mut output = serde_json::Map::new();
+    
+    if let Some(Choice) = result.get("choices").and_then(|c| c.as_array()) {
+        if let Some(first_choice) = Choice.first() {
+            if let Some(message) = first_choice.get("message") {
+                if let Some(content) = message.get("content").and_then(|c| c.as_str()) {
+                    output.insert("content".to_string(), serde_json::json!(content));
+                }
+                
+                if let Some(tool_calls) = message.get("tool_calls").and_then(|t| t.as_array()) {
+                    output.insert("tool_calls".to_string(), serde_json::json!(tool_calls));
+                }
+            }
+        }
+    }
+
+    Ok(serde_json::Value::Object(output))
+}
+
+async fn chat_with_tools_anthropic(
+    client: &reqwest::Client,
+    request: &ProviderChatRequest,
+) -> Result<serde_json::Value, String> {
+    let url = format!("{}/messages", request.endpoint);
+    println!("[RUST] Anthropic tool calling URL: {}", url);
+
+    let mut system_message: Option<String> = None;
+    let mut anthropic_messages: Vec<serde_json::Value> = vec![];
+
+    for msg in &request.messages {
+        if msg.role == "system" {
+            system_message = Some(msg.content.clone());
+        } else {
+            anthropic_messages.push(serde_json::json!({
+                "role": msg.role,
+                "content": msg.content
+            }));
+        }
+    }
+
+    let mut payload = serde_json::Map::new();
+    payload.insert("model".to_string(), serde_json::json!(request.model));
+    payload.insert("messages".to_string(), serde_json::json!(anthropic_messages));
+    payload.insert("max_tokens".to_string(), serde_json::json!(request.max_tokens.unwrap_or(4096)));
+
+    if let Some(system) = system_message {
+        payload.insert("system".to_string(), serde_json::json!(system));
+    }
+
+    if let Some(temp) = request.temperature {
+        payload.insert("temperature".to_string(), serde_json::json!(temp));
+    }
+
+    if let Some(tools) = &request.tools {
+        payload.insert("tools".to_string(), serde_json::json!(tools));
+    }
+
+    let mut request_builder = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .header("anthropic-version", "2023-06-01");
+
+    if let Some(api_key) = &request.api_key {
+        request_builder = request_builder.header("x-api-key", api_key);
+    }
+
+    let response = request_builder
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_default();
+        println!("[RUST] Anthropic HTTP error: {} - {}", status, error_text);
+        return Err(format!("Anthropic HTTP error: {} - {}", status, error_text));
+    }
+
+    let result: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+
+    // Extract content and tool calls from response
+    let mut output = serde_json::Map::new();
+    
+    if let Some(content) = result.get("content").and_then(|c| c.as_array()) {
+        let mut content_parts: Vec<String> = vec![];
+        let mut tool_calls: Vec<serde_json::Value> = vec![];
+        
+        for item in content {
+            if let Some(text) = item.get("type").and_then(|t| t.as_str()) {
+                if text == "text" {
+                    if let Some(text_content) = item.get("text").and_then(|t| t.as_str()) {
+                        content_parts.push(text_content.to_string());
+                    }
+                } else if text == "tool_use" {
+                    let tool_call = serde_json::json!({
+                        "id": item.get("id").and_then(|i| i.as_str()).unwrap_or(""),
+                        "type": "function",
+                        "function": {
+                            "name": item.get("name").and_then(|n| n.as_str()).unwrap_or(""),
+                            "arguments": item.get("input").map(|i| i.to_string()).unwrap_or_default()
+                        }
+                    });
+                    tool_calls.push(tool_call);
+                }
+            }
+        }
+        
+        if !content_parts.is_empty() {
+            output.insert("content".to_string(), serde_json::json!(content_parts.join("\n")));
+        }
+        
+        if !tool_calls.is_empty() {
+            output.insert("tool_calls".to_string(), serde_json::json!(tool_calls));
+        }
+    }
+
+    Ok(serde_json::Value::Object(output))
+}
+
+#[tauri::command]
+async fn stream_chat_with_tools(
+    app_handle: tauri::AppHandle,
+    request: ProviderChatRequest,
+    provider: String,
+) -> Result<(), String> {
+    println!("[RUST] stream_chat_with_tools called for provider: {}", provider);
+    log::info!("Stream chat with tools request to provider: {}", provider);
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let stream_event = request.stream_event.clone().unwrap_or_else(|| "chat-stream-chunk".to_string());
+
+    let result = match provider.as_str() {
+        "anthropic" => stream_chat_with_tools_anthropic(&app_handle, &client, &request, &stream_event).await,
+        "openai" | "vllm" | "ollama" | "nvidia" | "openrouter" => {
+            stream_chat_with_tools_openai_compatible(&app_handle, &client, &request, &stream_event).await
+        }
+        _ => Err(format!("Unknown provider for tool calling: {}", provider)),
+    };
+
+    let _ = app_handle.emit(&stream_event, StreamChunk {
+        content: String::new(),
+        thinking: None,
+        done: true,
+    });
+
+    result
+}
+
+async fn stream_chat_with_tools_openai_compatible(
+    app_handle: &tauri::AppHandle,
+    client: &reqwest::Client,
+    request: &ProviderChatRequest,
+    stream_event: &str,
+) -> Result<(), String> {
+    let url = if request.endpoint.ends_with("/v1/chat/completions") {
+        request.endpoint.clone()
+    } else if request.endpoint.ends_with("/v1") {
+        format!("{}/chat/completions", request.endpoint)
+    } else {
+        format!("{}/v1/chat/completions", request.endpoint)
+    };
+
+    let mut payload = serde_json::Map::new();
+    payload.insert("model".to_string(), serde_json::json!(request.model));
+    payload.insert("messages".to_string(), serde_json::json!(request.messages));
+    payload.insert("stream".to_string(), serde_json::json!(true));
+
+    if let Some(tools) = &request.tools {
+        payload.insert("tools".to_string(), serde_json::json!(tools));
+    }
+
+    if let Some(temp) = request.temperature {
+        payload.insert("temperature".to_string(), serde_json::json!(temp));
+    }
+
+    if let Some(max_tokens) = request.max_tokens {
+        payload.insert("max_tokens".to_string(), serde_json::json!(max_tokens));
+    }
+
+    let mut request_builder = client
+        .post(&url)
+        .header("Content-Type", "application/json");
+
+    if let Some(api_key) = &request.api_key {
+        request_builder = request_builder.header("Authorization", format!("Bearer {}", api_key));
+    }
+
+    if let Some(headers) = &request.extra_headers {
+        for (key, value) in headers {
+            if let Some(val_str) = value.as_str() {
+                request_builder = request_builder.header(key, val_str);
+            }
+        }
+    }
+
+    let response = request_builder
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(format!("HTTP error: {} - {}", status, error_text));
+    }
+
+    let mut stream = response.bytes_stream();
+    
+    while let Some(item) = stream.next().await {
+        match item {
+            Ok(bytes) => {
+                let text = String::from_utf8_lossy(&bytes);
+                for line in text.lines() {
+                    if line.starts_with("data: ") {
+                        let data = line.trim_start_matches("data: ");
+                        if data == "[DONE]" {
+                            continue;
+                        }
+                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(data) {
+                            if let Some(choices) = parsed.get("choices").and_then(|c| c.as_array()) {
+                                if let Some(choice) = choices.first() {
+                                    if let Some(message) = choice.get("message") {
+                                        if let Some(content) = message.get("content").and_then(|c| c.as_str()) {
+                                            let _ = app_handle.emit(stream_event, StreamChunk {
+                                                content: content.to_string(),
+                                                thinking: None,
+                                                done: false,
+                                            });
+                                        }
+                                        if let Some(tool_calls) = message.get("tool_calls").and_then(|t| t.as_array()) {
+                                            for tc in tool_calls {
+                                                let tool_call_json = serde_json::json!({
+                                                    "type": "tool_call",
+                                                    "data": tc
+                                                });
+                                                let _ = app_handle.emit(stream_event, StreamChunk {
+                                                    content: String::new(),
+                                                    thinking: Some(tool_call_json.to_string()),
+                                                    done: false,
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                println!("[RUST] Stream error: {}", e);
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn stream_chat_with_tools_anthropic(
+    app_handle: &tauri::AppHandle,
+    client: &reqwest::Client,
+    request: &ProviderChatRequest,
+    stream_event: &str,
+) -> Result<(), String> {
+    let url = format!("{}/messages", request.endpoint);
+
+    let mut system_message: Option<String> = None;
+    let mut anthropic_messages: Vec<serde_json::Value> = vec![];
+
+    for msg in &request.messages {
+        if msg.role == "system" {
+            system_message = Some(msg.content.clone());
+        } else {
+            anthropic_messages.push(serde_json::json!({
+                "role": msg.role,
+                "content": msg.content
+            }));
+        }
+    }
+
+    let mut payload = serde_json::Map::new();
+    payload.insert("model".to_string(), serde_json::json!(request.model));
+    payload.insert("messages".to_string(), serde_json::json!(anthropic_messages));
+    payload.insert("max_tokens".to_string(), serde_json::json!(request.max_tokens.unwrap_or(4096)));
+    payload.insert("stream".to_string(), serde_json::json!(true));
+
+    if let Some(system) = system_message {
+        payload.insert("system".to_string(), serde_json::json!(system));
+    }
+
+    if let Some(temp) = request.temperature {
+        payload.insert("temperature".to_string(), serde_json::json!(temp));
+    }
+
+    if let Some(tools) = &request.tools {
+        payload.insert("tools".to_string(), serde_json::json!(tools));
+    }
+
+    let mut request_builder = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .header("anthropic-version", "2023-06-01")
+        .header("x-stream-events", "true");
+
+    if let Some(api_key) = &request.api_key {
+        request_builder = request_builder.header("x-api-key", api_key);
+    }
+
+    let response = request_builder
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(format!("Anthropic HTTP error: {} - {}", status, error_text));
+    }
+
+    let mut stream = response.bytes_stream();
+    
+    let mut buffer = String::new();
+    
+    while let Some(item) = stream.next().await {
+        match item {
+            Ok(bytes) => {
+                let text = String::from_utf8_lossy(&bytes);
+                buffer.push_str(&text);
+                
+                while let Some(newline_pos) = buffer.find('\n') {
+                    let line = buffer[..newline_pos].trim();
+                    buffer = buffer[newline_pos + 1..].to_string();
+                    
+                    if line.is_empty() || line == "event: message_start" || line == "event: content_block_start" || line == "event: content_block_delta" || line == "event: content_block_stop" || line == "event: message_delta" || line == "event: message_stop" {
+                        continue;
+                    }
+                    
+                    if line.starts_with("data: ") {
+                        let data = line.trim_start_matches("data: ");
+                        if let Ok(event) = serde_json::from_str::<serde_json::Value>(data) {
+                            if let Some(event_type) = event.get("type").and_then(|t| t.as_str()) {
+                                match event_type {
+                                    "content_block_delta" => {
+                                        if let Some(delta) = event.get("delta") {
+                                            if let Some(text_delta) = delta.get("text").and_then(|t| t.as_str()) {
+                                                let _ = app_handle.emit(stream_event, StreamChunk {
+                                                    content: text_delta.to_string(),
+                                                    thinking: None,
+                                                    done: false,
+                                                });
+                                            }
+                                            if let Some(input_json) = delta.get("input").and_then(|i| i.as_str()) {
+                                                let tool_call_json = serde_json::json!({
+                                                    "type": "tool_call",
+                                                    "data": input_json
+                                                });
+                                                let _ = app_handle.emit(stream_event, StreamChunk {
+                                                    content: String::new(),
+                                                    thinking: Some(tool_call_json.to_string()),
+                                                    done: false,
+                                                });
+                                            }
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                println!("[RUST] Anthropic stream error: {}", e);
+                break;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 async fn chat_with_anthropic(
@@ -1928,6 +2405,8 @@ pub fn run() {
       chat_with_ai,
             chat_with_provider,
             stream_chat_with_provider,
+            chat_with_tools,
+            stream_chat_with_tools,
             fetch_models,
             test_invoke,
             extract_pdf_text,

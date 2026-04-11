@@ -810,9 +810,10 @@ ${personaPrompt.systemPrompt}`,
             const supportsThinking = 'streamChatWithThinking' in provider
 
             if (supportsToolCalling && mcpTools.length > 0) {
-              await provider.streamChat(
+              await (provider.streamChatWithTools as any)(
                 providerMessages,
                 providerConfig,
+                mcpTools,
                 (chunk: string) => {
                   localContent += chunk
                   // Update streaming content map
@@ -827,7 +828,22 @@ ${personaPrompt.systemPrompt}`,
                     })
                   }
                 },
-                signal
+                async (toolCall: { name: string; arguments: string }) => {
+                  try {
+                    const args = JSON.parse(toolCall.arguments)
+                    const result = await executeMCPTool(toolCall.name, args)
+                    // Append tool result to messages for next iteration
+                    const toolResultMessage: ChatMessage = {
+                      id: crypto.randomUUID(),
+                      role: 'system',
+                      content: `[Tool: ${toolCall.name}] ${result.success ? JSON.stringify(result.data) : result.error || 'Tool execution failed'}`,
+                      timestamp: Date.now()
+                    }
+                    providerMessages.push(toolResultMessage)
+                  } catch (error) {
+                    console.error('[AIView] Tool call error:', error)
+                  }
+                }
               )
             } else if (supportsThinking) {
               await provider.streamChatWithThinking!(
@@ -985,15 +1001,29 @@ ${personaPrompt.systemPrompt}`,
       if (supportsToolCalling && mcpTools.length > 0) {
         // Use native function calling (for OpenAI, Anthropic, etc.)
         console.log('[AIView] Using native function calling')
-        await provider.streamChat(
+        await (provider.streamChatWithTools as any)(
           messagesWithTools,
           providerConfig,
+          mcpTools,
           (chunk: string) => {
             localContent += chunk
             const displayContent = localContent.replace(TOOL_CALL_REGEX, '')
             setStreamingContent(displayContent)
           },
-          signal
+          async (toolCall: { name: string; arguments: string }) => {
+            try {
+              const args = JSON.parse(toolCall.arguments)
+              const result = await executeMCPTool(toolCall.name, args)
+              messagesWithTools.push({
+                id: crypto.randomUUID(),
+                role: 'system',
+                content: `[Tool: ${toolCall.name}] ${result.success ? JSON.stringify(result.data) : result.error || 'Tool execution failed'}`,
+                timestamp: Date.now()
+              })
+            } catch (error) {
+              console.error('[AIView] Tool call error:', error)
+            }
+          }
         )
       } else if (supportsThinking) {
         // Use streamChatWithThinking for models that return thinking

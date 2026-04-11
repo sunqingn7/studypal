@@ -47,3 +47,13 @@
 - Fixed `providerConfig` usage (was using global `config` instead)
 - Added better error handling for Gemini and OpenRouter
 - Fixed @mention autocomplete to add ": " after selection
+
+### Native Function Calling Implementation
+- Added `mcpToolToOpenAISchema()` to convert MCPTool to OpenAI function schema in `tool-calling.ts`
+- Added `mcpToolToAnthropicSchema()` to convert MCPTool to Anthropic tool schema
+- Added `chat_with_tools` Rust command in `lib.rs` for non-streaming tool calls
+- Added `stream_chat_with_tools` Rust command in `lib.rs` for streaming tool calls with tool call events
+- Updated OpenAI provider: `supportsNativeFunctionCalling()`, `chatWithTools()`, `streamChatWithTools()`
+- Updated Anthropic provider: `supportsNativeFunctionCalling()`, `chatWithTools()`, `streamChatWithTools()`
+- Updated OpenRouter provider: `supportsNativeFunctionCalling()`, `chatWithTools()`, `streamChatWithTools()`
+- Tool calls are emitted via the thinking field in StreamChunk events

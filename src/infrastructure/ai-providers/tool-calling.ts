@@ -187,4 +187,97 @@ export interface ToolCallingOptions {
 export const DEFAULT_TOOL_CALLING_OPTIONS: ToolCallingOptions = {
   maxToolCalls: 5,
   includeToolResultsInContext: true
-};
+}
+
+export interface OpenAIFunctionDefinition {
+  type: 'function'
+  function: {
+    name: string
+    description: string
+    parameters: object
+    strict?: boolean
+  }
+}
+
+export function mcpToolToOpenAISchema(tool: MCPTool): OpenAIFunctionDefinition {
+  const properties: Record<string, unknown> = {}
+  const required: string[] = []
+
+  for (const param of tool.parameters) {
+    const prop: Record<string, unknown> = {
+      type: param.type === 'number' ? 'number' : param.type === 'boolean' ? 'boolean' : param.type === 'array' ? 'array' : param.type === 'object' ? 'object' : 'string',
+      description: param.description,
+    }
+
+    if (param.enum && param.enum.length > 0) {
+      prop.enum = param.enum
+    }
+
+    if (param.default !== undefined) {
+      prop.default = param.default
+    }
+
+    properties[param.name] = prop
+
+    if (param.required) {
+      required.push(param.name)
+    }
+  }
+
+  return {
+    type: 'function',
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: {
+        type: 'object',
+        properties,
+        required: required.length > 0 ? required : undefined,
+        additionalProperties: false,
+      },
+      strict: true,
+    },
+  }
+}
+
+export interface AnthropicToolDefinition {
+  name: string
+  description: string
+  input_schema: object
+}
+
+export function mcpToolToAnthropicSchema(tool: MCPTool): AnthropicToolDefinition {
+  const properties: Record<string, unknown> = {}
+  const required: string[] = []
+
+  for (const param of tool.parameters) {
+    const prop: Record<string, unknown> = {
+      type: param.type === 'number' ? 'number' : param.type === 'boolean' ? 'boolean' : param.type === 'array' ? 'array' : param.type === 'object' ? 'object' : 'string',
+      description: param.description,
+    }
+
+    if (param.enum && param.enum.length > 0) {
+      prop.enum = param.enum
+    }
+
+    if (param.default !== undefined) {
+      prop.default = param.default
+    }
+
+    properties[param.name] = prop
+
+    if (param.required) {
+      required.push(param.name)
+    }
+  }
+
+  return {
+    name: tool.name,
+    description: tool.description,
+    input_schema: {
+      type: 'object',
+      properties,
+      required: required.length > 0 ? required : undefined,
+    },
+  }
+}
