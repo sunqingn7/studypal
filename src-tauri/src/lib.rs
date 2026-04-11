@@ -784,7 +784,7 @@ async fn stream_chat_with_tools_anthropic(
                 buffer.push_str(&text);
                 
                 while let Some(newline_pos) = buffer.find('\n') {
-                    let line = buffer[..newline_pos].trim();
+                    let line = buffer[..newline_pos].trim().to_string();
                     buffer = buffer[newline_pos + 1..].to_string();
                     
                     if line.is_empty() || line == "event: message_start" || line == "event: content_block_start" || line == "event: content_block_delta" || line == "event: content_block_stop" || line == "event: message_delta" || line == "event: message_stop" {
