@@ -49,6 +49,7 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
 
   toggle: () => {
     const state = get();
+    console.log('[TranslationStore] toggle called, current isActive:', state.isActive)
     if (!state.isActive) {
       const fileStore = useFileStore.getState();
       if (fileStore.currentFile) {
@@ -66,6 +67,7 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
   },
 
   setIsActive: (active: boolean) => {
+    console.log('[TranslationStore] setIsActive called:', active)
     set({ isActive: active });
   },
 

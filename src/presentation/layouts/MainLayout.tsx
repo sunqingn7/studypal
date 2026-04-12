@@ -289,6 +289,7 @@ function MainLayout() {
 
   // Restore translation state from session after hydration + file load
   useEffect(() => {
+    console.log('[MainLayout] Restore effect running:', { isHydrated, translationActive: session.translationActive, currentFile: !!currentFile, restored: translationRestoredRef.current })
     if (isHydrated && session.translationActive && currentFile && !translationRestoredRef.current) {
       console.log('[MainLayout] Restoring translation state from session')
       translationRestoredRef.current = true

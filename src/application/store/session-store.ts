@@ -289,7 +289,7 @@ export const useSessionStore = create<SessionStore>()(
       },
 
       setTranslationState: (active, sourceLang, targetLang) => {
-        console.log('[SessionStore] setTranslationState called:', { active, sourceLang, targetLang })
+        console.log('[SessionStore] setTranslationState called:', { active, sourceLang, targetLang, currentSession: get().session.translationActive })
         set((state) => ({
           session: {
             ...state.session,
@@ -298,6 +298,7 @@ export const useSessionStore = create<SessionStore>()(
             ...(targetLang && { translationTargetLang: targetLang }),
           }
         }))
+        console.log('[SessionStore] After set, new session:', get().session.translationActive)
       },
     }),
     {
