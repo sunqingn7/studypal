@@ -471,20 +471,20 @@ function MainLayout() {
           <FileView />
         </Panel>
 
-        <Separator className="panel-resize-handle" />
-
-        {/* Translation Panel - always render, use visibility to show/hide */}
-        <Panel
-          id="translation"
-          defaultSize={isTranslationActive ? session.panels.file : 0}
-          minSize={0}
-          className="translation-panel"
-          style={{ visibility: isTranslationActive ? 'visible' : 'hidden' }}
-        >
-          <TranslationView />
-        </Panel>
-
-        {!isTranslationActive && <Separator className="panel-resize-handle" style={{ display: 'none' }} />}
+        {/* Translation Panel - only render when active */}
+        {isTranslationActive && (
+          <>
+            <Separator className="panel-resize-handle" />
+            <Panel
+              id="translation"
+              defaultSize={session.panels.translation || session.panels.file}
+              minSize={20}
+              className="translation-panel"
+            >
+              <TranslationView />
+            </Panel>
+          </>
+        )}
 
         {/* Right Panel: AI + Notes (vertical) */}
         <Panel
