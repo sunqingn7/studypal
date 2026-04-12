@@ -6,16 +6,23 @@ import './TranslationView.css'
 function TranslationView() {
   const { isActive, translatedPdfPath, scrollPercent, error, translateAndPrefetch, isTranslating } = useTranslationStore()
   const currentFile = useFileStore(state => state.currentFile)
+  const hasTranslatedRef = useRef(false)
   
   const containerRef = useRef<HTMLDivElement>(null)
   const pdfContainerRef = useRef<HTMLDivElement>(null)
   
-  // Translate when page changes
+  // Translate only once when translation is activated
   useEffect(() => {
-    if (isActive && currentFile) {
+    if (isActive && currentFile && !hasTranslatedRef.current) {
+      hasTranslatedRef.current = true
       translateAndPrefetch()
     }
-  }, [isActive, currentFile, translateAndPrefetch])
+    
+    // Reset when deactivated
+    if (!isActive) {
+      hasTranslatedRef.current = false
+    }
+  }, [isActive, currentFile])
   
   // Sync scroll position from original PDF viewer
   useEffect(() => {

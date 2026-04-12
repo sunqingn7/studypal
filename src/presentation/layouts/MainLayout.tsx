@@ -33,6 +33,7 @@ function MainLayout() {
   const [isHydrated, setIsHydrated] = useState(false)
   const [panelSizesRestored, setPanelSizesRestored] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const prevTranslationActive = useRef(isTranslationActive)
 
   const mainGroupRef = useGroupRef()
   const rightGroupRef = useGroupRef()
@@ -350,23 +351,35 @@ function MainLayout() {
 
   // Handle layout changes from the Group - only fires after user releases drag
   const handleMainGroupLayoutChange = (layout: { [panelId: string]: number }) => {
-    if (panelSizesRestored && layout) {
-      console.log('[MainLayout] Main group layout changed:', layout)
-      
-      // Skip saving layout when translation panel is being added/removed
-      // (translation panel causes layout shift but shouldn't be persisted as size)
-      if (layout.translation !== undefined && !isTranslationActive) {
-        return
-      }
-      
-      if (layout.sidebar !== undefined) {
-        setPanelSize('sidebar', layout.sidebar)
-      }
-      if (layout.file !== undefined) {
-        setPanelSize('file', layout.file)
-      }
+    if (!panelSizesRestored || !layout) return
+    
+    console.log('[MainLayout] Main group layout changed:', layout)
+    
+    // Check if translation panel is being added or removed by comparing with previous state
+    const hasTranslationPanel = layout.translation !== undefined
+    const wasActive = prevTranslationActive.current
+    
+    // Skip if we're in a transition (translation panel appearing/disappearing)
+    if (hasTranslationPanel !== wasActive) {
+      console.log('[MainLayout] Skipping layout save - translation panel transition')
+      // Update our ref to track current state
+      prevTranslationActive.current = isTranslationActive
+      return
+    }
+    
+    // Only save layout for normal changes (not during transitions)
+    if (layout.sidebar !== undefined) {
+      setPanelSize('sidebar', layout.sidebar)
+    }
+    if (layout.file !== undefined) {
+      setPanelSize('file', layout.file)
     }
   }
+  
+  // Update ref when translation state changes
+  useEffect(() => {
+    prevTranslationActive.current = isTranslationActive
+  }, [isTranslationActive])
 
   const handleRightGroupLayoutChange = (layout: { [panelId: string]: number }) => {
     if (panelSizesRestored && layout) {
