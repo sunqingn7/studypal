@@ -242,34 +242,32 @@ function MainLayout() {
       const timer = setTimeout(() => {
         const state = useSessionStore.getState()
         console.log('[MainLayout] Restoring panel sizes from session:', state.session.panels)
-        console.log('[MainLayout] Refs available:', {
-          mainGroup: !!mainGroupRef.current,
-          rightGroup: !!rightGroupRef.current,
-        })
         
         const sidebarSize = state.session.panels.sidebar
         const fileSize = state.session.panels.file
         const aiSize = state.session.panels.ai
         const noteSize = state.session.panels.note
         
-        // Use setLayout to set all panel sizes at once within each group
-        // The layout is an object with panel IDs as keys
+        // When translation is active, we need to account for it
+        // Otherwise just use original layout
         if (mainGroupRef.current) {
-          const rightSize = 100 - sidebarSize - fileSize
-          console.log('[MainLayout] Setting main group layout:', { sidebar: sidebarSize, file: fileSize, right: rightSize })
-          mainGroupRef.current.setLayout({ sidebar: sidebarSize, file: fileSize, right: rightSize })
+          const layout = isTranslationActive
+            ? { sidebar: sidebarSize, file: fileSize * 0.5, translation: fileSize * 0.5, right: 100 - sidebarSize - fileSize }
+            : { sidebar: sidebarSize, file: fileSize, right: 100 - sidebarSize - fileSize }
+          
+          console.log('[MainLayout] Setting main group layout:', layout)
+          mainGroupRef.current.setLayout(layout as { [panelId: string]: number })
         }
+        
         if (rightGroupRef.current) {
-          console.log('[MainLayout] Setting right group layout:', { ai: aiSize, note: noteSize })
           rightGroupRef.current.setLayout({ ai: aiSize, note: noteSize })
         }
         
         setPanelSizesRestored(true)
-        console.log('[MainLayout] Panel sizes restored')
       }, 500)
       return () => clearTimeout(timer)
     }
-  }, [isHydrated, panelSizesRestored])
+  }, [isHydrated, panelSizesRestored, isTranslationActive])
   
   const previousFileRef = useRef<FileMetadata | null>(null)
   const previousClassroomStateRef = useRef<{ filePage: number; scrollPosition: number } | null>(null)
@@ -439,25 +437,23 @@ function MainLayout() {
 
         <Separator className="panel-resize-handle" />
 
-        {/* Translation Panel - show when translation is active */}
-        {isTranslationActive && (
-          <>
-            <Panel
-              id="translation"
-              defaultSize={session.panels.file}
-              minSize={20}
-              className="translation-panel"
-            >
-              <TranslationView />
-            </Panel>
-            <Separator className="panel-resize-handle" />
-          </>
-        )}
+        {/* Translation Panel - always render, use visibility to show/hide */}
+        <Panel
+          id="translation"
+          defaultSize={isTranslationActive ? session.panels.file : 0}
+          minSize={0}
+          className="translation-panel"
+          style={{ visibility: isTranslationActive ? 'visible' : 'hidden' }}
+        >
+          <TranslationView />
+        </Panel>
+
+        {!isTranslationActive && <Separator className="panel-resize-handle" style={{ display: 'none' }} />}
 
         {/* Right Panel: AI + Notes (vertical) */}
         <Panel
           id="right"
-          defaultSize={session.panels.ai + session.panels.note}
+          defaultSize={isTranslationActive ? (session.panels.ai + session.panels.note) / 2 : session.panels.ai + session.panels.note}
           minSize={20}
         >
           <Group orientation="vertical" className="h-full" groupRef={rightGroupRef} onLayoutChanged={handleRightGroupLayoutChange}>
