@@ -65,6 +65,17 @@ export async function initializeSession(): Promise<void> {
         poolStore.detectAllCapabilities()
       }
     }, 2000) // Delay to let providers initialize first
+    
+    // Also load provider configs from LLM Pool store if available
+    const poolStore = useLLMPoolStore.getState()
+    if (poolStore.providers.length > 0 && currentSession) {
+      const poolConfigs: ProviderConfigs = {} as ProviderConfigs
+      poolStore.providers.forEach(p => {
+        poolConfigs[p.config.provider] = p.config
+      })
+      // Merge pool configs with session configs (pool takes priority)
+      currentSession.providerConfigs = { ...currentSession.providerConfigs, ...poolConfigs }
+    }
   } catch (error) {
     console.error('[Session] Failed to initialize session:', error);
   }
@@ -104,6 +115,17 @@ export function updateProviderConfigs(providerConfigs: ProviderConfigs): void {
 
   currentSession.providerConfigs = providerConfigs;
   
+  // Also sync from LLM Pool store if it has providers
+  const poolStore = useLLMPoolStore.getState()
+  if (poolStore.providers.length > 0) {
+    // Convert LLM pool providers to providerConfigs format
+    const poolConfigs: ProviderConfigs = {} as ProviderConfigs
+    poolStore.providers.forEach(p => {
+      poolConfigs[p.config.provider] = p.config
+    })
+    currentSession.providerConfigs = poolConfigs
+  }
+  
   // Auto-save session
   saveSessionThrottled();
 
@@ -113,7 +135,7 @@ export function updateProviderConfigs(providerConfigs: ProviderConfigs): void {
     if (poolStore.providers.length > 0) {
       await poolStore.detectAllCapabilities(true) // Force re-detect
     }
-  }, 1000)
+  }, 500)
 }
 
 export function updateFilePositions(openFiles: FilePosition[], activeFile: string | null): void {
