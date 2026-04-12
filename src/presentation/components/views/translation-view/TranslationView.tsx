@@ -11,18 +11,21 @@ function TranslationView() {
   
   const containerRef = useRef<HTMLDivElement>(null)
   
-  // Translate only once when translation is activated
+  // Translate when activated
   useEffect(() => {
-    if (isActive && currentFile && !hasTranslatedRef.current) {
+    console.log('[TranslationView] Effect:', { isActive, currentFile: !!currentFile, hasTranslated: hasTranslatedRef.current })
+    if (isActive && currentFile) {
+      console.log('[TranslationView] Calling translateAndPrefetch')
       hasTranslatedRef.current = true
       translateAndPrefetch()
     }
     
     // Reset when deactivated
     if (!isActive) {
+      console.log('[TranslationView] Deactivated, resetting')
       hasTranslatedRef.current = false
     }
-  }, [isActive, currentFile])
+  }, [isActive, currentFile, translateAndPrefetch])
 
   if (!isActive) {
     return null
