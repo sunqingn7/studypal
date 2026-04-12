@@ -80,3 +80,60 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+.translation-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.translation-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.translation-btn:hover {
+  opacity: 0.8;
+}
+
+.translation-btn.stop {
+  background: var(--error-bg, #fef2f2);
+  color: var(--error-color, #dc2626);
+  border-color: var(--error-color, #dc2626);
+}
+
+.translation-btn.redo {
+  background: var(--bg-secondary, #f3f4f6);
+  color: var(--text-primary, #1f2937);
+  border-color: var(--border-color, #e5e7eb);
+}
+
+.translation-btn.redo:hover {
+  background: var(--bg-hover, #e5e7eb);
+}
+
+.translation-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px;
+  color: var(--error-color, #dc2626);
+  background: var(--error-bg, #fef2f2);
+  border: 1px solid var(--error-border, #fecaca);
+  border-radius: 6px;
+  margin: 20px;
+}
+
+.translation-hint {
+  font-size: 12px;
+  color: var(--text-secondary, #6b7280);
+  margin-top: 8px;
+}

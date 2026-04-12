@@ -1,0 +1,120 @@
+.translation-error-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.translation-error-modal {
+  background: var(--bg-primary, #fff);
+  border-radius: 8px;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.translation-error-modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+}
+
+.translation-error-modal-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--text-primary, #1f2937);
+}
+
+.translation-error-modal-content {
+  padding: 24px;
+}
+
+.error-message {
+  background: var(--bg-error, #fef2f2);
+  border: 1px solid var(--border-error, #fecaca);
+  border-radius: 6px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.error-message p {
+  margin: 0;
+  color: var(--text-error, #dc2626);
+  font-size: 0.9rem;
+  word-break: break-word;
+}
+
+.action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.btn {
+  padding: 10px 16px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+  width: 100%;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--primary-color, #3b82f6);
+  color: white;
+  border-color: var(--primary-color, #3b82f6);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover, #2563eb);
+}
+
+.btn-secondary {
+  background: var(--bg-secondary, #f3f4f6);
+  color: var(--text-primary, #1f2937);
+  border-color: var(--border-color, #e5e7eb);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--bg-hover, #e5e7eb);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary, #6b7280);
+}
+
+.btn-ghost:hover {
+  color: var(--text-primary, #1f2937);
+}
+
+.retry-with-provider {
+  display: flex;
+  gap: 8px;
+}
+
+.provider-select {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 6px;
+  background: var(--bg-primary, #fff);
+  color: var(--text-primary, #1f2937);
+  font-size: 0.9rem;
+}
+
+.provider-select:focus {
+  outline: none;
+  border-color: var(--primary-color, #3b82f6);
+}

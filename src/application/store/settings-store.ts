@@ -4,6 +4,7 @@ import { PluginConfig } from '../../domain/models/plugin';
 
 export type SearchProvider = 'brave' | 'tavily' | 'duckduckgo' | 'serper' | 'custom';
 export type TTSBackendType = 'edge' | 'qwen' | 'system';
+export type TranslationService = 'auto' | 'llm' | 'google';
 
 export interface WebSearchConfig {
   provider: SearchProvider;
@@ -46,12 +47,23 @@ export interface TTSConfig {
   autoPlayInClassroom: boolean;
 }
 
+export interface TranslationConfig {
+  service: TranslationService;
+  usePrimaryProvider: boolean;
+  manualProviderId?: string;
+  venvPath: string;
+  autoDetectVenv: boolean;
+  customPrompt: string;
+  threads: number;
+}
+
 export interface GlobalSettings {
   language: string;
   theme: 'light' | 'dark' | 'auto';
   autoSave: boolean;
   webSearch: WebSearchConfig;
   tts: TTSConfig;
+  translation: TranslationConfig;
 }
 
 export interface SettingsState {
@@ -61,6 +73,7 @@ export interface SettingsState {
   updateGlobal: (settings: Partial<GlobalSettings>) => void;
   updateWebSearch: (config: Partial<WebSearchConfig>) => void;
   updateTTS: (config: Partial<TTSConfig>) => void;
+  updateTranslation: (config: Partial<TranslationConfig>) => void;
   updatePluginConfig: (pluginId: string, config: PluginConfig) => void;
   getPluginConfig: (pluginId: string) => PluginConfig | undefined;
   resetToDefaults: () => void;
@@ -100,12 +113,29 @@ const DEFAULT_TTS_CONFIG: TTSConfig = {
   autoPlayInClassroom: false,
 };
 
+const DEFAULT_TRANSLATION_CONFIG: TranslationConfig = {
+  service: 'auto',
+  usePrimaryProvider: true,
+  venvPath: '',
+  autoDetectVenv: true,
+  customPrompt: `You are a professional translator. Translate the following from \${lang_in} to \${lang_out}.
+- Maintain original formatting and structure
+- Preserve technical terms, formulas, and mathematical expressions
+- Translate naturally and fluently
+- Output only the translation, no explanations
+
+Source: \${text}
+Translation:`,
+  threads: 4,
+};
+
 const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   language: 'en',
   theme: 'auto',
   autoSave: true,
   webSearch: DEFAULT_WEB_SEARCH_CONFIG,
   tts: DEFAULT_TTS_CONFIG,
+  translation: DEFAULT_TRANSLATION_CONFIG,
 };
 
 export const useSettingsStore = create<SettingsState>()(
@@ -136,6 +166,15 @@ export const useSettingsStore = create<SettingsState>()(
         });
       },
 
+      updateTranslation: (config) => {
+        set({
+          global: {
+            ...get().global,
+            translation: { ...get().global.translation, ...config },
+          },
+        });
+      },
+
       updatePluginConfig: (pluginId, config) => {
         set({
           plugins: { ...get().plugins, [pluginId]: config }
@@ -155,7 +194,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'studypal-settings',
-      partialize: (state) => ({ 
+      partialize: (state) => ({
         global: state.global,
         plugins: state.plugins,
       }),
@@ -166,6 +205,9 @@ export const useSettingsStore = create<SettingsState>()(
           }
           if (!state.global.webSearch) {
             state.global.webSearch = DEFAULT_WEB_SEARCH_CONFIG;
+          }
+          if (!state.global.translation) {
+            state.global.translation = DEFAULT_TRANSLATION_CONFIG;
           }
         }
       },

@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
+import { useSettingsStore, TranslationConfig } from '../store/settings-store';
 import { useLLMPoolStore } from '../store/llm-pool-store';
-import { getProvider } from '../../infrastructure/ai-providers/provider-factory';
-import { ChatMessage } from '../../domain/models/ai-context';
+import { AIProviderType } from '../../domain/models/ai-context';
 
 export interface TranslateResponse {
   success: boolean;
@@ -9,320 +9,207 @@ export interface TranslateResponse {
   error: string | null;
 }
 
-export interface TranslateTextRequest {
-  text: string;
-  sourceLang: string;
-  targetLang: string;
-  provider?: {
-    config: {
-      provider: string;
-      apiKey?: string;
-      endpoint?: string;
-      model?: string;
-      systemPrompt?: string;
-      temperature?: number;
-      maxTokens?: number;
-    };
+export interface TranslationProviderConfig {
+  service_name: string;
+  api_key?: string;
+  base_url?: string;
+  model?: string;
+  custom_prompt?: string;
+  venv_path?: string;
+  threads: number;
+}
+
+export interface TranslateRequest {
+  input_path: string;
+  source_lang: string;
+  target_lang: string;
+  pages?: number[];
+  use_llm: boolean;
+  provider_config?: TranslationProviderConfig;
+  force_retranslate: boolean;
+}
+
+// Provider mapping from StudyPal to pdf2zh
+const PROVIDER_MAPPING: Record<AIProviderType, { service: string; usesOpenAIFormat: boolean }> = {
+  openai: { service: 'openai', usesOpenAIFormat: true },
+  gemini: { service: 'gemini', usesOpenAIFormat: false },
+  anthropic: { service: 'openai', usesOpenAIFormat: true },
+  ollama: { service: 'ollama', usesOpenAIFormat: false },
+  llamacpp: { service: 'openailiked', usesOpenAIFormat: true },
+  vllm: { service: 'openailiked', usesOpenAIFormat: true },
+  openrouter: { service: 'openai', usesOpenAIFormat: true },
+  nvidia: { service: 'openai', usesOpenAIFormat: true },
+  custom: { service: 'openailiked', usesOpenAIFormat: true },
+};
+
+/**
+ * Map StudyPal provider to pdf2zh service name and config
+ */
+function mapToPdf2zhService(
+  provider: AIProviderType,
+  config: { apiKey?: string; endpoint?: string; model?: string }
+): TranslationProviderConfig {
+  const mapping = PROVIDER_MAPPING[provider];
+  
+  return {
+    service_name: mapping.service,
+    api_key: config.apiKey,
+    base_url: config.endpoint,
+    model: config.model,
+    threads: 4,
   };
 }
 
-// Maximum chunk size for translation (in characters) - helps manage token limits
-const MAX_CHUNK_SIZE = 4000;
-// Maximum text length before we warn about truncation
-const MAX_TEXT_LENGTH = 50000;
-
 /**
- * Split text into chunks for translation
- * Tries to split at paragraph boundaries for better context
+ * Auto-detect Python venv in common locations
  */
-function splitTextIntoChunks(text: string, maxChunkSize: number = MAX_CHUNK_SIZE): string[] {
-  const chunks: string[] = [];
-  const paragraphs = text.split(/\n\s*\n/);
-
-  let currentChunk = '';
-  for (const paragraph of paragraphs) {
-    if ((currentChunk.length + paragraph.length) > maxChunkSize && currentChunk.length > 0) {
-      chunks.push(currentChunk.trim());
-      currentChunk = paragraph;
-    } else {
-      currentChunk += (currentChunk.length > 0 ? '\n\n' : '') + paragraph;
+async function detectVenv(): Promise<string | null> {
+  const commonPaths = [
+    '.venv',
+    'venv',
+    '../.venv',
+    '../venv',
+  ];
+  
+  // Also check home directory paths
+  const homePaths = [
+    '~/.venv',
+    '~/venv',
+  ];
+  
+  const pathsToCheck = [...commonPaths, ...homePaths];
+  
+  for (const path of pathsToCheck) {
+    const expanded = path.replace('~', process.env.HOME || '');
+    const activatePath = `${expanded}/bin/activate`;
+    
+    try {
+      const exists = await invoke<boolean>('check_path_exists', { path: activatePath });
+      if (exists) {
+        return expanded;
+      }
+    } catch {
+      // Continue checking other paths
     }
   }
-
-  if (currentChunk.length > 0) {
-    chunks.push(currentChunk.trim());
-  }
-
-  return chunks;
+  
+  return null;
 }
 
 /**
- * Get translation system prompt based on language pair
+ * Build provider configuration from settings and LLM pool
  */
-function getTranslationSystemPrompt(sourceLang: string, targetLang: string): string {
-  const langNames: Record<string, string> = {
-    'en': 'English',
-    'zh': 'Chinese',
-    'zh-cn': 'Simplified Chinese',
-    'zh-tw': 'Traditional Chinese',
-    'ja': 'Japanese',
-    'ko': 'Korean',
-    'de': 'German',
-    'fr': 'French',
-    'es': 'Spanish',
-    'it': 'Italian',
-    'ru': 'Russian',
-    'pt': 'Portuguese',
-    'ar': 'Arabic',
-    'hi': 'Hindi',
-  };
-
-  const sourceName = langNames[sourceLang.toLowerCase()] || sourceLang;
-  const targetName = langNames[targetLang.toLowerCase()] || targetLang;
-
-  return `You are a professional translator. Translate the following text from ${sourceName} to ${targetName}.
-
-Rules:
-1. Maintain the original formatting and paragraph structure
-2. Preserve technical terms accurately
-3. Translate naturally and fluently
-4. Do not add explanations or notes
-5. Do not output anything other than the translation
-6. If the text contains mixed languages, translate only the ${sourceName} portions`;
-}
-
-/**
- * Translate text using LLM provider
- * Falls back to null if LLM is not available or translation fails
- */
-export async function translateTextWithLLM(
-  text: string,
-  sourceLang: string,
-  targetLang: string,
-  provider?: TranslateTextRequest['provider']
-): Promise<string | null> {
-  console.log('[TranslationService] Translating with LLM:', { sourceLang, targetLang, textLength: text.length });
-
-  // Warn if text is very long
-  if (text.length > MAX_TEXT_LENGTH) {
-    console.warn('[TranslationService] Text is very long, may be truncated:', text.length);
+async function buildProviderConfig(
+  settings: TranslationConfig
+): Promise<TranslationProviderConfig | null> {
+  const llmPool = useLLMPoolStore.getState();
+  
+  // Get the provider to use
+  let provider = settings.usePrimaryProvider
+    ? llmPool.getPrimaryProvider()
+    : llmPool.providers.find((p) => p.id === settings.manualProviderId && p.isEnabled);
+  
+  if (!provider) {
+    // Fallback to primary if manual selection not found
+    provider = llmPool.getPrimaryProvider();
   }
-
-  // Get provider configuration
-  let providerConfig = provider;
-  if (!providerConfig) {
-    const store = useLLMPoolStore.getState();
-    const primaryProvider = store.getPrimaryProvider();
-    if (!primaryProvider) {
-      console.log('[TranslationService] No LLM provider available');
-      return null;
-    }
-    providerConfig = { config: primaryProvider.config };
-  }
-
-  try {
-    const aiProvider = getProvider(providerConfig.config.provider as any);
-    const messages: ChatMessage[] = [
-      {
-        id: crypto.randomUUID(),
-        role: 'system',
-        content: getTranslationSystemPrompt(sourceLang, targetLang),
-        timestamp: Date.now(),
-      },
-      {
-        id: crypto.randomUUID(),
-        role: 'user',
-        content: text,
-        timestamp: Date.now(),
-      },
-    ];
-
-    const result = await aiProvider.chat(messages, {
-      provider: providerConfig.config.provider as any,
-      endpoint: providerConfig.config.endpoint || '',
-      model: providerConfig.config.model || '',
-      apiKey: providerConfig.config.apiKey,
-      systemPrompt: providerConfig.config.systemPrompt,
-      temperature: 0.3,
-      maxTokens: 4096,
-    });
-
-    return result.trim();
-  } catch (error) {
-    console.error('[TranslationService] LLM translation failed:', error);
+  
+  if (!provider) {
     return null;
   }
-}
-
-/**
- * Translate text in chunks using LLM
- * Returns null if any chunk fails
- */
-export async function translateTextWithLLMChunked(
-  text: string,
-  sourceLang: string,
-  targetLang: string,
-  provider?: TranslateTextRequest['provider'],
-  onProgress?: (current: number, total: number) => void
-): Promise<string | null> {
-  // For short texts, translate in one go
-  if (text.length <= MAX_CHUNK_SIZE) {
-    return translateTextWithLLM(text, sourceLang, targetLang, provider);
-  }
-
-  // Split into chunks
-  const chunks = splitTextIntoChunks(text, MAX_CHUNK_SIZE);
-  const translatedChunks: string[] = [];
-
-  console.log('[TranslationService] Translating in', chunks.length, 'chunks');
-
-  for (let i = 0; i < chunks.length; i++) {
-    onProgress?.(i + 1, chunks.length);
-
-    const translated = await translateTextWithLLM(chunks[i], sourceLang, targetLang, provider);
-    if (!translated) {
-      console.error('[TranslationService] Failed to translate chunk', i + 1);
-      return null;
+  
+  // Map to pdf2zh config
+  const config = mapToPdf2zhService(
+    provider.config.provider,
+    {
+      apiKey: provider.config.apiKey,
+      endpoint: provider.config.endpoint,
+      model: provider.config.model,
     }
-    translatedChunks.push(translated);
+  );
+  
+  // Add custom settings
+  config.custom_prompt = settings.customPrompt || undefined;
+  config.threads = settings.threads || 4;
+  
+  // Handle venv path
+  if (settings.autoDetectVenv && !settings.venvPath) {
+    config.venv_path = await detectVenv() || undefined;
+  } else {
+    config.venv_path = settings.venvPath || undefined;
   }
-
-  return translatedChunks.join('\n\n');
+  
+  return config;
 }
 
 /**
  * Main translation function
- * Tries LLM first, falls back to pdf2zh
  */
 export async function translateDocument(
   inputPath: string,
   sourceLang: string,
   targetLang: string,
-  pages?: number[]
-): Promise<TranslateResponse> {
-  console.log('[TranslationService] Starting translation:', { inputPath, sourceLang, targetLang, pages });
-
-  // Step 1: Try LLM translation first
-  try {
-    const llmResult = await translateWithLLM(inputPath, sourceLang, targetLang, pages);
-    if (llmResult.success) {
-      console.log('[TranslationService] LLM translation succeeded');
-      return llmResult;
-    }
-    console.log('[TranslationService] LLM translation failed, falling back to pdf2zh');
-  } catch (error) {
-    console.error('[TranslationService] LLM translation error:', error);
-    console.log('[TranslationService] Falling back to pdf2zh');
+  options?: {
+    pages?: number[];
+    forceRetranslate?: boolean;
+    retryProviderId?: string;
   }
-
-  // Step 2: Fall back to pdf2zh
-  return translateWithPdf2zh(inputPath, sourceLang, targetLang, pages);
-}
-
-/**
- * Translate using LLM provider
- * Extracts text, translates, and generates new PDF
- */
-async function translateWithLLM(
-  inputPath: string,
-  sourceLang: string,
-  targetLang: string,
-  pages?: number[]
 ): Promise<TranslateResponse> {
-  // Get primary LLM provider
-  const store = useLLMPoolStore.getState();
-  const primaryProvider = store.getPrimaryProvider();
-
-  if (!primaryProvider) {
-    return {
-      success: false,
-      output_paths: [],
-      error: 'No LLM provider available',
-    };
-  }
-
-  console.log('[TranslationService] Using LLM provider:', primaryProvider.config.provider);
-
-  try {
-    // Extract text from PDF
-    console.log('[TranslationService] Extracting text from PDF...');
-    const text = await invoke<string>('extract_pdf_text', {
-      path: inputPath,
-      pageNumbers: pages?.map(p => Number(p)),
-    });
-
-    if (!text || text.trim().length === 0) {
-      return {
-        success: false,
-        output_paths: [],
-        error: 'No text extracted from PDF',
-      };
-    }
-
-    console.log('[TranslationService] Extracted text length:', text.length);
-
-    // Translate text with LLM
-    const translatedText = await translateTextWithLLMChunked(
-      text,
-      sourceLang,
-      targetLang,
-      { config: primaryProvider.config },
-      (current, total) => {
-        console.log(`[TranslationService] Progress: ${current}/${total} chunks`);
+  const settings = useSettingsStore.getState().global.translation;
+  
+  // Determine if we should use LLM
+  let useLLM = settings.service !== 'google';
+  let providerConfig: TranslationProviderConfig | undefined = undefined;
+  
+  if (useLLM) {
+    // For retry, use specified provider
+    if (options?.retryProviderId) {
+      const llmPool = useLLMPoolStore.getState();
+      const retryProvider = llmPool.providers.find(
+        (p) => p.id === options.retryProviderId
+      );
+      if (retryProvider) {
+        providerConfig = mapToPdf2zhService(retryProvider.config.provider, {
+          apiKey: retryProvider.config.apiKey,
+          endpoint: retryProvider.config.endpoint,
+          model: retryProvider.config.model,
+        });
+        providerConfig.custom_prompt = settings.customPrompt || undefined;
+        providerConfig.threads = settings.threads || 4;
+        
+        if (settings.autoDetectVenv && !settings.venvPath) {
+          providerConfig.venv_path = (await detectVenv()) || undefined;
+        } else {
+          providerConfig.venv_path = settings.venvPath || undefined;
+        }
       }
-    );
-
-    if (!translatedText) {
-      return {
-        success: false,
-        output_paths: [],
-        error: 'LLM translation failed',
-      };
+    } else {
+      // Normal flow - use settings
+      providerConfig = (await buildProviderConfig(settings)) || undefined;
     }
-
-    // Generate translated PDF
-    console.log('[TranslationService] Generating translated PDF...');
-    const outputPath = await invoke<string>('generate_translated_pdf', {
-      inputPath,
-      translatedText,
-      sourceLang,
-      targetLang,
-    });
-
-    return {
-      success: true,
-      output_paths: [outputPath],
-      error: null,
-    };
-  } catch (error) {
-    console.error('[TranslationService] LLM translation error:', error);
-    return {
-      success: false,
-      output_paths: [],
-      error: error instanceof Error ? error.message : String(error),
-    };
+    
+    // If no provider config available, fallback to Google
+    if (!providerConfig) {
+      useLLM = false;
+    }
   }
-}
-
-/**
- * Translate using pdf2zh (fallback method)
- */
-async function translateWithPdf2zh(
-  inputPath: string,
-  sourceLang: string,
-  targetLang: string,
-  pages?: number[]
-): Promise<TranslateResponse> {
+  
   try {
-    const result = await invoke<TranslateResponse>('translate_document_pdf2zh', {
-      inputPath,
-      sourceLang,
-      targetLang,
-      pages,
+    const result = await invoke<TranslateResponse>('translate_document', {
+      request: {
+        input_path: inputPath,
+        source_lang: sourceLang,
+        target_lang: targetLang,
+        pages: options?.pages,
+        use_llm: useLLM,
+        provider_config: providerConfig,
+        force_retranslate: options?.forceRetranslate || false,
+      } as TranslateRequest,
     });
+    
     return result;
   } catch (error) {
-    console.error('[TranslationService] pdf2zh error:', error);
+    console.error('[TranslationService] Translation error:', error);
     return {
       success: false,
       output_paths: [],
@@ -331,20 +218,47 @@ async function translateWithPdf2zh(
   }
 }
 
-export async function getTranslationCacheDir(): Promise<string> {
+/**
+ * Stop running translation
+ * Note: Currently not implemented. Returns false.
+ * TODO: Implement with tokio::process async process management in Rust
+ */
+export async function stopTranslation(): Promise<boolean> {
+  console.log('[TranslationService] Stop translation not yet implemented');
+  return false;
+}
+
+/**
+ * Clear translation cache for a document
+ */
+export async function clearTranslationCache(
+  docPath?: string,
+  sourceLang?: string,
+  targetLang?: string
+): Promise<boolean> {
   try {
-    return await invoke<string>('get_translation_cache_dir');
+    return await invoke<boolean>('clear_translation_cache', {
+      docPath,
+      sourceLang,
+      targetLang,
+    });
   } catch (error) {
-    console.error('[TranslationService] Error getting cache dir:', error);
-    return '';
+    console.error('[TranslationService] Failed to clear cache:', error);
+    return false;
   }
 }
 
-export async function clearTranslationCache(docPath?: string): Promise<boolean> {
-  try {
-    return await invoke<boolean>('clear_translation_cache', { docPath });
-  } catch (error) {
-    console.error('[TranslationService] Error clearing cache:', error);
-    return false;
-  }
+/**
+ * Force retranslate by clearing cache and retranslating
+ */
+export async function forceRetranslate(
+  inputPath: string,
+  sourceLang: string,
+  targetLang: string,
+  pages?: number[]
+): Promise<TranslateResponse> {
+  return translateDocument(inputPath, sourceLang, targetLang, {
+    pages,
+    forceRetranslate: true,
+  });
 }

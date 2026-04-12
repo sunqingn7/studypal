@@ -17,7 +17,7 @@ interface SettingsViewProps {
   onClose: () => void;
 }
 
-type TabType = 'general' | 'webSearch' | 'llmPool' | 'tts' | 'plugins';
+type TabType = 'general' | 'webSearch' | 'llmPool' | 'tts' | 'translation' | 'plugins';
 
 const PROVIDER_OPTIONS: { value: SearchProvider; label: string; requiresKey: boolean }[] = [
   { value: 'duckduckgo', label: 'DuckDuckGo (Free)', requiresKey: false },
@@ -31,12 +31,12 @@ export function SettingsView({ isOpen, onClose }: SettingsViewProps) {
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   
-  const { 
-    global, 
-    updateGlobal, 
+  const {
+    global,
+    updateGlobal,
     updateWebSearch,
     plugins,
-    updatePluginConfig 
+    updatePluginConfig
   } = useSettingsStore();
 
   useEffect(() => {
@@ -107,7 +107,7 @@ export function SettingsView({ isOpen, onClose }: SettingsViewProps) {
           <Server size={18} />
           LLM Pool
         </button>
-        <button
+<button
           className={`tab-button ${activeTab === 'tts' ? 'active' : ''}`}
           onClick={() => setActiveTab('tts')}
         >
@@ -115,13 +115,20 @@ export function SettingsView({ isOpen, onClose }: SettingsViewProps) {
           Text-to-Speech
         </button>
         <button
+          className={`tab-button ${activeTab === 'translation' ? 'active' : ''}`}
+          onClick={() => setActiveTab('translation')}
+        >
+          <BookOpen size={18} />
+          Translation
+        </button>
+        <button
           className={`tab-button ${activeTab === 'plugins' ? 'active' : ''}`}
           onClick={() => setActiveTab('plugins')}
         >
-              <BookOpen size={18} />
-              Plugins
-            </button>
-          </div>
+          <BookOpen size={18} />
+          Plugins
+        </button>
+      </div>
 
           <div className="settings-panel">
             {activeTab === 'general' && (
@@ -326,9 +333,11 @@ export function SettingsView({ isOpen, onClose }: SettingsViewProps) {
 
       {activeTab === 'llmPool' && <LLMPoolTab />}
 
-      {activeTab === 'tts' && <TTSTab />}
+{activeTab === 'tts' && <TTSTab />}
 
-      {activeTab === 'plugins' && (
+{activeTab === 'translation' && <TranslationTab />}
+
+{activeTab === 'plugins' && (
         <section className="settings-section">
           <h3>
             <BookOpen size={20} />
@@ -1380,6 +1389,185 @@ function TTSTab() {
               Test TTS
             </>
           )}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+// Translation Tab Component
+function TranslationTab() {
+  const { global, updateTranslation } = useSettingsStore();
+  const llmPool = useLLMPoolStore();
+  const translation = global.translation || {
+    service: 'auto' as const,
+    usePrimaryProvider: true,
+    venvPath: '',
+    autoDetectVenv: true,
+    customPrompt: '',
+    threads: 4,
+  };
+
+  const enabledProviders = llmPool.providers.filter(p => p.isEnabled);
+
+  const handleBrowseVenv = async () => {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: 'Select Python Virtual Environment',
+      });
+      if (selected) {
+        updateTranslation({ venvPath: selected as string });
+      }
+    } catch (error) {
+      console.error('Failed to browse for venv:', error);
+    }
+  };
+
+  const handleResetPrompt = () => {
+    updateTranslation({
+      customPrompt: `You are a professional translator. Translate the following from \${lang_in} to \${lang_out}.
+- Maintain original formatting and structure
+- Preserve technical terms, formulas, and mathematical expressions
+- Translate naturally and fluently
+- Output only the translation, no explanations
+
+Source: \${text}
+Translation:`,
+    });
+  };
+
+  return (
+    <section className="settings-section">
+      <h3>
+        <BookOpen size={20} />
+        Translation Configuration
+      </h3>
+
+      <div className="setting-description">
+        Configure PDF translation using pdf2zh with LLM support. Uses primary LLM provider by default, falls back to Google Translate.
+      </div>
+
+      <div className="setting-item">
+        <label>Translation Service</label>
+        <select
+          value={translation.service}
+          onChange={(e) => updateTranslation({ service: e.target.value as 'auto' | 'llm' | 'google' })}
+        >
+          <option value="auto">Auto (LLM with Google fallback)</option>
+          <option value="llm">LLM Only</option>
+          <option value="google">Google Only</option>
+        </select>
+      </div>
+
+      <div className="setting-section-subtitle">
+        <Filter size={16} />
+        Python Environment
+      </div>
+
+      <div className="setting-item">
+        <label>Python venv Path</label>
+        <div className="api-key-input">
+          <input
+            type="text"
+            value={translation.venvPath}
+            onChange={(e) => updateTranslation({ venvPath: e.target.value })}
+            placeholder="Path to Python virtual environment"
+          />
+          <button onClick={handleBrowseVenv}>Browse</button>
+        </div>
+      </div>
+
+      <div className="setting-item checkbox">
+        <label>
+          <input
+            type="checkbox"
+            checked={translation.autoDetectVenv}
+            onChange={(e) => updateTranslation({ autoDetectVenv: e.target.checked })}
+          />
+          Auto-detect venv in common locations
+        </label>
+      </div>
+
+      <div className="setting-section-subtitle">
+        <Server size={16} />
+        LLM Provider
+      </div>
+
+      <div className="setting-item checkbox">
+        <label>
+          <input
+            type="checkbox"
+            checked={translation.usePrimaryProvider}
+            onChange={(e) => updateTranslation({ usePrimaryProvider: e.target.checked })}
+          />
+          Use primary provider from LLM Pool
+        </label>
+      </div>
+
+      {!translation.usePrimaryProvider && (
+        <div className="setting-item">
+          <label>Select Provider</label>
+          <select
+            value={translation.manualProviderId || ''}
+            onChange={(e) => updateTranslation({ manualProviderId: e.target.value || undefined })}
+          >
+            <option value="">Select a provider...</option>
+            {enabledProviders.map((provider) => (
+              <option key={provider.id} value={provider.id}>
+                {provider.nickname || provider.name} ({provider.config.provider})
+              </option>
+            ))}
+          </select>
+          {enabledProviders.length === 0 && (
+            <div className="setting-hint" style={{ color: 'var(--text-error, #dc2626)' }}>
+              No enabled providers in LLM Pool. Please configure providers first.
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="setting-item">
+        <label>
+          Parallel Threads
+          <span className="setting-hint"> - Number of parallel translation threads</span>
+        </label>
+        <div className="range-input">
+          <input
+            type="range"
+            min="1"
+            max="8"
+            value={translation.threads}
+            onChange={(e) => updateTranslation({ threads: parseInt(e.target.value) })}
+          />
+          <span>{translation.threads}</span>
+        </div>
+      </div>
+
+      <div className="setting-section-subtitle">
+        <Edit3 size={16} />
+        Custom Prompt
+      </div>
+
+      <div className="setting-item">
+        <label>Translation Prompt Template</label>
+        <textarea
+          value={translation.customPrompt}
+          onChange={(e) => updateTranslation({ customPrompt: e.target.value })}
+          rows={8}
+          placeholder="Enter custom prompt template..."
+        />
+        <div className="setting-hint">
+          Available variables: ${'{lang_in}'} (source language), ${'{lang_out}'} (target language), ${'{text}'} (text to translate)
+        </div>
+        <button
+          className="button secondary"
+          onClick={handleResetPrompt}
+          style={{ marginTop: '8px' }}
+        >
+          Reset to Default
         </button>
       </div>
     </section>

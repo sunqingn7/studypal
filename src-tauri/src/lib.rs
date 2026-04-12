@@ -11,7 +11,7 @@ mod translation;
 
 use tts::{EdgeTTS, QwenTTS, TTSRequest, TTSResponse};
 use web_search::SearchParams;
-use translation::{translate_document_pdf2zh, generate_translated_pdf, get_translation_cache_dir, clear_translation_cache};
+use translation::{translate_document, clear_translation_cache};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ChatMessage {
@@ -2423,9 +2423,7 @@ pub fn run() {
             tts_qwen_health,
             tts_qwen_voices,
             tts_qwen_synth,
-            translate_document_pdf2zh,
-            generate_translated_pdf,
-            get_translation_cache_dir,
+            translate_document,
             clear_translation_cache,
         session::load_session,
         session::save_session,

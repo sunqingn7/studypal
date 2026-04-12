@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { translateDocument } from '../services/translation-service';
+import { translateDocument, forceRetranslate as forceRetranslateService } from '../services/translation-service';
 import { useFileStore } from './file-store';
 
 export type Lang = 'en' | 'zh';
@@ -16,6 +16,7 @@ interface TranslationState {
   scale: number;
   pageMode: 'single' | 'double';
   isTranslating: boolean;
+  canStop: boolean;
   error: string | null;
 
   toggle: () => void;
@@ -29,6 +30,8 @@ interface TranslationState {
   setPageMode: (mode: 'single' | 'double') => void;
   translatePage: (pageNum: number) => Promise<string | null>;
   translateAndPrefetch: () => Promise<void>;
+  stopTranslation: () => Promise<boolean>;
+  forceRetranslate: () => Promise<void>;
   getTranslatedPath: () => string | null;
   clearCache: () => void;
 }
@@ -45,6 +48,7 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
   scale: 1.2,
   pageMode: 'single',
   isTranslating: false,
+  canStop: false,
   error: null,
 
   toggle: () => {
@@ -53,10 +57,10 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
     if (!state.isActive) {
       const fileStore = useFileStore.getState();
       if (fileStore.currentFile) {
-        set({ 
-          isActive: true, 
+        set({
+          isActive: true,
           currentDocPath: fileStore.currentFile.path,
-          error: null 
+          error: null
         });
       } else {
         set({ isActive: true });
@@ -81,10 +85,10 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
     const state = get();
     if (path !== state.currentDocPath) {
       // Clear cache when document changes
-      set({ 
-        currentDocPath: path, 
+      set({
+        currentDocPath: path,
         translatedPdfPath: null,
-        error: null 
+        error: null
       });
     }
   },
@@ -111,7 +115,7 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
 
   translatePage: async (_pageNum: number): Promise<string | null> => {
     const state = get();
-    
+
     if (!state.currentDocPath) {
       console.warn('[TranslationStore] No document path set');
       return null;
@@ -121,7 +125,7 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
     if (state.translatedPdfPath) {
       return state.translatedPdfPath;
     }
-    
+
     // If already translating, don't start another translation
     if (state.isTranslating) {
       console.log('[TranslationStore] Already translating, waiting...');
@@ -129,8 +133,9 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
     }
 
     // Mark as translating
-    set({ 
-      isTranslating: true, 
+    set({
+      isTranslating: true,
+      canStop: true,
       error: null,
     });
 
@@ -145,10 +150,11 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
 
       if (result.success && result.output_paths.length > 0) {
         const translatedPath = result.output_paths[0];
-        
+
         set({
           translatedPdfPath: translatedPath,
           isTranslating: false,
+          canStop: false,
           error: null,
         });
 
@@ -156,22 +162,24 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
       } else {
         const errorMsg = result.error || 'Translation failed';
         console.error('[TranslationStore] Translation error:', errorMsg);
-        
+
         set({
           isTranslating: false,
+          canStop: false,
           error: errorMsg,
         });
-        
+
         return null;
       }
     } catch (error) {
       console.error('[TranslationStore] Exception:', error);
-      
+
       set({
         isTranslating: false,
+        canStop: false,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      
+
       return null;
     }
   },
@@ -179,6 +187,67 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
   translateAndPrefetch: async () => {
     // Now we translate the full document at once, so just trigger translation
     await get().translatePage(1);
+  },
+
+  stopTranslation: async (): Promise<boolean> => {
+    const state = get();
+    if (!state.isTranslating || !state.canStop) {
+      return false;
+    }
+
+    // Note: Stop translation is not yet implemented in the backend
+    // This is a placeholder that returns false
+    console.log('[TranslationStore] Stop translation not implemented');
+    return false;
+  },
+
+  forceRetranslate: async () => {
+    const state = get();
+    if (!state.currentDocPath) {
+      console.warn('[TranslationStore] No document path set');
+      return;
+    }
+
+    // Mark as translating
+    set({
+      isTranslating: true,
+      canStop: true,
+      error: null,
+      translatedPdfPath: null,
+    });
+
+    try {
+      const result = await forceRetranslateService(
+        state.currentDocPath,
+        state.sourceLang,
+        state.targetLang
+      );
+
+      if (result.success && result.output_paths.length > 0) {
+        const translatedPath = result.output_paths[0];
+        set({
+          translatedPdfPath: translatedPath,
+          isTranslating: false,
+          canStop: false,
+          error: null,
+        });
+      } else {
+        const errorMsg = result.error || 'Force retranslate failed';
+        console.error('[TranslationStore] Force retranslate error:', errorMsg);
+        set({
+          isTranslating: false,
+          canStop: false,
+          error: errorMsg,
+        });
+      }
+    } catch (error) {
+      console.error('[TranslationStore] Force retranslate exception:', error);
+      set({
+        isTranslating: false,
+        canStop: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
   },
 
   getTranslatedPath: (): string | null => {

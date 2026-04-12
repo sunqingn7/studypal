@@ -4,26 +4,32 @@ use std::process::Command;
 use std::fs;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct TranslateRequest {
-    input_path: String,
-    source_lang: String,
-    target_lang: String,
-    pages: Option<Vec<i32>>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 pub struct TranslateResponse {
-    success: bool,
-    output_paths: Vec<String>,
-    error: Option<String>,
+    pub success: bool,
+    pub output_paths: Vec<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TranslationProviderConfig {
+    pub service_name: String,      // "openai", "gemini", "ollama", "openailiked"
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
+    pub model: Option<String>,
+    pub custom_prompt: Option<String>,
+    pub venv_path: Option<String>,
+    pub threads: i32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct TranslatedPdfRequest {
-    input_path: String,
-    translated_text: String,
-    source_lang: String,
-    target_lang: String,
+pub struct TranslateRequest {
+    pub input_path: String,
+    pub source_lang: String,
+    pub target_lang: String,
+    pub pages: Option<Vec<i32>>,
+    pub use_llm: bool,
+    pub provider_config: Option<TranslationProviderConfig>,
+    pub force_retranslate: bool,
 }
 
 fn get_cache_dir() -> PathBuf {
@@ -41,17 +47,14 @@ fn ensure_cache_dir() -> Result<PathBuf, String> {
 
 fn get_doc_cache_dir(doc_path: &str, source_lang: &str, target_lang: &str) -> Result<PathBuf, String> {
     let cache_dir = ensure_cache_dir()?;
-
-    // Create hash from document path + language pair
     let cache_key = format!("{}_{}_{}", doc_path, source_lang, target_lang);
     let doc_hash = format!("{:x}", md5_hash(&cache_key));
     let doc_dir = cache_dir.join(&doc_hash);
-
+    
     if !doc_dir.exists() {
         fs::create_dir_all(&doc_dir).map_err(|e| e.to_string())?;
     }
-
-    log::info!("[translate_document] Doc cache dir: {:?}", doc_dir);
+    
     Ok(doc_dir)
 }
 
@@ -71,16 +74,338 @@ fn is_pdf2zh_available() -> bool {
         .unwrap_or(false)
 }
 
-/// Legacy pdf2zh-based translation (fallback method)
-#[tauri::command]
-pub async fn translate_document_pdf2zh(
-    input_path: String,
-    source_lang: String,
-    target_lang: String,
-    _pages: Option<Vec<i32>>,
-) -> Result<TranslateResponse, String> {
-    log::info!("[translate_document_pdf2zh] Starting translation: {} -> {}", source_lang, target_lang);
+/// Find cached translation if exists
+fn find_cached_translation(
+    input_path: &str,
+    output_dir: &Path,
+) -> Result<Option<String>, String> {
+    let input_stem = Path::new(input_path)
+        .file_stem()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "translated".to_string());
+    
+    let mono_path = output_dir.join(format!("{}-mono.pdf", input_stem));
+    let dual_path = output_dir.join(format!("{}-dual.pdf", input_stem));
+    
+    if mono_path.exists() {
+        Ok(Some(mono_path.to_string_lossy().to_string()))
+    } else if dual_path.exists() {
+        Ok(Some(dual_path.to_string_lossy().to_string()))
+    } else {
+        Ok(None)
+    }
+}
 
+/// Generate environment variable exports for the script
+fn build_env_exports(provider: &TranslationProviderConfig) -> String {
+    match provider.service_name.as_str() {
+        "openai" => {
+            format!(
+                r#"export OPENAI_API_KEY="{api_key}"
+export OPENAI_BASE_URL="{base_url}"
+export OPENAI_MODEL="{model}""#,
+                api_key = provider.api_key.as_deref().unwrap_or(""),
+                base_url = provider.base_url.as_deref().unwrap_or("https://api.openai.com/v1"),
+                model = provider.model.as_deref().unwrap_or("gpt-4o-mini"),
+            )
+        }
+        "gemini" => {
+            format!(
+                r#"export GEMINI_API_KEY="{api_key}"
+export GEMINI_MODEL="{model}""#,
+                api_key = provider.api_key.as_deref().unwrap_or(""),
+                model = provider.model.as_deref().unwrap_or("gemini-1.5-flash"),
+            )
+        }
+        "ollama" => {
+            format!(
+                r#"export OLLAMA_HOST="{host}"
+export OLLAMA_MODEL="{model}""#,
+                host = provider.base_url.as_deref().unwrap_or("http://127.0.0.1:11434"),
+                model = provider.model.as_deref().unwrap_or("llama3.2"),
+            )
+        }
+        "openailiked" => {
+            format!(
+                r#"export OPENAILIKED_BASE_URL="{base_url}"
+export OPENAILIKED_API_KEY="{api_key}"
+export OPENAILIKED_MODEL="{model}""#,
+                base_url = provider.base_url.as_deref().unwrap_or(""),
+                api_key = provider.api_key.as_deref().unwrap_or(""),
+                model = provider.model.as_deref().unwrap_or(""),
+            )
+        }
+        _ => String::new(),
+    }
+}
+
+/// Generate Windows batch script
+fn generate_windows_script(
+    request: &TranslateRequest,
+    provider: &TranslationProviderConfig,
+    output_dir: &str,
+) -> Result<String, String> {
+    let env_exports = build_env_exports(provider)
+        .replace("export ", "set ")
+        .replace("=\"", "=")
+        .replace("\"\n", "\n");
+    
+    let venv_path = provider.venv_path.as_deref().unwrap_or("");
+    let service = &provider.service_name;
+    let threads = provider.threads;
+    
+    // Create prompt file if custom prompt is provided
+    let prompt_arg = if let Some(ref prompt) = provider.custom_prompt {
+        if !prompt.is_empty() {
+            // Save prompt to temp file
+            let prompt_path = std::env::temp_dir().join(format!("studypal_prompt_{}.txt", std::process::id()));
+            let _ = fs::write(&prompt_path, prompt);
+            format!("--prompt \"{}\"", prompt_path.to_string_lossy())
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+    
+    let script = format!(
+        r#"@echo off
+setlocal enabledelayedexpansion
+
+REM Source venv if exists
+if exist "{venv_path}\Scripts\activate.bat" (
+    call "{venv_path}\Scripts\activate.bat"
+)
+
+REM Set environment variables
+{env_exports}
+
+REM Run pdf2zh
+pdf2zh "{input_path}" ^
+    -li "{source_lang}" ^
+    -lo "{target_lang}" ^
+    -s "{service}" ^
+    -t {threads} ^
+    -o "{output_dir}" ^
+    {prompt_arg}
+"#,
+        venv_path = venv_path,
+        env_exports = env_exports,
+        input_path = request.input_path,
+        source_lang = request.source_lang,
+        target_lang = request.target_lang,
+        service = service,
+        threads = threads,
+        output_dir = output_dir,
+        prompt_arg = prompt_arg,
+    );
+    
+    Ok(script)
+}
+
+/// Generate Unix shell script
+fn generate_unix_script(
+    request: &TranslateRequest,
+    provider: &TranslationProviderConfig,
+    output_dir: &str,
+) -> Result<String, String> {
+    let env_exports = build_env_exports(provider);
+    let venv_path = provider.venv_path.as_deref().unwrap_or("");
+    let service = &provider.service_name;
+    let threads = provider.threads;
+    
+    // Create prompt file if custom prompt is provided
+    let prompt_arg = if let Some(ref prompt) = provider.custom_prompt {
+        if !prompt.is_empty() {
+            // Save prompt to temp file
+            let prompt_path = std::env::temp_dir().join(format!("studypal_prompt_{}.txt", std::process::id()));
+            let _ = fs::write(&prompt_path, prompt);
+            format!("--prompt '{}'", prompt_path.to_string_lossy())
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+    
+    let script = format!(
+        r#"#!/bin/bash
+set -e
+
+VENV_PATH="{venv_path}"
+if [ -n "$VENV_PATH" ] && [ -f "$VENV_PATH/bin/activate" ]; then
+    source "$VENV_PATH/bin/activate"
+fi
+
+{env_exports}
+
+pdf2zh "{input_path}" \
+    -li "{source_lang}" \
+    -lo "{target_lang}" \
+    -s "{service}" \
+    -t {threads} \
+    -o "{output_dir}" \
+    {prompt_arg}
+"#,
+        venv_path = venv_path,
+        env_exports = env_exports,
+        input_path = request.input_path,
+        source_lang = request.source_lang,
+        target_lang = request.target_lang,
+        service = service,
+        threads = threads,
+        output_dir = output_dir,
+        prompt_arg = prompt_arg,
+    );
+    
+    Ok(script)
+}
+
+/// Generate and save translation script
+fn generate_script(
+    request: &TranslateRequest,
+    provider: &TranslationProviderConfig,
+    output_dir: &str,
+) -> Result<PathBuf, String> {
+    // Generate script content
+    let script_content = if cfg!(windows) {
+        generate_windows_script(request, provider, output_dir)?
+    } else {
+        generate_unix_script(request, provider, output_dir)?
+    };
+    
+    // Write script to temp file
+    let extension = if cfg!(windows) { ".bat" } else { ".sh" };
+    let script_path = std::env::temp_dir().join(format!("studypal_translate_{}{}", std::process::id(), extension));
+    fs::write(&script_path, script_content).map_err(|e| e.to_string())?;
+    
+    // Set permissions on Unix
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o600);
+        fs::set_permissions(&script_path, perms).map_err(|e| e.to_string())?;
+    }
+    
+    Ok(script_path)
+}
+
+/// Translate using LLM provider
+async fn translate_with_llm(
+    request: &TranslateRequest,
+    provider: &TranslationProviderConfig,
+    output_dir: &str,
+) -> Result<TranslateResponse, String> {
+    log::info!(
+        "[translate_with_llm] Using service: {}, threads: {}",
+        provider.service_name,
+        provider.threads
+    );
+    
+    // Generate script
+    let script_path = generate_script(request, provider, output_dir)?;
+    
+    // Execute script
+    let output = if cfg!(windows) {
+        Command::new("cmd")
+            .arg("/C")
+            .arg(&script_path)
+            .output()
+    } else {
+        Command::new("bash")
+            .arg(&script_path)
+            .output()
+    }
+    .map_err(|e| format!("Failed to execute script: {}", e))?;
+    
+    // Cleanup script
+    let _ = fs::remove_file(&script_path);
+    // Cleanup prompt file if exists
+    let prompt_file = std::env::temp_dir().join(format!("studypal_prompt_{}.txt", std::process::id()));
+    let _ = fs::remove_file(&prompt_file);
+    
+    // Check result
+    if output.status.success() {
+        if let Some(translated_path) = find_cached_translation(&request.input_path, Path::new(output_dir))? {
+            log::info!("[translate_with_llm] Translation completed: {}", translated_path);
+            Ok(TranslateResponse {
+                success: true,
+                output_paths: vec![translated_path],
+                error: None,
+            })
+        } else {
+            Ok(TranslateResponse {
+                success: false,
+                output_paths: vec![],
+                error: Some("Translation completed but output file not found".to_string()),
+            })
+        }
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        log::error!("[translate_with_llm] Translation failed: {}", stderr);
+        Ok(TranslateResponse {
+            success: false,
+            output_paths: vec![],
+            error: Some(stderr.to_string()),
+        })
+    }
+}
+
+/// Translate using Google (pdf2zh default)
+async fn translate_with_google(
+    request: &TranslateRequest,
+    output_dir: &str,
+) -> Result<TranslateResponse, String> {
+    log::info!("[translate_with_google] Using Google Translate");
+    
+    let output = Command::new("pdf2zh")
+        .arg(&request.input_path)
+        .arg("-li").arg(&request.source_lang)
+        .arg("-lo").arg(&request.target_lang)
+        .arg("-s").arg("google")
+        .arg("-o").arg(output_dir)
+        .output()
+        .map_err(|e| format!("Failed to run pdf2zh: {}", e))?;
+    
+    if output.status.success() {
+        if let Some(translated_path) = find_cached_translation(&request.input_path, Path::new(output_dir))? {
+            log::info!("[translate_with_google] Translation completed: {}", translated_path);
+            Ok(TranslateResponse {
+                success: true,
+                output_paths: vec![translated_path],
+                error: None,
+            })
+        } else {
+            Ok(TranslateResponse {
+                success: false,
+                output_paths: vec![],
+                error: Some("Translation completed but output file not found".to_string()),
+            })
+        }
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        log::error!("[translate_with_google] Translation failed: {}", stderr);
+        Ok(TranslateResponse {
+            success: false,
+            output_paths: vec![],
+            error: Some(stderr.to_string()),
+        })
+    }
+}
+
+/// Main translation command with LLM support
+#[tauri::command]
+pub async fn translate_document(
+    request: TranslateRequest,
+) -> Result<TranslateResponse, String> {
+    log::info!(
+        "[translate_document] Starting translation: {} -> {} (use_llm: {}, force: {})",
+        request.source_lang,
+        request.target_lang,
+        request.use_llm,
+        request.force_retranslate
+    );
+    
     // Check if pdf2zh is available
     if !is_pdf2zh_available() {
         return Ok(TranslateResponse {
@@ -89,363 +414,85 @@ pub async fn translate_document_pdf2zh(
             error: Some("pdf2zh is not installed. Please run: pip install pdf2zh".to_string()),
         });
     }
-
-    // Get document-specific cache directory (includes language pair in key)
-    let doc_cache_dir = get_doc_cache_dir(&input_path, &source_lang, &target_lang)?;
-    log::info!("[translate_document_pdf2zh] Cache directory: {:?}", doc_cache_dir);
-
-    // Create output directory based on document hash
-    let output_dir = doc_cache_dir.clone();
-    let output_dir_str = output_dir.to_string_lossy().to_string();
-
-    // Check if full translation already exists
-    let input_stem = Path::new(&input_path)
-        .file_stem()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "translated".to_string());
-
-    let mono_path = output_dir.join(format!("{}-mono.pdf", input_stem));
-    let dual_path = output_dir.join(format!("{}-dual.pdf", input_stem));
-
-    let translated_path = if mono_path.exists() {
-        mono_path.clone()
-    } else if dual_path.exists() {
-        dual_path.clone()
-    } else {
-        log::info!("[translate_document_pdf2zh] No cached translation found, translating...");
-
-        // Build pdf2zh command
-        let mut cmd = Command::new("pdf2zh");
-        cmd.arg(&input_path)
-            .arg("-li").arg(&source_lang)
-            .arg("-lo").arg(&target_lang)
-            .arg("-o").arg(&output_dir_str);
-
-        log::info!("[translate_document_pdf2zh] Running: pdf2zh {:?} -li {} -lo {} -o {}",
-            input_path, source_lang, target_lang, output_dir_str);
-
-        match cmd.output() {
-            Ok(output) => {
-                if output.status.success() {
-                    log::info!("[translate_document_pdf2zh] Translation completed successfully");
-
-                    if dual_path.exists() {
-                        dual_path.clone()
-                    } else if mono_path.exists() {
-                        mono_path.clone()
-                    } else {
-                        return Ok(TranslateResponse {
-                            success: false,
-                            output_paths: vec![],
-                            error: Some("Translation completed but output file not found".to_string()),
-                        });
-                    }
-                } else {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    log::error!("[translate_document_pdf2zh] Translation failed: {}", stderr);
-                    return Ok(TranslateResponse {
-                        success: false,
-                        output_paths: vec![],
-                        error: Some(stderr.to_string()),
-                    });
-                }
-            }
-            Err(e) => {
-                log::error!("[translate_document_pdf2zh] Failed to run pdf2zh: {}", e);
-                return Ok(TranslateResponse {
-                    success: false,
-                    output_paths: vec![],
-                    error: Some(format!("Failed to run pdf2zh: {}", e)),
-                });
-            }
-        }
-    };
-
-    let translated_path_str = translated_path.to_string_lossy().to_string();
-    log::info!("[translate_document_pdf2zh] Translated PDF at: {}", translated_path_str);
-
-    Ok(TranslateResponse {
-        success: true,
-        output_paths: vec![translated_path_str],
-        error: None,
-    })
-}
-
-/// Generate a translated PDF from translated text
-/// Creates a simple PDF with the translated text content
-#[tauri::command]
-pub async fn generate_translated_pdf(
-    input_path: String,
-    translated_text: String,
-    source_lang: String,
-    target_lang: String,
-) -> Result<String, String> {
-    log::info!("[generate_translated_pdf] Generating translated PDF: {} -> {}", source_lang, target_lang);
-
-    // Get document-specific cache directory
-    let doc_cache_dir = get_doc_cache_dir(&input_path, &source_lang, &target_lang)?;
-
-    // Get input file name
-    let input_stem = Path::new(&input_path)
-        .file_stem()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "translated".to_string());
-
-    // Create output path
-    let output_path = doc_cache_dir.join(format!("{}-llm.pdf", input_stem));
-    let output_path_str = output_path.to_string_lossy().to_string();
-
-    // Try multiple methods to generate PDF
-
-    // Method 1: Try using pandoc (supports multiple formats)
-    if let Ok(temp_md) = create_temp_markdown(&translated_text) {
-        let result = Command::new("pandoc")
-            .arg(&temp_md)
-            .arg("-o")
-            .arg(&output_path_str)
-            .arg("--pdf-engine=xelatex")
-            .arg("-V")
-            .arg(format!("mainfont={}", font_for_language(&target_lang)))
-            .output();
-
-        if let Ok(output) = result {
-            if output.status.success() && output_path.exists() {
-                log::info!("[generate_translated_pdf] PDF generated using pandoc: {}", output_path_str);
-                let _ = fs::remove_file(&temp_md);
-                return Ok(output_path_str);
-            }
-        }
-        let _ = fs::remove_file(&temp_md);
-    }
-
-    // Method 2: Try using wkhtmltopdf (HTML to PDF)
-    if let Ok(temp_html) = create_temp_html(&translated_text, &target_lang) {
-        let result = Command::new("wkhtmltopdf")
-            .arg("--encoding")
-            .arg("utf-8")
-            .arg(&temp_html)
-            .arg(&output_path_str)
-            .output();
-
-        if let Ok(output) = result {
-            if output.status.success() && output_path.exists() {
-                log::info!("[generate_translated_pdf] PDF generated using wkhtmltopdf: {}", output_path_str);
-                let _ = fs::remove_file(&temp_html);
-                return Ok(output_path_str);
-            }
-        }
-        let _ = fs::remove_file(&temp_html);
-    }
-
-    // Method 3: Try using weasyprint (Python HTML to PDF)
-    if let Ok(temp_html) = create_temp_html(&translated_text, &target_lang) {
-        let result = Command::new("weasyprint")
-            .arg(&temp_html)
-            .arg(&output_path_str)
-            .output();
-
-        if let Ok(output) = result {
-            if output.status.success() && output_path.exists() {
-                log::info!("[generate_translated_pdf] PDF generated using weasyprint: {}", output_path_str);
-                let _ = fs::remove_file(&temp_html);
-                return Ok(output_path_str);
-            }
-        }
-        let _ = fs::remove_file(&temp_html);
-    }
-
-    // Method 4: Create a simple text-based PDF using Python with reportlab
-    if let Ok(_output) = create_pdf_with_python(&translated_text, &output_path_str, &target_lang).await {
-        if output_path.exists() {
-            log::info!("[generate_translated_pdf] PDF generated using Python/reportlab: {}", output_path_str);
-            return Ok(output_path_str);
-        }
-    }
-
-    // Method 5: Fallback - save as text file with PDF extension (will be displayed as text)
-    // This is a last resort - the file won't be a real PDF but at least content is preserved
-    log::warn!("[generate_translated_pdf] Falling back to plain text file");
-    fs::write(&output_path, format!("Translated Document\n\n{}", translated_text))
-        .map_err(|e| format!("Failed to write fallback file: {}", e))?;
-
-    Ok(output_path_str)
-}
-
-/// Create a temporary markdown file
-fn create_temp_markdown(text: &str) -> Result<PathBuf, String> {
-    let cache_dir = ensure_cache_dir()?;
-    let temp_path = cache_dir.join(format!("temp_{}.md", std::process::id()));
-    fs::write(&temp_path, text).map_err(|e| e.to_string())?;
-    Ok(temp_path)
-}
-
-/// Create a temporary HTML file with proper encoding
-fn create_temp_html(text: &str, lang: &str) -> Result<PathBuf, String> {
-    let cache_dir = ensure_cache_dir()?;
-    let temp_path = cache_dir.join(format!("temp_{}.html", std::process::id()));
-
-    // Get font family for the language
-    let font_family = font_for_language(lang);
-
-    // Convert text to HTML
-    let html_content = format!(
-        r#"<!DOCTYPE html>
-<html lang="{}">
-<head>
-    <meta charset="UTF-8">
-    <title>Translated Document</title>
-    <style>
-        body {{
-            font-family: "{}", sans-serif;
-            max-width: 800px;
-            margin: 40px auto;
-            padding: 20px;
-            line-height: 1.6;
-        }}
-        p {{ margin: 1em 0; }}
-    </style>
-</head>
-<body>
-    {}
-</body>
-</html>"#,
-        lang,
-        font_family,
-        text.split("\n\n").map(|p| format!("<p>{}</p>", html_escape(p))).collect::<String>()
-    );
-
-    fs::write(&temp_path, html_content).map_err(|e| e.to_string())?;
-    Ok(temp_path)
-}
-
-/// Escape HTML special characters
-fn html_escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
-
-/// Get appropriate font for language
-fn font_for_language(lang: &str) -> &'static str {
-    match lang.to_lowercase().as_str() {
-        "zh" | "zh-cn" | "zh-tw" | "ja" | "ko" => "Noto Sans CJK SC",
-        "ar" => "Noto Sans Arabic",
-        "hi" => "Noto Sans Devanagari",
-        "ru" => "Noto Sans",
-        _ => "Noto Sans",
-    }
-}
-
-/// Create PDF using Python with reportlab
-async fn create_pdf_with_python(
-    text: &str,
-    output_path: &str,
-    _lang: &str,
-) -> Result<(), String> {
-    let python_script = format!(
-        r#"
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.lib.units import inch
-import textwrap
-
-# Try to register a font that supports the target language
-try:
-    # Try to register common system fonts
-    pdfmetrics.registerFont(TTFont('NotoSans', '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf'))
-    font_name = 'NotoSans'
-except:
-    try:
-        pdfmetrics.registerFont(TTFont('Arial', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'))
-        font_name = 'Arial'
-    except:
-        try:
-            pdfmetrics.registerFont(TTFont('DejaVu', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'))
-            font_name = 'DejaVu'
-        except:
-            font_name = 'Helvetica'  # fallback
-
-c = canvas.Canvas("{}", pagesize=letter)
-width, height = letter
-margin = 72
-text_width = width - 2 * margin
-y = height - margin
-
-lines = r'''{}'''.split('\n')
-
-for line in lines:
-    # Handle empty lines
-    if not line.strip():
-        y -= 12
-        if y < margin:
-            c.showPage()
-            y = height - margin
-        continue
     
-    # Wrap long lines
-    wrapped = textwrap.wrap(line, width=80)
-    for wrapped_line in wrapped:
-        c.setFont(font_name, 11)
-        c.drawString(margin, y, wrapped_line)
-        y -= 14
-        if y < margin:
-            c.showPage()
-            y = height - margin
-
-    # Add extra space between paragraphs
-    y -= 6
-    if y < margin:
-        c.showPage()
-        y = height - margin
-
-c.save()
-print("PDF created successfully")
-"#,
-        output_path.replace("\\", "\\\\").replace("\"", "\\\""),
-        text.replace("\\", "\\\\").replace("'", "\\'").replace("\"", "\\\"")
-    );
-
-    let output = Command::new("python3")
-        .arg("-c")
-        .arg(&python_script)
-        .output()
-        .map_err(|e| format!("Failed to run Python: {}", e))?;
-
-    if output.status.success() {
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!("Python script failed: {}", stderr))
+    // Get document-specific cache directory
+    let doc_cache_dir = get_doc_cache_dir(
+        &request.input_path,
+        &request.source_lang,
+        &request.target_lang,
+    )?;
+    let output_dir = doc_cache_dir.to_string_lossy().to_string();
+    
+    // Clear cache if force retranslate
+    if request.force_retranslate {
+        let _ = fs::remove_dir_all(&doc_cache_dir);
+        let _ = fs::create_dir_all(&doc_cache_dir);
     }
+    
+    // Check for cached translation
+    if let Some(cached_path) = find_cached_translation(&request.input_path, &doc_cache_dir)? {
+        if !request.force_retranslate {
+            log::info!("[translate_document] Using cached translation: {}", cached_path);
+            return Ok(TranslateResponse {
+                success: true,
+                output_paths: vec![cached_path],
+                error: None,
+            });
+        }
+    }
+    
+    // Determine service to use
+    let result = if request.use_llm {
+        if let Some(ref provider_config) = request.provider_config {
+            // Use LLM translation
+            translate_with_llm(&request, provider_config, &output_dir).await
+        } else {
+            // No provider config, use Google
+            translate_with_google(&request, &output_dir).await
+        }
+    } else {
+        // Use Google translation
+        translate_with_google(&request, &output_dir).await
+    };
+    
+    result
 }
 
+/// Stop running translation (currently a no-op, but can be extended)
 #[tauri::command]
-pub fn get_translation_cache_dir() -> Result<String, String> {
-    let cache_dir = get_cache_dir();
-    ensure_cache_dir()?;
-    Ok(cache_dir.to_string_lossy().to_string())
+pub async fn stop_translation() -> Result<bool, String> {
+    // Note: Since we're using Command::output() which blocks until completion,
+    // we can't easily stop a running translation without async process management.
+    // For now, this returns false indicating stop was not possible.
+    // TODO: Implement async process management with tokio::process for stop support.
+    Ok(false)
 }
 
+/// Clear translation cache
 #[tauri::command]
-pub fn clear_translation_cache(doc_path: Option<String>) -> Result<bool, String> {
-    let cache_dir = get_cache_dir();
-
-    if let Some(path) = doc_path {
-        let doc_hash = format!("{:x}", md5_hash(&path));
+pub async fn clear_translation_cache(
+    doc_path: Option<String>,
+    source_lang: Option<String>,
+    target_lang: Option<String>,
+) -> Result<bool, String> {
+    if let (Some(path), Some(src), Some(tgt)) = (doc_path, source_lang, target_lang) {
+        // Clear specific document
+        let cache_dir = get_cache_dir();
+        let cache_key = format!("{}_{}_{}", path, src, tgt);
+        let doc_hash = format!("{:x}", md5_hash(&cache_key));
         let doc_dir = cache_dir.join(&doc_hash);
+        
         if doc_dir.exists() {
             fs::remove_dir_all(&doc_dir).map_err(|e| e.to_string())?;
         }
+        Ok(true)
     } else {
         // Clear all
+        let cache_dir = get_cache_dir();
         if cache_dir.exists() {
             fs::remove_dir_all(&cache_dir).map_err(|e| e.to_string())?;
             fs::create_dir_all(&cache_dir).map_err(|e| e.to_string())?;
         }
+        Ok(true)
     }
-
-    Ok(true)
 }
