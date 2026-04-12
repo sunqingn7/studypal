@@ -17,12 +17,14 @@ interface PDFViewerProps {
   path: string
   fileData?: Uint8Array | null
   initialPage?: number
+  isTranslationView?: boolean
 }
 
-function PDFViewer({ path, fileData, initialPage = 1 }: PDFViewerProps) {
+function PDFViewer({ path, fileData, initialPage = 1, isTranslationView = false }: PDFViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const metadataStore = useDocumentMetadataStore()
   const translationStore = useTranslationStore()
+  const isSyncingRef = useRef(false)
   const [pdf, setPdf] = useState<pdfjsLib.PDFDocumentProxy | null>(null)
   const [currentPage, setCurrentPageState] = useState(initialPage)
   const [totalPages, setTotalPages] = useState(0)
@@ -34,7 +36,6 @@ function PDFViewer({ path, fileData, initialPage = 1 }: PDFViewerProps) {
   const textLayerRefs = useRef<Map<number, HTMLDivElement>>(new Map())
   const renderTasksRef = useRef<Map<number, { cancel: () => void }>>(new Map())
   const prevPathRef = useRef<string>('')
-  const isScrollingRef = useRef(false)
 
   // Update page when initialPage changes (from file store) or when file path changes
   useEffect(() => {
@@ -344,8 +345,9 @@ useEffect(() => {
     const container = containerRef.current
     if (!container) return
 
-    // Calculate scroll percentage and emit to translation store
-    if (translationStore.isActive && !isScrollingRef.current) {
+    // Original view emits scroll to translation view
+    if (!isTranslationView && translationStore.isActive && !isSyncingRef.current) {
+      isSyncingRef.current = true
       const { scrollHeight, clientHeight } = container
       const maxScroll = scrollHeight - clientHeight
       if (maxScroll > 0) {
@@ -353,6 +355,7 @@ useEffect(() => {
         const percent = Math.min(1, Math.max(0, scrollTop / maxScroll))
         translationStore.setScrollPercent(percent)
       }
+      setTimeout(() => { isSyncingRef.current = false }, 50)
     }
 
     if (e.ctrlKey || e.metaKey) {
@@ -369,7 +372,29 @@ useEffect(() => {
         goToPrevPage()
       }
     }
-  }, [loading, error, goToNextPage, goToPrevPage, translationStore])
+  }, [loading, error, goToNextPage, goToPrevPage, translationStore, isTranslationView])
+
+  // Listen for scroll percent from the other view and sync
+  useEffect(() => {
+    if (!isTranslationView || !translationStore.isActive) return
+    
+    const container = containerRef.current
+    if (!container) return
+    
+    const { scrollHeight, clientHeight } = container
+    const maxScroll = scrollHeight - clientHeight
+    if (maxScroll <= 0) return
+    
+    const targetScroll = translationStore.scrollPercent * maxScroll
+    const currentScroll = container.scrollTop
+    
+    // Only scroll if difference is significant (> 5px)
+    if (Math.abs(targetScroll - currentScroll) > 5) {
+      isSyncingRef.current = true
+      container.scrollTop = targetScroll
+      setTimeout(() => { isSyncingRef.current = false }, 50)
+    }
+  }, [translationStore.scrollPercent, translationStore.isActive, isTranslationView])
 
   const zoomIn = () => {
     setScale((prev) => {
@@ -467,7 +492,9 @@ useEffect(() => {
         ref={containerRef}
         onWheel={handleWheel}
         onScroll={() => {
-          if (translationStore.isActive && !isScrollingRef.current) {
+          // Original view emits scroll to translation view
+          if (!isTranslationView && translationStore.isActive && !isSyncingRef.current) {
+            isSyncingRef.current = true
             const container = containerRef.current
             if (!container) return
             const { scrollHeight, clientHeight } = container
@@ -477,7 +504,9 @@ useEffect(() => {
               const percent = Math.min(1, Math.max(0, scrollTop / maxScroll))
               translationStore.setScrollPercent(percent)
             }
+            setTimeout(() => { isSyncingRef.current = false }, 50)
           }
+          // Translation view just scrolls normally, no need to emit back
         }}
       >
         <div className={`pdf-pages ${pageMode}`}>

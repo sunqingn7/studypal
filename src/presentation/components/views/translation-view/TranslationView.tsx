@@ -5,12 +5,11 @@ import PDFViewer from '../file-view/PDFViewer'
 import './TranslationView.css'
 
 function TranslationView() {
-  const { isActive, translatedPdfPath, scrollPercent, error, translateAndPrefetch, isTranslating } = useTranslationStore()
+  const { isActive, translatedPdfPath, error, translateAndPrefetch, isTranslating } = useTranslationStore()
   const currentFile = useFileStore(state => state.currentFile)
   const hasTranslatedRef = useRef(false)
   
   const containerRef = useRef<HTMLDivElement>(null)
-  const pdfContainerRef = useRef<HTMLDivElement>(null)
   
   // Translate only once when translation is activated
   useEffect(() => {
@@ -24,30 +23,7 @@ function TranslationView() {
       hasTranslatedRef.current = false
     }
   }, [isActive, currentFile])
-  
-  // Sync scroll position from original PDF viewer
-  useEffect(() => {
-    if (pdfContainerRef.current && scrollPercent > 0) {
-      const { scrollHeight, clientHeight } = pdfContainerRef.current
-      const maxScroll = scrollHeight - clientHeight
-      if (maxScroll > 0) {
-        pdfContainerRef.current.scrollTop = scrollPercent * maxScroll
-      }
-    }
-  }, [scrollPercent])
 
-  // Render translated PDF using the same PDFViewer component
-  const renderTranslatedPDF = () => {
-    if (!translatedPdfPath) return null
-    
-    return (
-      <PDFViewer 
-        path={translatedPdfPath}
-        initialPage={1}
-      />
-    )
-  }
-  
   if (!isActive) {
     return null
   }
@@ -61,7 +37,7 @@ function TranslationView() {
         )}
       </div>
       
-      <div className="translation-content" ref={pdfContainerRef}>
+      <div className="translation-content">
         {error && (
           <div className="translation-error">
             <p>Translation error: {error}</p>
@@ -82,7 +58,11 @@ function TranslationView() {
         )}
         
         {translatedPdfPath && (
-          renderTranslatedPDF()
+          <PDFViewer 
+            path={translatedPdfPath}
+            initialPage={1}
+            isTranslationView={true}
+          />
         )}
       </div>
     </div>

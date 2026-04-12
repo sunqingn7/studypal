@@ -97,14 +97,14 @@ pub async fn translate_document(
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "translated".to_string());
     
-    // Check for both dual and mono versions
-    let dual_path = output_dir.join(format!("{}-dual.pdf", input_stem));
+    // Check for both dual and mono versions - prefer mono
     let mono_path = output_dir.join(format!("{}-mono.pdf", input_stem));
+    let dual_path = output_dir.join(format!("{}-dual.pdf", input_stem));
     
-    let translated_path = if dual_path.exists() {
-        dual_path.clone()
-    } else if mono_path.exists() {
+    let translated_path = if mono_path.exists() {
         mono_path.clone()
+    } else if dual_path.exists() {
+        dual_path.clone()
     } else {
         // No cached translation found, need to translate
         log::info!("[translate_document] No cached translation found, translating...");
