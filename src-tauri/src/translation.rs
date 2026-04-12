@@ -83,60 +83,53 @@ pub async fn translate_document(
     let doc_cache_dir = get_doc_cache_dir(&input_path)?;
     log::info!("[translate_document] Cache directory: {:?}", doc_cache_dir);
     
-    // Determine pages to translate
-    let pages_str = if let Some(ref pages) = pages {
-        pages.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(",")
-    } else {
-        "all".to_string()
-    };
+    // Create output directory based on document hash
+    // Note: pdf2zh -o expects a DIRECTORY, not a file
+    let output_dir = doc_cache_dir.clone();
+    let output_dir_str = output_dir.to_string_lossy().to_string();
     
-    // Create output filename based on page range
-    let output_filename = if let Some(ref pages) = pages {
-        if pages.len() == 1 {
-            format!("page_{}.pdf", pages[0])
-        } else {
-            format!("pages_{}.pdf", pages.iter().map(|p| p.to_string()).collect::<Vec<_>>().join("_"))
-        }
-    } else {
-        "full.pdf".to_string()
-    };
+    // Check if full translation already exists
+    let input_filename = std::path::Path::new(&input_path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "translated.pdf".to_string());
     
-    let output_path = doc_cache_dir.join(&output_filename);
-    let output_path_str = output_path.to_string_lossy().to_string();
+    let translated_path = output_dir.join(&input_filename);
+    let translated_path_str = translated_path.to_string_lossy().to_string();
     
-    // Skip if already translated (for single page requests)
-    if let Some(ref p) = pages {
-        if p.len() == 1 && output_path.exists() {
-            log::info!("[translate_document] Using cached translation for page {}", p[0]);
-            return Ok(TranslateResponse {
-                success: true,
-                output_paths: vec![output_path_str],
-                error: None,
-            });
-        }
+    // Skip if already fully translated
+    if translated_path.exists() {
+        log::info!("[translate_document] Using cached full translation");
+        return Ok(TranslateResponse {
+            success: true,
+            output_paths: vec![translated_path_str],
+            error: None,
+        });
     }
     
-    // Build pdf2zh command
+    // Build pdf2zh command - translate entire document (not page-specific)
+    // This is more efficient than translating per-page
     let mut cmd = Command::new("pdf2zh");
     cmd.arg(&input_path)
         .arg("-li").arg(&source_lang)
         .arg("-lo").arg(&target_lang)
-        .arg("-o").arg(&output_path_str);
+        .arg("-o").arg(&output_dir_str);
     
-    if let Some(ref pages) = pages {
-        cmd.arg("-p").arg(&pages_str);
-    }
+    // Note: We don't pass -p pages anymore because it's more efficient to translate once
+    // The frontend can then display any page from the translated PDF
     
-    log::info!("[translate_document] Running: pdf2zh {:?} -li {} -lo {} -o {} -p {}", 
-        input_path, source_lang, target_lang, output_path_str, pages_str);
+    log::info!("[translate_document] Running: pdf2zh {:?} -li {} -lo {} -o {}", 
+        input_path, source_lang, target_lang, output_dir_str);
     
     match cmd.output() {
         Ok(output) => {
             if output.status.success() {
                 log::info!("[translate_document] Translation completed successfully");
+                log::info!("[translate_document] Translated PDF at: {}", translated_path_str);
+                
                 Ok(TranslateResponse {
                     success: true,
-                    output_paths: vec![output_path_str],
+                    output_paths: vec![translated_path_str],
                     error: None,
                 })
             } else {

@@ -4,18 +4,12 @@ import { useFileStore } from './file-store';
 
 export type Lang = 'en' | 'zh';
 
-interface TranslatedPage {
-  path: string;
-  translatedAt: number;
-}
-
 interface TranslationState {
   isActive: boolean;
   sourceLang: Lang;
   targetLang: Lang;
   currentDocPath: string | null;
-  translatedPages: Map<number, TranslatedPage>;
-  translatingPages: Set<number>;
+  translatedPdfPath: string | null;  // Path to the full translated PDF
   scrollPercent: number;
   isTranslating: boolean;
   error: string | null;
@@ -25,8 +19,8 @@ interface TranslationState {
   setCurrentDocPath: (path: string | null) => void;
   setScrollPercent: (percent: number) => void;
   translatePage: (pageNum: number) => Promise<string | null>;
-  translateAndPrefetch: (currentPage: number, totalPages: number) => Promise<void>;
-  getTranslatedPath: (pageNum: number) => string | null;
+  translateAndPrefetch: () => Promise<void>;
+  getTranslatedPath: () => string | null;
   clearCache: () => void;
 }
 
@@ -35,8 +29,7 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
   sourceLang: 'en',
   targetLang: 'zh',
   currentDocPath: null,
-  translatedPages: new Map(),
-  translatingPages: new Set(),
+  translatedPdfPath: null,
   scrollPercent: 0,
   isTranslating: false,
   error: null,
@@ -71,8 +64,7 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
       // Clear cache when document changes
       set({ 
         currentDocPath: path, 
-        translatedPages: new Map(),
-        translatingPages: new Set(),
+        translatedPdfPath: null,
         error: null 
       });
     }
@@ -82,7 +74,7 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
     set({ scrollPercent: percent });
   },
 
-  translatePage: async (pageNum: number): Promise<string | null> => {
+  translatePage: async (_pageNum: number): Promise<string | null> => {
     const state = get();
     
     if (!state.currentDocPath) {
@@ -90,47 +82,39 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
       return null;
     }
 
-    // Check if already translated or being translated
-    if (state.translatedPages.has(pageNum)) {
-      return state.translatedPages.get(pageNum)!.path;
+    // If we already have the full translated document, return it
+    if (state.translatedPdfPath) {
+      return state.translatedPdfPath;
     }
     
-    if (state.translatingPages.has(pageNum)) {
-      console.log('[TranslationStore] Page', pageNum, 'already being translated');
+    // If already translating, don't start another translation
+    if (state.isTranslating) {
+      console.log('[TranslationStore] Already translating, waiting...');
       return null;
     }
 
     // Mark as translating
-    set((s) => ({
-      translatingPages: new Set(s.translatingPages).add(pageNum),
-      isTranslating: true,
+    set({ 
+      isTranslating: true, 
       error: null,
-    }));
+    });
 
     try {
+      // Translate the entire document (more efficient)
       const result = await translateDocument(
         state.currentDocPath,
         state.sourceLang,
         state.targetLang,
-        [pageNum]
+        undefined // No page restriction - translate full doc
       );
 
       if (result.success && result.output_paths.length > 0) {
         const translatedPath = result.output_paths[0];
         
-        // Update translated pages
-        set((s) => {
-          const newMap = new Map(s.translatedPages);
-          newMap.set(pageNum, { path: translatedPath, translatedAt: Date.now() });
-          
-          const newTranslating = new Set(s.translatingPages);
-          newTranslating.delete(pageNum);
-          
-          return {
-            translatedPages: newMap,
-            translatingPages: newTranslating,
-            isTranslating: newTranslating.size > 0,
-          };
+        set({
+          translatedPdfPath: translatedPath,
+          isTranslating: false,
+          error: null,
         });
 
         return translatedPath;
@@ -138,14 +122,9 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
         const errorMsg = result.error || 'Translation failed';
         console.error('[TranslationStore] Translation error:', errorMsg);
         
-        set((s) => {
-          const newTranslating = new Set(s.translatingPages);
-          newTranslating.delete(pageNum);
-          return {
-            translatingPages: newTranslating,
-            isTranslating: newTranslating.size > 0,
-            error: errorMsg,
-          };
+        set({
+          isTranslating: false,
+          error: errorMsg,
         });
         
         return null;
@@ -153,46 +132,27 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
     } catch (error) {
       console.error('[TranslationStore] Exception:', error);
       
-      set((s) => {
-        const newTranslating = new Set(s.translatingPages);
-        newTranslating.delete(pageNum);
-        return {
-          translatingPages: newTranslating,
-          isTranslating: newTranslating.size > 0,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        };
+      set({
+        isTranslating: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
       });
       
       return null;
     }
   },
 
-  translateAndPrefetch: async (currentPage: number, totalPages: number) => {
-    const PREFETCH_AHEAD = 3;
-    
-    // Translate current page first
-    await get().translatePage(currentPage);
-    
-    // Then prefetch ahead pages
-    for (let i = 1; i <= PREFETCH_AHEAD; i++) {
-      const nextPage = currentPage + i;
-      if (nextPage <= totalPages) {
-        // Fire and forget - don't await
-        get().translatePage(nextPage);
-      }
-    }
+  translateAndPrefetch: async () => {
+    // Now we translate the full document at once, so just trigger translation
+    await get().translatePage(1);
   },
 
-  getTranslatedPath: (pageNum: number): string | null => {
-    const state = get();
-    const page = state.translatedPages.get(pageNum);
-    return page?.path || null;
+  getTranslatedPath: (): string | null => {
+    return get().translatedPdfPath;
   },
 
   clearCache: () => {
     set({
-      translatedPages: new Map(),
-      translatingPages: new Set(),
+      translatedPdfPath: null,
       error: null,
     });
   },

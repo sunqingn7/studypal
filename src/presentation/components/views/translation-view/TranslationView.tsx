@@ -4,26 +4,18 @@ import { useFileStore } from '../../../../application/store/file-store'
 import './TranslationView.css'
 
 function TranslationView() {
-  const { isActive, translatedPages, translatingPages, scrollPercent, error, translateAndPrefetch } = useTranslationStore()
+  const { isActive, translatedPdfPath, scrollPercent, error, translateAndPrefetch, isTranslating } = useTranslationStore()
   const currentFile = useFileStore(state => state.currentFile)
-  const currentPage = useFileStore(state => state.currentPage)
   
   const containerRef = useRef<HTMLDivElement>(null)
   const pdfContainerRef = useRef<HTMLDivElement>(null)
   
-  // Get current translated page path
-  const translatedPath = currentPage ? translatedPages.get(currentPage)?.path : null
-  const isTranslatingCurrentPage = currentPage ? translatingPages.has(currentPage) : false
-  
-  // Translate current page + prefetch when page changes
-  // Use default total pages (100) as fallback if unknown
-  const TOTAL_PAGES_FALLBACK = 100
-  
+  // Translate when page changes
   useEffect(() => {
-    if (isActive && currentPage && currentFile) {
-      translateAndPrefetch(currentPage, TOTAL_PAGES_FALLBACK)
+    if (isActive && currentFile) {
+      translateAndPrefetch()
     }
-  }, [isActive, currentPage, currentFile, translateAndPrefetch])
+  }, [isActive, currentFile, translateAndPrefetch])
   
   // Sync scroll position from original PDF viewer
   useEffect(() => {
@@ -44,7 +36,7 @@ function TranslationView() {
     <div className="translation-view" ref={containerRef}>
       <div className="translation-header">
         <span className="translation-title">Translation</span>
-        {isTranslatingCurrentPage && (
+        {isTranslating && (
           <span className="translating-indicator">Translating...</span>
         )}
       </div>
@@ -56,22 +48,22 @@ function TranslationView() {
           </div>
         )}
         
-        {!translatedPath && !isTranslatingCurrentPage && !error && (
+        {!translatedPdfPath && !isTranslating && !error && (
           <div className="translation-placeholder">
             <p>Click translate to start</p>
           </div>
         )}
         
-        {isTranslatingCurrentPage && !translatedPath && (
+        {isTranslating && !translatedPdfPath && (
           <div className="translation-loading">
             <div className="loading-spinner"></div>
-            <p>Translating page {currentPage}...</p>
+            <p>Translating document...</p>
           </div>
         )}
         
-        {translatedPath && (
+        {translatedPdfPath && (
           <iframe 
-            src={`asset://localhost/${translatedPath.replace(/\\/g, '/')}`}
+            src={`asset://localhost/${translatedPdfPath.replace(/\\/g, '/')}`}
             className="translation-pdf"
             title="Translated PDF"
           />
