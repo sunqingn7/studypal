@@ -22,6 +22,7 @@ export interface SerializedChatState {
 export interface PanelSizes {
   sidebar: number
   file: number
+  translation: number
   ai: number
   note: number
 }
@@ -55,11 +56,15 @@ export interface SessionData {
   documentChat: Record<string, SerializedChatState>
   fileHistory: FileHistoryItem[]
   lastUpdated: number
+  // Translation state
+  translationActive: boolean
+  translationSourceLang: 'en' | 'zh'
+  translationTargetLang: 'en' | 'zh'
 }
 
 export const DEFAULT_SESSION: SessionData = {
   window: { width: 1200, height: 800, x: 100, y: 100 },
-  panels: { sidebar: 25, file: 35, ai: 50, note: 50 },
+  panels: { sidebar: 20, file: 30, translation: 0, ai: 50, note: 50 },
   currentFile: null,
   currentFilePath: null,
   currentPage: 1,
@@ -72,6 +77,9 @@ export const DEFAULT_SESSION: SessionData = {
   documentChat: {},
   fileHistory: [],
   lastUpdated: Date.now(),
+  translationActive: false,
+  translationSourceLang: 'en',
+  translationTargetLang: 'zh',
 }
 
 interface SessionStore {
@@ -93,6 +101,7 @@ interface SessionStore {
   getSession: () => SessionData
   loadSession: (session: SessionData) => void
   clearSessionData: () => void
+  setTranslationState: (active: boolean, sourceLang?: 'en' | 'zh', targetLang?: 'en' | 'zh') => void
 }
 
 // Simple storage wrapper using localStorage
@@ -277,6 +286,17 @@ export const useSessionStore = create<SessionStore>()(
             lastUpdated: Date.now(),
           }
         })
+      },
+
+      setTranslationState: (active, sourceLang, targetLang) => {
+        set((state) => ({
+          session: {
+            ...state.session,
+            translationActive: active,
+            ...(sourceLang && { translationSourceLang: sourceLang }),
+            ...(targetLang && { translationTargetLang: targetLang }),
+          }
+        }))
       },
     }),
     {

@@ -24,10 +24,10 @@ import { TranslationView } from '../components/views/translation-view'
 function MainLayout() {
   const { currentFile, setCurrentPage } = useFileStore()
   const { theme, toggleTheme } = useThemeStore()
-  const { session, setPanelSize, setTheme: setSessionTheme, addToFileHistory } = useSessionStore()
+  const { session, setPanelSize, setTheme: setSessionTheme, addToFileHistory, setTranslationState } = useSessionStore()
   const { updateGlobal } = useSettingsStore()
   const { isActive: isClassroomActive, previousState } = useClassroomStore()
-  const { isActive: isTranslationActive } = useTranslationStore()
+  const { isActive: isTranslationActive, sourceLang: translationSourceLang, targetLang: translationTargetLang, setLanguages } = useTranslationStore()
   const [showFileBrowser, setShowFileBrowser] = useState(session.showFileBrowser)
   const [hasFileBrowser, setHasFileBrowser] = useState(false)
   const [isHydrated, setIsHydrated] = useState(false)
@@ -269,6 +269,25 @@ function MainLayout() {
     }
   }, [isHydrated, panelSizesRestored, isTranslationActive])
   
+  // Restore translation state from session after hydration
+  useEffect(() => {
+    if (isHydrated && session.translationActive) {
+      console.log('[MainLayout] Restoring translation state from session')
+      // Restore translation languages
+      setLanguages(session.translationSourceLang, session.translationTargetLang)
+      // Set translation as active (this will trigger the translation view)
+      useTranslationStore.getState().toggle()
+    }
+  }, [isHydrated, session.translationActive])
+  
+  // Save translation state to session when it changes
+  useEffect(() => {
+    if (isHydrated) {
+      console.log('[MainLayout] Saving translation state to session:', { isTranslationActive, translationSourceLang, translationTargetLang })
+      setTranslationState(isTranslationActive, translationSourceLang, translationTargetLang)
+    }
+  }, [isTranslationActive, translationSourceLang, translationTargetLang, isHydrated])
+  
   const previousFileRef = useRef<FileMetadata | null>(null)
   const previousClassroomStateRef = useRef<{ filePage: number; scrollPosition: number } | null>(null)
 
@@ -371,6 +390,9 @@ function MainLayout() {
     }
     if (layout.file !== undefined) {
       setPanelSize('file', layout.file)
+    }
+    if (layout.translation !== undefined && isTranslationActive) {
+      setPanelSize('translation', layout.translation)
     }
   }
   
