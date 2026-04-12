@@ -25,6 +25,9 @@ function MainLayout() {
   const { currentFile, setCurrentPage } = useFileStore()
   const { theme, toggleTheme } = useThemeStore()
   const { session, setPanelSize, setTheme: setSessionTheme, addToFileHistory, setTranslationState } = useSessionStore()
+  const sessionTranslationActive = useSessionStore((state) => state.session.translationActive)
+  const sessionTranslationSourceLang = useSessionStore((state) => state.session.translationSourceLang)
+  const sessionTranslationTargetLang = useSessionStore((state) => state.session.translationTargetLang)
   const { updateGlobal } = useSettingsStore()
   const { isActive: isClassroomActive, previousState } = useClassroomStore()
   const { isActive: isTranslationActive, sourceLang: translationSourceLang, targetLang: translationTargetLang, setLanguages, setIsActive } = useTranslationStore()
@@ -289,11 +292,11 @@ function MainLayout() {
 
   // Restore translation state from session after hydration + file load
   useEffect(() => {
-    console.log('[MainLayout] Restore effect running:', { isHydrated, translationActive: session.translationActive, currentFile: !!currentFile, restored: translationRestoredRef.current })
-    if (isHydrated && session.translationActive && currentFile && !translationRestoredRef.current) {
+    console.log('[MainLayout] Restore effect running:', { isHydrated, translationActive: sessionTranslationActive, currentFile: !!currentFile, restored: translationRestoredRef.current })
+    if (isHydrated && sessionTranslationActive && currentFile && !translationRestoredRef.current) {
       console.log('[MainLayout] Restoring translation state from session')
       translationRestoredRef.current = true
-      setLanguages(session.translationSourceLang, session.translationTargetLang)
+      setLanguages(sessionTranslationSourceLang, sessionTranslationTargetLang)
       setIsActive(true)
     }
     
@@ -301,13 +304,13 @@ function MainLayout() {
     if (!currentFile) {
       translationRestoredRef.current = false
     }
-  }, [isHydrated, session.translationActive, currentFile, setLanguages, setIsActive])
+  }, [isHydrated, sessionTranslationActive, currentFile, sessionTranslationSourceLang, sessionTranslationTargetLang, setLanguages, setIsActive])
 
   // Save translation state to session when it changes (always save, not just when hydrated)
   useEffect(() => {
-    console.log('[MainLayout] Saving translation state to session:', { isTranslationActive, translationSourceLang, translationTargetLang, isHydrated })
+    console.log('[MainLayout] Saving translation state to session:', { isTranslationActive, translationSourceLang, translationTargetLang })
     setTranslationState(isTranslationActive, translationSourceLang, translationTargetLang)
-  }, [isTranslationActive, translationSourceLang, translationTargetLang])
+  }, [isTranslationActive, translationSourceLang, translationTargetLang, setTranslationState])
   
   // Restore file page when exiting classroom mode
   useEffect(() => {
