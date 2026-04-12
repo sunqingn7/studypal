@@ -31,17 +31,19 @@ fn ensure_cache_dir() -> Result<PathBuf, String> {
     Ok(cache_dir)
 }
 
-fn get_doc_cache_dir(doc_path: &str) -> Result<PathBuf, String> {
+fn get_doc_cache_dir(doc_path: &str, source_lang: &str, target_lang: &str) -> Result<PathBuf, String> {
     let cache_dir = ensure_cache_dir()?;
     
-    // Create a simple hash from document path
-    let doc_hash = format!("{:x}", md5_hash(doc_path));
+    // Create hash from document path + language pair
+    let cache_key = format!("{}_{}_{}", doc_path, source_lang, target_lang);
+    let doc_hash = format!("{:x}", md5_hash(&cache_key));
     let doc_dir = cache_dir.join(&doc_hash);
     
     if !doc_dir.exists() {
         fs::create_dir_all(&doc_dir).map_err(|e| e.to_string())?;
     }
     
+    log::info!("[translate_document] Doc cache dir: {:?}", doc_dir);
     Ok(doc_dir)
 }
 
@@ -79,8 +81,8 @@ pub async fn translate_document(
         });
     }
     
-    // Get document-specific cache directory
-    let doc_cache_dir = get_doc_cache_dir(&input_path)?;
+    // Get document-specific cache directory (includes language pair in key)
+    let doc_cache_dir = get_doc_cache_dir(&input_path, &source_lang, &target_lang)?;
     log::info!("[translate_document] Cache directory: {:?}", doc_cache_dir);
     
     // Create output directory based on document hash
