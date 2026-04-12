@@ -127,9 +127,6 @@ pub async fn translate_document(
         cmd.arg("-p").arg(&pages_str);
     }
     
-    // Suppress progress output
-    cmd.arg("-q");
-    
     log::info!("[translate_document] Running: pdf2zh {:?} -li {} -lo {} -o {} -p {}", 
         input_path, source_lang, target_lang, output_path_str, pages_str);
     

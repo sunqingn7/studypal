@@ -352,6 +352,13 @@ function MainLayout() {
   const handleMainGroupLayoutChange = (layout: { [panelId: string]: number }) => {
     if (panelSizesRestored && layout) {
       console.log('[MainLayout] Main group layout changed:', layout)
+      
+      // Skip saving layout when translation panel is being added/removed
+      // (translation panel causes layout shift but shouldn't be persisted as size)
+      if (layout.translation !== undefined && !isTranslationActive) {
+        return
+      }
+      
       if (layout.sidebar !== undefined) {
         setPanelSize('sidebar', layout.sidebar)
       }
