@@ -289,6 +289,7 @@ export const useSessionStore = create<SessionStore>()(
       },
 
       setTranslationState: (active, sourceLang, targetLang) => {
+        console.log('[SessionStore] setTranslationState called:', { active, sourceLang, targetLang })
         set((state) => ({
           session: {
             ...state.session,

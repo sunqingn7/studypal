@@ -302,13 +302,11 @@ function MainLayout() {
     }
   }, [isHydrated, session.translationActive, currentFile, setLanguages, setIsActive])
 
-  // Save translation state to session when it changes
+  // Save translation state to session when it changes (always save, not just when hydrated)
   useEffect(() => {
-    if (isHydrated) {
-      console.log('[MainLayout] Saving translation state to session:', { isTranslationActive, translationSourceLang, translationTargetLang })
-      setTranslationState(isTranslationActive, translationSourceLang, translationTargetLang)
-    }
-  }, [isTranslationActive, translationSourceLang, translationTargetLang, isHydrated])
+    console.log('[MainLayout] Saving translation state to session:', { isTranslationActive, translationSourceLang, translationTargetLang, isHydrated })
+    setTranslationState(isTranslationActive, translationSourceLang, translationTargetLang)
+  }, [isTranslationActive, translationSourceLang, translationTargetLang])
   
   // Restore file page when exiting classroom mode
   useEffect(() => {
