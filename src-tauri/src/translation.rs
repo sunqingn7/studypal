@@ -89,68 +89,80 @@ pub async fn translate_document(
     let output_dir_str = output_dir.to_string_lossy().to_string();
     
     // Check if full translation already exists
-    let input_filename = std::path::Path::new(&input_path)
-        .file_name()
+    // pdf2zh outputs: originalname-dual.pdf and originalname-mono.pdf
+    let input_stem = std::path::Path::new(&input_path)
+        .file_stem()
         .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "translated.pdf".to_string());
+        .unwrap_or_else(|| "translated".to_string());
     
-    let translated_path = output_dir.join(&input_filename);
-    let translated_path_str = translated_path.to_string_lossy().to_string();
+    // Check for both dual and mono versions
+    let dual_path = output_dir.join(format!("{}-dual.pdf", input_stem));
+    let mono_path = output_dir.join(format!("{}-mono.pdf", input_stem));
     
-    // Skip if already fully translated
-    if translated_path.exists() {
-        log::info!("[translate_document] Using cached full translation");
-        return Ok(TranslateResponse {
-            success: true,
-            output_paths: vec![translated_path_str],
-            error: None,
-        });
-    }
-    
-    // Build pdf2zh command - translate entire document (not page-specific)
-    // This is more efficient than translating per-page
-    let mut cmd = Command::new("pdf2zh");
-    cmd.arg(&input_path)
-        .arg("-li").arg(&source_lang)
-        .arg("-lo").arg(&target_lang)
-        .arg("-o").arg(&output_dir_str);
-    
-    // Note: We don't pass -p pages anymore because it's more efficient to translate once
-    // The frontend can then display any page from the translated PDF
-    
-    log::info!("[translate_document] Running: pdf2zh {:?} -li {} -lo {} -o {}", 
-        input_path, source_lang, target_lang, output_dir_str);
-    
-    match cmd.output() {
-        Ok(output) => {
-            if output.status.success() {
-                log::info!("[translate_document] Translation completed successfully");
-                log::info!("[translate_document] Translated PDF at: {}", translated_path_str);
-                
-                Ok(TranslateResponse {
-                    success: true,
-                    output_paths: vec![translated_path_str],
-                    error: None,
-                })
-            } else {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                log::error!("[translate_document] Translation failed: {}", stderr);
-                Ok(TranslateResponse {
+    let translated_path = if dual_path.exists() {
+        dual_path.clone()
+    } else if mono_path.exists() {
+        mono_path.clone()
+    } else {
+        // No cached translation found, need to translate
+        log::info!("[translate_document] No cached translation found, translating...");
+        
+        // Build pdf2zh command - translate entire document
+        let mut cmd = Command::new("pdf2zh");
+        cmd.arg(&input_path)
+            .arg("-li").arg(&source_lang)
+            .arg("-lo").arg(&target_lang)
+            .arg("-o").arg(&output_dir_str);
+        
+        log::info!("[translate_document] Running: pdf2zh {:?} -li {} -lo {} -o {}", 
+            input_path, source_lang, target_lang, output_dir_str);
+        
+        match cmd.output() {
+            Ok(output) => {
+                if output.status.success() {
+                    log::info!("[translate_document] Translation completed successfully");
+                    
+                    // Try to find the output file
+                    if dual_path.exists() {
+                        dual_path.clone()
+                    } else if mono_path.exists() {
+                        mono_path.clone()
+                    } else {
+                        return Ok(TranslateResponse {
+                            success: false,
+                            output_paths: vec![],
+                            error: Some("Translation completed but output file not found".to_string()),
+                        });
+                    }
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    log::error!("[translate_document] Translation failed: {}", stderr);
+                    return Ok(TranslateResponse {
+                        success: false,
+                        output_paths: vec![],
+                        error: Some(stderr.to_string()),
+                    });
+                }
+            }
+            Err(e) => {
+                log::error!("[translate_document] Failed to run pdf2zh: {}", e);
+                return Ok(TranslateResponse {
                     success: false,
                     output_paths: vec![],
-                    error: Some(stderr.to_string()),
-                })
+                    error: Some(format!("Failed to run pdf2zh: {}", e)),
+                });
             }
         }
-        Err(e) => {
-            log::error!("[translate_document] Failed to run pdf2zh: {}", e);
-            Ok(TranslateResponse {
-                success: false,
-                output_paths: vec![],
-                error: Some(format!("Failed to run pdf2zh: {}", e)),
-            })
-        }
-    }
+    };
+    
+    let translated_path_str = translated_path.to_string_lossy().to_string();
+    log::info!("[translate_document] Translated PDF at: {}", translated_path_str);
+    
+    Ok(TranslateResponse {
+        success: true,
+        output_paths: vec![translated_path_str],
+        error: None,
+    })
 }
 
 #[tauri::command]
