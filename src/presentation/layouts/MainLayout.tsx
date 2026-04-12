@@ -283,18 +283,25 @@ function MainLayout() {
     }
   }, [isHydrated, panelSizesRestored, isTranslationActive])
   
-  // Restore translation state from session after hydration
-  // Only restore AFTER file is loaded to ensure currentFile exists
+  const previousFileRef = useRef<FileMetadata | null>(null)
+  const previousClassroomStateRef = useRef<{ filePage: number; scrollPosition: number } | null>(null)
+  const translationRestoredRef = useRef(false)
+
+  // Restore translation state from session after hydration + file load
   useEffect(() => {
-    if (isHydrated && session.translationActive && currentFile) {
+    if (isHydrated && session.translationActive && currentFile && !translationRestoredRef.current) {
       console.log('[MainLayout] Restoring translation state from session')
-      // Restore translation languages
+      translationRestoredRef.current = true
       setLanguages(session.translationSourceLang, session.translationTargetLang)
-      // Set translation as active using setIsActive
       setIsActive(true)
     }
-  }, [isHydrated, session.translationActive, currentFile])
-  
+    
+    // Reset when file changes (allow re-restore)
+    if (!currentFile) {
+      translationRestoredRef.current = false
+    }
+  }, [isHydrated, session.translationActive, currentFile, setLanguages, setIsActive])
+
   // Save translation state to session when it changes
   useEffect(() => {
     if (isHydrated) {
@@ -303,9 +310,6 @@ function MainLayout() {
     }
   }, [isTranslationActive, translationSourceLang, translationTargetLang, isHydrated])
   
-  const previousFileRef = useRef<FileMetadata | null>(null)
-  const previousClassroomStateRef = useRef<{ filePage: number; scrollPosition: number } | null>(null)
-
   // Restore file page when exiting classroom mode
   useEffect(() => {
     if (!isClassroomActive && previousClassroomStateRef.current) {
