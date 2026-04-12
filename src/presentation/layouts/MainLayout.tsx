@@ -294,12 +294,17 @@ function MainLayout() {
   // Also run immediately on mount to catch early hydration
   useEffect(() => {
     console.log('[MainLayout] Restore effect:', { isHydrated, translationActive: sessionTranslationActive, currentFile: !!currentFile, restored: translationRestoredRef.current })
-    
+
     // Run on every render where we have the data we need
     if ((isHydrated || sessionTranslationActive) && sessionTranslationActive && !translationRestoredRef.current) {
       console.log('[MainLayout] Restoring translation - setting active')
       translationRestoredRef.current = true
       setLanguages(sessionTranslationSourceLang, sessionTranslationTargetLang)
+      // Also need to set the current document path for translation to work
+      if (currentFile) {
+        const translationStore = useTranslationStore.getState()
+        translationStore.setCurrentDocPath(currentFile.path)
+      }
       setIsActive(true)
     }
     
