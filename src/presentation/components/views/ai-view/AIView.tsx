@@ -866,7 +866,7 @@ ${personaPrompt.systemPrompt}`,
                 (thinking: string) => {
                   const filteredThinking = thinking.replace(TOOL_CALL_REGEX, '')
                   if (filteredThinking) {
-                    localThinking = filteredThinking
+                    localThinking += filteredThinking
                     providerStreamingThinking.set(targetProvider.id, localThinking)
                     // Throttled update
                     const now = Date.now()
@@ -1039,8 +1039,8 @@ ${personaPrompt.systemPrompt}`,
           (thinking: string) => {
             const filteredThinking = thinking.replace(TOOL_CALL_REGEX, '')
             if (filteredThinking) {
-              localThinking = filteredThinking
-              setStreamingThinking(localThinking)
+              localThinking += filteredThinking
+              setStreamingThinking(prev => prev + filteredThinking)
             }
           },
           signal
