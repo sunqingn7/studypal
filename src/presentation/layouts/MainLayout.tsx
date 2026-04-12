@@ -16,8 +16,10 @@ import NoteView from '../components/views/note-view/NoteView'
 import AIView from '../components/views/ai-view/AIView'
 import { ClassroomView } from '../components/views/classroom-view'
 import { useClassroomStore } from '../../application/store/classroom-store'
+import { useTranslationStore } from '../../application/store/translation-store'
 import { FileMetadata } from '../../domain/models/file'
 import { SettingsView } from '../components/views/settings-view/SettingsView'
+import { TranslationView } from '../components/views/translation-view'
 
 function MainLayout() {
   const { currentFile, setCurrentPage } = useFileStore()
@@ -25,6 +27,7 @@ function MainLayout() {
   const { session, setPanelSize, setTheme: setSessionTheme, addToFileHistory } = useSessionStore()
   const { updateGlobal } = useSettingsStore()
   const { isActive: isClassroomActive, previousState } = useClassroomStore()
+  const { isActive: isTranslationActive } = useTranslationStore()
   const [showFileBrowser, setShowFileBrowser] = useState(session.showFileBrowser)
   const [hasFileBrowser, setHasFileBrowser] = useState(false)
   const [isHydrated, setIsHydrated] = useState(false)
@@ -415,6 +418,21 @@ function MainLayout() {
         </Panel>
 
         <Separator className="panel-resize-handle" />
+
+        {/* Translation Panel - show when translation is active */}
+        {isTranslationActive && (
+          <>
+            <Panel
+              id="translation"
+              defaultSize={session.panels.file}
+              minSize={20}
+              className="translation-panel"
+            >
+              <TranslationView />
+            </Panel>
+            <Separator className="panel-resize-handle" />
+          </>
+        )}
 
         {/* Right Panel: AI + Notes (vertical) */}
         <Panel

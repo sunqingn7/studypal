@@ -7,9 +7,11 @@ mod session;
 mod database;
 mod tts;
 mod web_search;
+mod translation;
 
 use tts::{EdgeTTS, QwenTTS, TTSRequest, TTSResponse};
 use web_search::SearchParams;
+use translation::{translate_document, get_translation_cache_dir, clear_translation_cache};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ChatMessage {
@@ -2421,6 +2423,9 @@ pub fn run() {
             tts_qwen_health,
             tts_qwen_voices,
             tts_qwen_synth,
+            translate_document,
+            get_translation_cache_dir,
+            clear_translation_cache,
         session::load_session,
         session::save_session,
         session::save_chats,

@@ -3,6 +3,7 @@ import * as pdfjsLib from 'pdfjs-dist'
 import { TextLayer } from 'pdfjs-dist'
 import { FileReadingService } from '../../../../infrastructure/file-handlers/file-reading-service'
 import { useDocumentMetadataStore } from '../../../../application/store/document-metadata-store'
+import { useTranslationStore } from '../../../../application/store/translation-store'
 import './PDFViewer.css'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -21,6 +22,7 @@ interface PDFViewerProps {
 function PDFViewer({ path, fileData, initialPage = 1 }: PDFViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const metadataStore = useDocumentMetadataStore()
+  const translationStore = useTranslationStore()
   const [pdf, setPdf] = useState<pdfjsLib.PDFDocumentProxy | null>(null)
   const [currentPage, setCurrentPageState] = useState(initialPage)
   const [totalPages, setTotalPages] = useState(0)
@@ -32,6 +34,7 @@ function PDFViewer({ path, fileData, initialPage = 1 }: PDFViewerProps) {
   const textLayerRefs = useRef<Map<number, HTMLDivElement>>(new Map())
   const renderTasksRef = useRef<Map<number, { cancel: () => void }>>(new Map())
   const prevPathRef = useRef<string>('')
+  const isScrollingRef = useRef(false)
 
   // Update page when initialPage changes (from file store) or when file path changes
   useEffect(() => {
@@ -341,6 +344,17 @@ useEffect(() => {
     const container = containerRef.current
     if (!container) return
 
+    // Calculate scroll percentage and emit to translation store
+    if (translationStore.isActive && !isScrollingRef.current) {
+      const { scrollHeight, clientHeight } = container
+      const maxScroll = scrollHeight - clientHeight
+      if (maxScroll > 0) {
+        const scrollTop = container.scrollTop
+        const percent = Math.min(1, Math.max(0, scrollTop / maxScroll))
+        translationStore.setScrollPercent(percent)
+      }
+    }
+
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault()
       if (e.deltaY < 0) {
@@ -355,7 +369,7 @@ useEffect(() => {
         goToPrevPage()
       }
     }
-  }, [loading, error, goToNextPage, goToPrevPage])
+  }, [loading, error, goToNextPage, goToPrevPage, translationStore])
 
   const zoomIn = () => {
     setScale((prev) => {
@@ -452,6 +466,19 @@ useEffect(() => {
         className={`pdf-canvas-container ${pageMode}`}
         ref={containerRef}
         onWheel={handleWheel}
+        onScroll={() => {
+          if (translationStore.isActive && !isScrollingRef.current) {
+            const container = containerRef.current
+            if (!container) return
+            const { scrollHeight, clientHeight } = container
+            const maxScroll = scrollHeight - clientHeight
+            if (maxScroll > 0) {
+              const scrollTop = container.scrollTop
+              const percent = Math.min(1, Math.max(0, scrollTop / maxScroll))
+              translationStore.setScrollPercent(percent)
+            }
+          }
+        }}
       >
         <div className={`pdf-pages ${pageMode}`}>
           <div className="pdf-page-wrapper">

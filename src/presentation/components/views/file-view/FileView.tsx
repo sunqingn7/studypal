@@ -3,6 +3,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { useFileStore, createFileMetadata } from '../../../../application/store/file-store'
 import { useTopicStore } from '../../../../application/store/topic-store'
 import { useClassroomStore } from '../../../../application/store/classroom-store'
+import { useTranslationStore, Lang } from '../../../../application/store/translation-store'
 import { pluginRegistry } from '../../../../infrastructure/plugins/plugin-registry'
 import { FileHandlerPlugin, PluginContext } from '../../../../domain/models/plugin'
 import { loadPdf } from '../../../../infrastructure/file-handlers/pdf-utils'
@@ -15,6 +16,7 @@ function FileView() {
   const { currentFile, setCurrentFile, currentPage } = useFileStore()
   const { activeTopicId, addFileToTopic } = useTopicStore()
   const { startClassroom } = useClassroomStore()
+  const { isActive: isTranslationActive, targetLang, toggle, setLanguages } = useTranslationStore()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [PluginComponent, setPluginComponent] = useState<React.ComponentType<{ filePath: string }> | null>(null)
@@ -306,6 +308,26 @@ let fileType: FileType
             >
               🎓 Classroom
             </button>
+          )}
+          {currentFile && (
+            <button 
+              className={`header-button translation-btn ${isTranslationActive ? 'active' : ''}`}
+              onClick={toggle}
+              title="Toggle Translation Mode"
+            >
+              🌐 Translation {isTranslationActive ? 'ON' : 'OFF'}
+            </button>
+          )}
+          {isTranslationActive && (
+            <select 
+              className="lang-selector"
+              value={targetLang}
+              onChange={(e) => setLanguages('en', e.target.value as Lang)}
+              title="Select target language"
+            >
+              <option value="zh">EN → CN</option>
+              <option value="en">CN → EN</option>
+            </select>
           )}
           <button className="header-button" onClick={handleOpenFile} title="Open File">
             📂
