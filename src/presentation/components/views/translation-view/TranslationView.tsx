@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useTranslationStore } from '../../../../application/store/translation-store'
 import { useFileStore } from '../../../../application/store/file-store'
+import PDFViewer from '../file-view/PDFViewer'
 import './TranslationView.css'
 
 function TranslationView() {
@@ -34,6 +35,18 @@ function TranslationView() {
       }
     }
   }, [scrollPercent])
+
+  // Render translated PDF using the same PDFViewer component
+  const renderTranslatedPDF = () => {
+    if (!translatedPdfPath) return null
+    
+    return (
+      <PDFViewer 
+        path={translatedPdfPath}
+        initialPage={1}
+      />
+    )
+  }
   
   if (!isActive) {
     return null
@@ -69,11 +82,7 @@ function TranslationView() {
         )}
         
         {translatedPdfPath && (
-          <iframe 
-            src={`asset://localhost/${translatedPdfPath.replace(/\\/g, '/')}`}
-            className="translation-pdf"
-            title="Translated PDF"
-          />
+          renderTranslatedPDF()
         )}
       </div>
     </div>
