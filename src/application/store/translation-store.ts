@@ -11,6 +11,10 @@ interface TranslationState {
   currentDocPath: string | null;
   translatedPdfPath: string | null;
   scrollPercent: number;
+  currentPage: number;
+  totalPages: number;
+  scale: number;
+  pageMode: 'single' | 'double';
   isTranslating: boolean;
   error: string | null;
 
@@ -19,6 +23,10 @@ interface TranslationState {
   setLanguages: (source: Lang, target: Lang) => void;
   setCurrentDocPath: (path: string | null) => void;
   setScrollPercent: (percent: number) => void;
+  setCurrentPage: (page: number) => void;
+  setTotalPages: (total: number) => void;
+  setScale: (scale: number) => void;
+  setPageMode: (mode: 'single' | 'double') => void;
   translatePage: (pageNum: number) => Promise<string | null>;
   translateAndPrefetch: () => Promise<void>;
   getTranslatedPath: () => string | null;
@@ -32,6 +40,10 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
   currentDocPath: null,
   translatedPdfPath: null,
   scrollPercent: 0,
+  currentPage: 1,
+  totalPages: 1,
+  scale: 1.2,
+  pageMode: 'single',
   isTranslating: false,
   error: null,
 
@@ -77,6 +89,22 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
 
   setScrollPercent: (percent: number) => {
     set({ scrollPercent: percent });
+  },
+
+  setCurrentPage: (page: number) => {
+    set({ currentPage: page });
+  },
+
+  setTotalPages: (total: number) => {
+    set({ totalPages: total });
+  },
+
+  setScale: (scale: number) => {
+    set({ scale });
+  },
+
+  setPageMode: (mode: 'single' | 'double') => {
+    set({ pageMode: mode });
   },
 
   translatePage: async (_pageNum: number): Promise<string | null> => {

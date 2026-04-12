@@ -97,6 +97,55 @@ function PDFViewer({ path, fileData, initialPage = 1, isTranslationView = false 
     return null
   }, [currentPage, totalPages, pageMode])
 
+  // Sync page changes to translation store (from original to translation)
+  useEffect(() => {
+    if (!isTranslationView && translationStore.isActive) {
+      translationStore.setCurrentPage(currentPage)
+    }
+  }, [currentPage, isTranslationView, translationStore.isActive])
+
+  // Sync total pages to translation store
+  useEffect(() => {
+    if (!isTranslationView && translationStore.isActive && totalPages > 0) {
+      translationStore.setTotalPages(totalPages)
+    }
+  }, [totalPages, isTranslationView, translationStore.isActive])
+
+  // Sync scale changes to translation store
+  useEffect(() => {
+    if (!isTranslationView && translationStore.isActive) {
+      translationStore.setScale(scale)
+    }
+  }, [scale, isTranslationView, translationStore.isActive])
+
+  // Sync page mode changes to translation store
+  useEffect(() => {
+    if (!isTranslationView && translationStore.isActive) {
+      translationStore.setPageMode(pageMode)
+    }
+  }, [pageMode, isTranslationView, translationStore.isActive])
+
+  // Listen for page changes from translation store (translation to original)
+  useEffect(() => {
+    if (isTranslationView && translationStore.isActive && translationStore.currentPage !== currentPage) {
+      setCurrentPageState(translationStore.currentPage)
+    }
+  }, [translationStore.currentPage, isTranslationView, translationStore.isActive])
+
+  // Listen for scale changes from translation store
+  useEffect(() => {
+    if (isTranslationView && translationStore.isActive && translationStore.scale !== scale) {
+      setScale(translationStore.scale)
+    }
+  }, [translationStore.scale, isTranslationView, translationStore.isActive])
+
+  // Listen for page mode changes from translation store
+  useEffect(() => {
+    if (isTranslationView && translationStore.isActive && translationStore.pageMode !== pageMode) {
+      setPageModeState(translationStore.pageMode)
+    }
+  }, [translationStore.pageMode, isTranslationView, translationStore.isActive])
+
   const renderPage = useCallback(async (pageNum: number, canvas: HTMLCanvasElement | null) => {
     if (!pdf || !canvas) return
 
