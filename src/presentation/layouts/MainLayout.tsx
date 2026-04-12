@@ -284,15 +284,16 @@ function MainLayout() {
   }, [isHydrated, panelSizesRestored, isTranslationActive])
   
   // Restore translation state from session after hydration
+  // Only restore AFTER file is loaded to ensure currentFile exists
   useEffect(() => {
-    if (isHydrated && session.translationActive) {
+    if (isHydrated && session.translationActive && currentFile) {
       console.log('[MainLayout] Restoring translation state from session')
       // Restore translation languages
       setLanguages(session.translationSourceLang, session.translationTargetLang)
       // Set translation as active using setIsActive
       setIsActive(true)
     }
-  }, [isHydrated, session.translationActive])
+  }, [isHydrated, session.translationActive, currentFile])
   
   // Save translation state to session when it changes
   useEffect(() => {
