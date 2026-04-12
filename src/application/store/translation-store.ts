@@ -9,12 +9,13 @@ interface TranslationState {
   sourceLang: Lang;
   targetLang: Lang;
   currentDocPath: string | null;
-  translatedPdfPath: string | null;  // Path to the full translated PDF
+  translatedPdfPath: string | null;
   scrollPercent: number;
   isTranslating: boolean;
   error: string | null;
 
   toggle: () => void;
+  setIsActive: (active: boolean) => void;
   setLanguages: (source: Lang, target: Lang) => void;
   setCurrentDocPath: (path: string | null) => void;
   setScrollPercent: (percent: number) => void;
@@ -50,6 +51,10 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
     } else {
       set({ isActive: false });
     }
+  },
+
+  setIsActive: (active: boolean) => {
+    set({ isActive: active });
   },
 
   setLanguages: (source: Lang, target: Lang) => {

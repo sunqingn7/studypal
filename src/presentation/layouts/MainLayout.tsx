@@ -27,7 +27,7 @@ function MainLayout() {
   const { session, setPanelSize, setTheme: setSessionTheme, addToFileHistory, setTranslationState } = useSessionStore()
   const { updateGlobal } = useSettingsStore()
   const { isActive: isClassroomActive, previousState } = useClassroomStore()
-  const { isActive: isTranslationActive, sourceLang: translationSourceLang, targetLang: translationTargetLang, setLanguages } = useTranslationStore()
+  const { isActive: isTranslationActive, sourceLang: translationSourceLang, targetLang: translationTargetLang, setLanguages, setIsActive } = useTranslationStore()
   const [showFileBrowser, setShowFileBrowser] = useState(session.showFileBrowser)
   const [hasFileBrowser, setHasFileBrowser] = useState(false)
   const [isHydrated, setIsHydrated] = useState(false)
@@ -275,8 +275,8 @@ function MainLayout() {
       console.log('[MainLayout] Restoring translation state from session')
       // Restore translation languages
       setLanguages(session.translationSourceLang, session.translationTargetLang)
-      // Set translation as active (this will trigger the translation view)
-      useTranslationStore.getState().toggle()
+      // Set translation as active using setIsActive
+      setIsActive(true)
     }
   }, [isHydrated, session.translationActive])
   
