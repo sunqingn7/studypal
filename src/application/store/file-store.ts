@@ -155,7 +155,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
       }
     },
 
-  loadDocumentState: async (documentId, noteStore, aiChatStore, sessionStore?: any) => {
+  loadDocumentState: async (documentId, noteStore, aiChatStore, sessionStore?: any): Promise<void> => {
     if (!documentId) return
 
     try {

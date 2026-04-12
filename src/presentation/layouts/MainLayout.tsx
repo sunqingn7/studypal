@@ -53,9 +53,12 @@ function MainLayout() {
         // Use Tauri's onCloseRequested to properly handle async save
         const unlisten = await appWindow.onCloseRequested(async (_event) => {
           console.log('[MainLayout] Window close requested, saving state...');
-          const { currentFile, saveCurrentDocumentState } = useFileStore.getState();
+          const { currentFile, saveCurrentDocumentState, saveSystemState } = useFileStore.getState();
           if (currentFile) {
             await saveCurrentDocumentState(useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState());
+          } else {
+            // No file open - save system state (chat without document)
+            await saveSystemState(useNoteStore.getState(), useAIChatStore.getState());
           }
 
           // Session is auto-saved by zustand persist, no manual save needed
@@ -73,11 +76,12 @@ function MainLayout() {
     
     // Also add beforeunload as fallback (won't wait for async but better than nothing)
     const handleBeforeUnload = () => {
-      const { currentFile, saveCurrentDocumentState } = useFileStore.getState();
+      const { currentFile, saveCurrentDocumentState, saveSystemState } = useFileStore.getState();
       if (currentFile) {
         saveCurrentDocumentState(useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState());
+      } else {
+        saveSystemState(useNoteStore.getState(), useAIChatStore.getState());
       }
-      // Session is auto-saved by zustand persist, no manual save needed
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -177,8 +181,18 @@ function MainLayout() {
           setCurrentFile(fileData)
 
           // Load document-bound notes and chat
-          const { loadDocumentState } = useFileStore.getState()
-          loadDocumentState(fileData.path, useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState())
+          const { loadDocumentState, loadSystemState } = useFileStore.getState()
+          try {
+            loadDocumentState(fileData.path, useNoteStore.getState(), useAIChatStore.getState(), useSessionStore.getState())
+          } catch (err) {
+            console.log('[MainLayout] Failed to load document state, loading system state:', err)
+            loadSystemState(useNoteStore.getState(), useAIChatStore.getState())
+          }
+        } else {
+          // No previous file - load system state (chat without document)
+          console.log('[MainLayout] No previous file, loading system state')
+          const { loadSystemState } = useFileStore.getState()
+          loadSystemState(useNoteStore.getState(), useAIChatStore.getState())
         }
 
     // AI config is now loaded via initializeSession() from session-manager (Rust backend)
