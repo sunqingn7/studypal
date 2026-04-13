@@ -11,13 +11,26 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+
+.file-view .header-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .file-view .file-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: calc(100% - 40px);
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 50%;
 }
 
 .file-view .header-button {
@@ -25,10 +38,12 @@
   border: none;
   cursor: pointer;
   font-size: 12px;
-  padding: 4px 8px;
+  padding: 4px 6px;
   border-radius: 4px;
   transition: background-color 0.2s;
   color: var(--text-primary);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .file-view .header-button:hover {
@@ -48,11 +63,12 @@
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: 4px;
-  padding: 4px 8px;
+  padding: 4px 6px;
   font-size: 12px;
   color: var(--text-primary);
   cursor: pointer;
-  margin-left: 4px;
+  flex-shrink: 0;
+  min-width: 0;
 }
 
 .file-view .lang-selector:hover {

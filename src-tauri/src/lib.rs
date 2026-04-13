@@ -9,6 +9,30 @@ mod tts;
 mod web_search;
 mod translation;
 
+/// Expand a path that may contain ~ to the full home directory path
+#[tauri::command]
+fn expand_path(path: String) -> Result<String, String> {
+    if path.starts_with("~/") {
+        let home = dirs::home_dir()
+            .ok_or_else(|| "Could not determine home directory".to_string())?;
+        let expanded = home.join(&path[2..]);
+        return Ok(expanded.to_string_lossy().to_string());
+    } else if path.starts_with("~") {
+        let home = dirs::home_dir()
+            .ok_or_else(|| "Could not determine home directory".to_string())?;
+        let expanded = home.join(&path[1..]);
+        return Ok(expanded.to_string_lossy().to_string());
+    }
+    Ok(path)
+}
+
+/// Check if a file or directory exists
+#[tauri::command]
+fn check_path_exists(path: String) -> Result<bool, String> {
+    let exists = Path::new(&path).exists();
+    Ok(exists)
+}
+
 use tts::{EdgeTTS, QwenTTS, TTSRequest, TTSResponse};
 use web_search::SearchParams;
 use translation::{translate_document, clear_translation_cache};
@@ -377,6 +401,7 @@ async fn chat_with_tools(
 
     match provider.as_str() {
         "anthropic" => chat_with_tools_anthropic(&client, &request).await,
+        "gemini" => chat_with_tools_gemini(&client, &request).await,
         "openai" | "vllm" | "ollama" | "nvidia" | "openrouter" => {
             chat_with_tools_openai_compatible(&client, &request).await
         }
@@ -450,8 +475,8 @@ async fn chat_with_tools_openai_compatible(
     // Extract content and tool calls from response
     let mut output = serde_json::Map::new();
     
-    if let Some(Choice) = result.get("choices").and_then(|c| c.as_array()) {
-        if let Some(first_choice) = Choice.first() {
+    if let Some(choices) = result.get("choices").and_then(|c| c.as_array()) {
+        if let Some(first_choice) = choices.first() {
             if let Some(message) = first_choice.get("message") {
                 if let Some(content) = message.get("content").and_then(|c| c.as_str()) {
                     output.insert("content".to_string(), serde_json::json!(content));
@@ -568,6 +593,139 @@ async fn chat_with_tools_anthropic(
     Ok(serde_json::Value::Object(output))
 }
 
+async fn chat_with_tools_gemini(
+    client: &reqwest::Client,
+    request: &ProviderChatRequest,
+) -> Result<serde_json::Value, String> {
+    // Gemini uses OpenAI-compatible format for tool calling via the Gemini API
+    let url = format!("{}/models/{}:generateContent", request.endpoint, request.model);
+    println!("[RUST] Gemini tool calling URL: {}", url);
+
+    // Convert messages to Gemini format
+    let mut contents: Vec<serde_json::Value> = vec![];
+    let mut system_message: Option<String> = None;
+
+    for msg in &request.messages {
+        if msg.role == "system" {
+            system_message = Some(msg.content.clone());
+        } else {
+            let role = if msg.role == "assistant" { "model" } else { "user" };
+            contents.push(serde_json::json!({
+                "role": role,
+                "parts": [{ "text": msg.content }]
+            }));
+        }
+    }
+
+    let mut payload = serde_json::Map::new();
+    payload.insert("contents".to_string(), serde_json::json!(contents));
+
+    // Add tools if provided
+    if let Some(tools) = &request.tools {
+        let mut gemini_tools: Vec<serde_json::Value> = vec![];
+        for tool in tools {
+            if let Some(func) = tool.get("function") {
+                gemini_tools.push(serde_json::json!({
+                    "name": func.get("name").and_then(|n| n.as_str()).unwrap_or(""),
+                    "description": func.get("description").and_then(|d| d.as_str()).unwrap_or(""),
+                    "parameters": func.get("parameters").unwrap_or(&serde_json::json!({}))
+                }));
+            }
+        }
+        if !gemini_tools.is_empty() {
+            payload.insert("tools".to_string(), serde_json::json!([{
+                "function_declarations": gemini_tools
+            }]));
+        }
+    }
+
+    // Generation config
+    let mut generation_config = serde_json::Map::new();
+    generation_config.insert("temperature".to_string(), serde_json::json!(request.temperature.unwrap_or(0.7)));
+    generation_config.insert("maxOutputTokens".to_string(), serde_json::json!(request.max_tokens.unwrap_or(2048)));
+    generation_config.insert("topP".to_string(), serde_json::json!(request.top_p.unwrap_or(0.9)));
+    generation_config.insert("topK".to_string(), serde_json::json!(40));
+    payload.insert("generationConfig".to_string(), serde_json::json!(generation_config));
+
+    // Add system instruction if present
+    if let Some(system) = system_message {
+        payload.insert("systemInstruction".to_string(), serde_json::json!({
+            "parts": [{ "text": system }]
+        }));
+    }
+
+    let mut request_builder = client
+        .post(&url)
+        .header("Content-Type", "application/json");
+
+    // Add API key
+    if let Some(api_key) = &request.api_key {
+        request_builder = request_builder.header("x-goog-api-key", api_key);
+    }
+
+    let response = request_builder
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_default();
+        println!("[RUST] Gemini HTTP error: {} - {}", status, error_text);
+        return Err(format!("Gemini HTTP error: {} - {}", status, error_text));
+    }
+
+    let result: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+
+    // Extract content and tool calls from response
+    let mut output = serde_json::Map::new();
+
+    if let Some(candidates) = result.get("candidates").and_then(|c| c.as_array()) {
+        if let Some(first_candidate) = candidates.first() {
+            if let Some(content) = first_candidate.get("content") {
+                if let Some(parts) = content.get("parts").and_then(|p| p.as_array()) {
+                    let mut content_parts: Vec<String> = vec![];
+                    let mut tool_calls: Vec<serde_json::Value> = vec![];
+
+                    for part in parts {
+                        // Check for text content
+                        if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
+                            content_parts.push(text.to_string());
+                        }
+
+                        // Check for function calls (tool calls)
+                        if let Some(function_call) = part.get("functionCall") {
+                            let name = function_call.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                            let args = function_call.get("args").cloned().unwrap_or(serde_json::json!({}));
+
+                            let tool_call = serde_json::json!({
+                                "id": format!("call_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()),
+                                "type": "function",
+                                "function": {
+                                    "name": name,
+                                    "arguments": args.to_string()
+                                }
+                            });
+                            tool_calls.push(tool_call);
+                        }
+                    }
+
+                    if !content_parts.is_empty() {
+                        output.insert("content".to_string(), serde_json::json!(content_parts.join("\n")));
+                    }
+
+                    if !tool_calls.is_empty() {
+                        output.insert("tool_calls".to_string(), serde_json::json!(tool_calls));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(serde_json::Value::Object(output))
+}
+
 #[tauri::command]
 async fn stream_chat_with_tools(
     app_handle: tauri::AppHandle,
@@ -586,6 +744,7 @@ async fn stream_chat_with_tools(
 
     let result = match provider.as_str() {
         "anthropic" => stream_chat_with_tools_anthropic(&app_handle, &client, &request, &stream_event).await,
+        "gemini" => stream_chat_with_tools_gemini(&app_handle, &client, &request, &stream_event).await,
         "openai" | "vllm" | "ollama" | "nvidia" | "openrouter" => {
             stream_chat_with_tools_openai_compatible(&app_handle, &client, &request, &stream_event).await
         }
@@ -830,6 +989,165 @@ async fn stream_chat_with_tools_anthropic(
             Err(e) => {
                 println!("[RUST] Anthropic stream error: {}", e);
                 break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn stream_chat_with_tools_gemini(
+    app_handle: &tauri::AppHandle,
+    client: &reqwest::Client,
+    request: &ProviderChatRequest,
+    stream_event: &str,
+) -> Result<(), String> {
+    // Gemini streaming endpoint for tool calling
+    let url = format!("{}/models/{}:streamGenerateContent?alt=sse", request.endpoint, request.model);
+    println!("[RUST] Gemini streaming tool calling URL: {}", url);
+
+    // Convert messages to Gemini format
+    let mut contents: Vec<serde_json::Value> = vec![];
+    let mut system_message: Option<String> = None;
+
+    for msg in &request.messages {
+        if msg.role == "system" {
+            system_message = Some(msg.content.clone());
+        } else {
+            let role = if msg.role == "assistant" { "model" } else { "user" };
+            contents.push(serde_json::json!({
+                "role": role,
+                "parts": [{ "text": msg.content }]
+            }));
+        }
+    }
+
+    let mut payload = serde_json::Map::new();
+    payload.insert("contents".to_string(), serde_json::json!(contents));
+
+    // Add tools if provided
+    if let Some(tools) = &request.tools {
+        let mut gemini_tools: Vec<serde_json::Value> = vec![];
+        for tool in tools {
+            if let Some(func) = tool.get("function") {
+                gemini_tools.push(serde_json::json!({
+                    "name": func.get("name").and_then(|n| n.as_str()).unwrap_or(""),
+                    "description": func.get("description").and_then(|d| d.as_str()).unwrap_or(""),
+                    "parameters": func.get("parameters").unwrap_or(&serde_json::json!({}))
+                }));
+            }
+        }
+        if !gemini_tools.is_empty() {
+            payload.insert("tools".to_string(), serde_json::json!([{
+                "function_declarations": gemini_tools
+            }]));
+        }
+    }
+
+    // Generation config
+    let mut generation_config = serde_json::Map::new();
+    generation_config.insert("temperature".to_string(), serde_json::json!(request.temperature.unwrap_or(0.7)));
+    generation_config.insert("maxOutputTokens".to_string(), serde_json::json!(request.max_tokens.unwrap_or(2048)));
+    generation_config.insert("topP".to_string(), serde_json::json!(request.top_p.unwrap_or(0.9)));
+    generation_config.insert("topK".to_string(), serde_json::json!(40));
+    payload.insert("generationConfig".to_string(), serde_json::json!(generation_config));
+
+    // Add system instruction if present
+    if let Some(system) = system_message {
+        payload.insert("systemInstruction".to_string(), serde_json::json!({
+            "parts": [{ "text": system }]
+        }));
+    }
+
+    let mut request_builder = client
+        .post(&url)
+        .header("Content-Type", "application/json");
+
+    // Add API key
+    if let Some(api_key) = &request.api_key {
+        request_builder = request_builder.header("x-goog-api-key", api_key);
+    }
+
+    let response = request_builder
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(format!("Gemini HTTP error: {} - {}", status, error_text));
+    }
+
+    let mut buffer = String::new();
+    let mut stream = response.bytes_stream();
+
+    while let Some(item) = stream.next().await {
+        match item {
+            Ok(bytes) => {
+                let text = String::from_utf8_lossy(&bytes);
+                buffer.push_str(&text);
+
+                // Process complete SSE lines
+                while let Some(pos) = buffer.find('\n') {
+                    let line = buffer[..pos].to_string();
+                    buffer = buffer[pos + 1..].to_string();
+
+                    if line.starts_with("data: ") {
+                        let data = &line[6..];
+
+                        // Try to parse the JSON
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                            // Check for candidates
+                            if let Some(candidates) = json.get("candidates").and_then(|c| c.as_array()) {
+                                if let Some(first) = candidates.first() {
+                                    if let Some(content) = first.get("content") {
+                                        if let Some(parts) = content.get("parts").and_then(|p| p.as_array()) {
+                                            for part in parts {
+                                                // Text content
+                                                if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
+                                                    let _ = app_handle.emit(stream_event, StreamChunk {
+                                                        content: text.to_string(),
+                                                        thinking: None,
+                                                        done: false,
+                                                    });
+                                                }
+
+                                                // Function call (tool call)
+                                                if let Some(function_call) = part.get("functionCall") {
+                                                    let tool_call_json = serde_json::json!({
+                                                        "type": "tool_call",
+                                                        "data": function_call
+                                                    });
+                                                    let _ = app_handle.emit(stream_event, StreamChunk {
+                                                        content: String::new(),
+                                                        thinking: Some(tool_call_json.to_string()),
+                                                        done: false,
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Check for done
+                            if let Some(finish_reason) = json.get("candidates")
+                                .and_then(|c| c.as_array())
+                                .and_then(|c| c.first())
+                                .and_then(|c| c.get("finishReason"))
+                            {
+                                if !finish_reason.is_null() {
+                                    return Ok(());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                return Err(format!("Gemini stream error: {}", e));
             }
         }
     }
@@ -2400,31 +2718,33 @@ pub fn run() {
         .level(log::LevelFilter::Info)
         .build(),
     )
-    .invoke_handler(tauri::generate_handler![
-      fetch_web_content,
-      search_web,
-      download_and_open_paper,
-      chat_with_ai,
-            chat_with_provider,
-            stream_chat_with_provider,
-            chat_with_tools,
-            stream_chat_with_tools,
-            fetch_models,
-            test_invoke,
-            extract_pdf_text,
-            extract_epub_text,
-            list_directory,
-            get_parent_directory,
-            get_file_info,
-            open_file_from_browser,
-            read_file,
-            tts_edge_voices,
-            tts_edge_synth,
-            tts_qwen_health,
-            tts_qwen_voices,
-            tts_qwen_synth,
-            translate_document,
-            clear_translation_cache,
+      .invoke_handler(tauri::generate_handler![
+        fetch_web_content,
+        search_web,
+        download_and_open_paper,
+        chat_with_ai,
+        chat_with_provider,
+        stream_chat_with_provider,
+        chat_with_tools,
+        stream_chat_with_tools,
+        fetch_models,
+        test_invoke,
+        extract_pdf_text,
+        extract_epub_text,
+        list_directory,
+        get_parent_directory,
+        get_file_info,
+        open_file_from_browser,
+        read_file,
+        tts_edge_voices,
+        tts_edge_synth,
+        tts_qwen_health,
+        tts_qwen_voices,
+        tts_qwen_synth,
+        translate_document,
+        clear_translation_cache,
+        expand_path,
+        check_path_exists,
         session::load_session,
         session::save_session,
         session::save_chats,

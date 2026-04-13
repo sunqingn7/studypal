@@ -70,20 +70,31 @@ async function detectVenv(): Promise<string | null> {
     '../.venv',
     '../venv',
   ];
-  
-  // Also check home directory paths
+
+  // Check common paths first (relative to current directory)
+  for (const path of commonPaths) {
+    const activatePath = `${path}/bin/activate`;
+    try {
+      const exists = await invoke<boolean>('check_path_exists', { path: activatePath });
+      if (exists) {
+        return path;
+      }
+    } catch {
+      // Continue checking other paths
+    }
+  }
+
+  // Check home directory paths using Rust backend
   const homePaths = [
     '~/.venv',
     '~/venv',
   ];
-  
-  const pathsToCheck = [...commonPaths, ...homePaths];
-  
-  for (const path of pathsToCheck) {
-    const expanded = path.replace('~', process.env.HOME || '');
-    const activatePath = `${expanded}/bin/activate`;
-    
+
+  for (const path of homePaths) {
     try {
+      // Use Rust backend to expand the path
+      const expanded = await invoke<string>('expand_path', { path });
+      const activatePath = `${expanded}/bin/activate`;
       const exists = await invoke<boolean>('check_path_exists', { path: activatePath });
       if (exists) {
         return expanded;
@@ -92,7 +103,7 @@ async function detectVenv(): Promise<string | null> {
       // Continue checking other paths
     }
   }
-  
+
   return null;
 }
 

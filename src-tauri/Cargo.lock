@@ -3855,6 +3855,7 @@ dependencies = [
  "futures",
  "lazy_static",
  "log",
+ "once_cell",
  "reqwest 0.12.28",
  "roxmltree",
  "rusqlite",
