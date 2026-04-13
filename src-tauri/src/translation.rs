@@ -268,18 +268,19 @@ set -e
 
 VENV_PATH="{venv_path}"
 if [ -n "$VENV_PATH" ] && [ -f "$VENV_PATH/bin/activate" ]; then
-    source "$VENV_PATH/bin/activate"
+  source "$VENV_PATH/bin/activate"
 fi
 
 {env_exports}
 
-pdf2zh "{input_path}" \
-    -li "{source_lang}" \
-    -lo "{target_lang}" \
-    -s "{service}" \
-    -t {threads} \
-    -o "{output_dir}" \
-    {prompt_arg}
+# Use exec to replace bash with pdf2zh so killing this process kills pdf2zh directly
+exec pdf2zh "{input_path}" \
+  -li "{source_lang}" \
+  -lo "{target_lang}" \
+  -s "{service}" \
+  -t {threads} \
+  -o "{output_dir}" \
+  {prompt_arg}
 "#,
         venv_path = venv_path,
         env_exports = env_exports,
@@ -604,17 +605,56 @@ pub async fn stop_translation() -> Result<bool, String> {
                 .arg("-").arg(pid.to_string())  // Negative PID kills process group
                 .output();
             
-            // Also try to kill any lingering pdf2zh or python processes
-            let _ = Command::new("pkill")
-                .arg("-9")
-                .arg("-f")
-                .arg("pdf2zh")
+            // Wait a moment for processes to die
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            
+            // Find and kill any child processes of the main PID
+            let pgrep_output = Command::new("pgrep")
+                .arg("-P")
+                .arg(pid.to_string())
                 .output();
             
+            if let Ok(result) = pgrep_output {
+                let child_pids = String::from_utf8_lossy(&result.stdout);
+                for child_pid in child_pids.lines() {
+                    if let Ok(_cpid) = child_pid.parse::<u32>() {
+                        let _ = Command::new("kill")
+                            .arg("-9")
+                            .arg(child_pid)
+                            .output();
+                        log::info!("[stop_translation] Killed child process: {}", child_pid);
+                    }
+                }
+            }
+            
+            // Kill any process that has the parent PID in its process tree
+            // This catches processes started by the bash script
+            let _ = Command::new("sh")
+                .arg("-c")
+                .arg(format!(r#"pgrep -f "pdf2zh" | while read p; do if ps -p {} -o pid= > /dev/null 2>&1 || ps -p $p -o ppid= | grep -q "{}"; then kill -9 $p 2>/dev/null; fi; done"#, pid, pid))
+                .output();
+            
+            // Also try to kill any lingering pdf2zh or python processes
+            // Try multiple patterns to catch different ways the process might appear
+            for pattern in &["pdf2zh", "pdf2zh.py", "python.*pdf2zh"] {
+                let _ = Command::new("pkill")
+                    .arg("-9")
+                    .arg("-f")
+                    .arg(pattern)
+                    .output();
+            }
+            
+            // Also kill any python processes that might be running the translation
             let _ = Command::new("pkill")
                 .arg("-9")
                 .arg("-f")
-                .arg("python.*pdf2zh")
+                .arg("python.*translate")
+                .output();
+            
+            // Final cleanup: kill any process that has the script file open
+            let _ = Command::new("sh")
+                .arg("-c")
+                .arg(r#"lsof +D /tmp | grep studypal_translate | awk '{print $2}' | xargs -r kill -9 2>/dev/null"#)
                 .output();
             
             log::info!("[stop_translation] Translation process and children killed");
