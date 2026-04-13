@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { translateDocument, forceRetranslate as forceRetranslateService } from '../services/translation-service';
+import { translateDocument, forceRetranslate as forceRetranslateService, stopTranslation as stopTranslationService } from '../services/translation-service';
 import { useFileStore } from './file-store';
 
 export type Lang = 'en' | 'zh';
@@ -190,15 +190,20 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
   },
 
   stopTranslation: async (): Promise<boolean> => {
-    const state = get();
+    const state = get()
     if (!state.isTranslating || !state.canStop) {
-      return false;
+      return false
     }
 
-    // Note: Stop translation is not yet implemented in the backend
-    // This is a placeholder that returns false
-    console.log('[TranslationStore] Stop translation not implemented');
-    return false;
+    try {
+      console.log('[TranslationStore] Calling stop translation')
+      const result = await stopTranslationService()
+      set({ isTranslating: false, canStop: false })
+      return result
+    } catch (error) {
+      console.error('[TranslationStore] Stop translation error:', error)
+      return false
+    }
   },
 
   forceRetranslate: async () => {

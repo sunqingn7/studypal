@@ -35,7 +35,7 @@ fn check_path_exists(path: String) -> Result<bool, String> {
 
 use tts::{EdgeTTS, QwenTTS, TTSRequest, TTSResponse};
 use web_search::SearchParams;
-use translation::{translate_document, clear_translation_cache};
+use translation::{translate_document, clear_translation_cache, stop_translation};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ChatMessage {
@@ -2743,6 +2743,7 @@ pub fn run() {
         tts_qwen_synth,
         translate_document,
         clear_translation_cache,
+        stop_translation,
         expand_path,
         check_path_exists,
         session::load_session,

@@ -498,12 +498,15 @@ function MainLayout() {
             >
               <TranslationView />
             </Panel>
-          </>
-        )}
+        </>
+      )}
 
-        {/* Right Panel: AI + Notes (vertical) */}
-        <Panel
-          id="right"
+      {/* Separator between Translation and Right Panel when translation is active */}
+      {isTranslationActive && <Separator className="panel-resize-handle" />}
+
+      {/* Right Panel: AI + Notes (vertical) */}
+      <Panel
+        id="right"
           defaultSize={isTranslationActive ? (session.panels.ai + session.panels.note) / 2 : session.panels.ai + session.panels.note}
           minSize={20}
         >

@@ -2,6 +2,14 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::fs;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+// Global state to track the running translation process ID
+use lazy_static::lazy_static;
+lazy_static! {
+    static ref TRANSLATION_PID: Arc<Mutex<Option<u32>>> = Arc::new(Mutex::new(None));
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TranslateResponse {
@@ -298,56 +306,98 @@ async fn translate_with_llm(
 ) -> Result<TranslateResponse, String> {
     log::info!(
         "[translate_with_llm] Using service: {}, threads: {}",
-        provider.service_name,
-        provider.threads
+        provider.service_name, provider.threads
     );
-    
+
     // Generate script
     let script_path = generate_script(request, provider, output_dir)?;
-    
-    // Execute script
-    let output = if cfg!(windows) {
-        Command::new("cmd")
+
+    // Execute script using tokio::process to allow cancellation
+    let mut child = if cfg!(windows) {
+        tokio::process::Command::new("cmd")
             .arg("/C")
             .arg(&script_path)
-            .output()
+            .spawn()
     } else {
-        Command::new("bash")
+        tokio::process::Command::new("bash")
             .arg(&script_path)
-            .output()
+            .spawn()
     }
     .map_err(|e| format!("Failed to execute script: {}", e))?;
-    
+
+    // Store the process ID globally so it can be stopped
+    {
+        let mut pid_guard = TRANSLATION_PID.lock().await;
+        *pid_guard = child.id();
+    }
+
+    // Wait for completion
+    let result = async {
+        tokio::time::timeout(
+            tokio::time::Duration::from_secs(3600), // 1 hour timeout
+            async {
+                let status = child.wait().await;
+                status
+            }
+        ).await
+    }.await;
+
+    // Clear the process ID
+    {
+        let mut pid_guard = TRANSLATION_PID.lock().await;
+        *pid_guard = None;
+    }
+
     // Cleanup script
     let _ = fs::remove_file(&script_path);
     // Cleanup prompt file if exists
     let prompt_file = std::env::temp_dir().join(format!("studypal_prompt_{}.txt", std::process::id()));
     let _ = fs::remove_file(&prompt_file);
-    
+
     // Check result
-    if output.status.success() {
-        if let Some(translated_path) = find_cached_translation(&request.input_path, Path::new(output_dir))? {
-            log::info!("[translate_with_llm] Translation completed: {}", translated_path);
-            Ok(TranslateResponse {
-                success: true,
-                output_paths: vec![translated_path],
-                error: None,
-            })
-        } else {
+    match result {
+        Ok(Ok(status)) if status.success() => {
+            if let Some(translated_path) = find_cached_translation(&request.input_path, Path::new(output_dir))? {
+                log::info!("[translate_with_llm] Translation completed: {}", translated_path);
+                Ok(TranslateResponse {
+                    success: true,
+                    output_paths: vec![translated_path],
+                    error: None,
+                })
+            } else {
+                Ok(TranslateResponse {
+                    success: false,
+                    output_paths: vec![],
+                    error: Some("Translation completed but output file not found".to_string()),
+                })
+            }
+        }
+        Ok(Ok(status)) => {
+            // Process completed but failed
+            log::error!("[translate_with_llm] Translation failed with exit code: {:?}", status.code());
             Ok(TranslateResponse {
                 success: false,
                 output_paths: vec![],
-                error: Some("Translation completed but output file not found".to_string()),
+                error: Some(format!("Translation failed with exit code: {:?}", status.code())),
             })
         }
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        log::error!("[translate_with_llm] Translation failed: {}", stderr);
-        Ok(TranslateResponse {
-            success: false,
-            output_paths: vec![],
-            error: Some(stderr.to_string()),
-        })
+        Ok(Err(e)) => {
+            log::error!("[translate_with_llm] Failed to wait for process: {}", e);
+            Ok(TranslateResponse {
+                success: false,
+                output_paths: vec![],
+                error: Some(format!("Failed to wait for process: {}", e)),
+            })
+        }
+        Err(_) => {
+            // Timeout
+            log::error!("[translate_with_llm] Translation timed out");
+            Ok(TranslateResponse {
+                success: false,
+                output_paths: vec![],
+                error: Some("Translation timed out (1 hour)".to_string()),
+            })
+        }
     }
 }
 
@@ -357,39 +407,82 @@ async fn translate_with_google(
     output_dir: &str,
 ) -> Result<TranslateResponse, String> {
     log::info!("[translate_with_google] Using Google Translate");
-    
-    let output = Command::new("pdf2zh")
+
+    // Start the translation process
+    let mut child = tokio::process::Command::new("pdf2zh")
         .arg(&request.input_path)
         .arg("-li").arg(&request.source_lang)
         .arg("-lo").arg(&request.target_lang)
         .arg("-s").arg("google")
         .arg("-o").arg(output_dir)
-        .output()
+        .spawn()
         .map_err(|e| format!("Failed to run pdf2zh: {}", e))?;
-    
-    if output.status.success() {
-        if let Some(translated_path) = find_cached_translation(&request.input_path, Path::new(output_dir))? {
-            log::info!("[translate_with_google] Translation completed: {}", translated_path);
-            Ok(TranslateResponse {
-                success: true,
-                output_paths: vec![translated_path],
-                error: None,
-            })
-        } else {
+
+    // Store the process ID globally so it can be stopped
+    {
+        let mut pid_guard = TRANSLATION_PID.lock().await;
+        *pid_guard = child.id();
+    }
+
+    // Wait for completion with timeout
+    let result = async {
+        tokio::time::timeout(
+            tokio::time::Duration::from_secs(3600), // 1 hour timeout
+            async {
+                let status = child.wait().await;
+                status
+            }
+        ).await
+    }.await;
+
+    // Clear the process ID
+    {
+        let mut pid_guard = TRANSLATION_PID.lock().await;
+        *pid_guard = None;
+    }
+
+    // Check result
+    match result {
+        Ok(Ok(status)) if status.success() => {
+            if let Some(translated_path) = find_cached_translation(&request.input_path, Path::new(output_dir))? {
+                log::info!("[translate_with_google] Translation completed: {}", translated_path);
+                Ok(TranslateResponse {
+                    success: true,
+                    output_paths: vec![translated_path],
+                    error: None,
+                })
+            } else {
+                Ok(TranslateResponse {
+                    success: false,
+                    output_paths: vec![],
+                    error: Some("Translation completed but output file not found".to_string()),
+                })
+            }
+        }
+        Ok(Ok(status)) => {
+            log::error!("[translate_with_google] Translation failed with exit code: {:?}", status.code());
             Ok(TranslateResponse {
                 success: false,
                 output_paths: vec![],
-                error: Some("Translation completed but output file not found".to_string()),
+                error: Some(format!("Translation failed with exit code: {:?}", status.code())),
             })
         }
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        log::error!("[translate_with_google] Translation failed: {}", stderr);
-        Ok(TranslateResponse {
-            success: false,
-            output_paths: vec![],
-            error: Some(stderr.to_string()),
-        })
+        Ok(Err(e)) => {
+            log::error!("[translate_with_google] Failed to wait for process: {}", e);
+            Ok(TranslateResponse {
+                success: false,
+                output_paths: vec![],
+                error: Some(format!("Failed to wait for process: {}", e)),
+            })
+        }
+        Err(_) => {
+            log::error!("[translate_with_google] Translation timed out");
+            Ok(TranslateResponse {
+                success: false,
+                output_paths: vec![],
+                error: Some("Translation timed out (1 hour)".to_string()),
+            })
+        }
     }
 }
 
@@ -458,14 +551,66 @@ pub async fn translate_document(
     result
 }
 
-/// Stop running translation (currently a no-op, but can be extended)
+/// Stop running translation
 #[tauri::command]
 pub async fn stop_translation() -> Result<bool, String> {
-    // Note: Since we're using Command::output() which blocks until completion,
-    // we can't easily stop a running translation without async process management.
-    // For now, this returns false indicating stop was not possible.
-    // TODO: Implement async process management with tokio::process for stop support.
-    Ok(false)
+    let mut pid_guard = TRANSLATION_PID.lock().await;
+
+    if let Some(pid) = *pid_guard {
+        log::info!("[stop_translation] Attempting to stop translation process with PID: {}", pid);
+
+        #[cfg(unix)]
+        {
+            // On Unix, try to kill the process using libc::kill
+            use std::process::Command;
+            let output = Command::new("kill")
+                .arg("-TERM")
+                .arg(pid.to_string())
+                .output();
+            
+            match output {
+                Ok(_) => {
+                    log::info!("[stop_translation] Translation process stopped successfully");
+                    *pid_guard = None;
+                    Ok(true)
+                }
+                Err(e) => {
+                    log::error!("[stop_translation] Failed to kill process: {}", e);
+                    // Process might already be dead, clear it anyway
+                    *pid_guard = None;
+                    Ok(false)
+                }
+            }
+        }
+
+        #[cfg(windows)]
+        {
+            // On Windows, use taskkill
+            use std::process::Command;
+            let output = Command::new("taskkill")
+                .arg("/F")
+                .arg("/T")
+                .arg("/PID")
+                .arg(pid.to_string())
+                .output();
+            
+            match output {
+                Ok(_) => {
+                    log::info!("[stop_translation] Translation process stopped successfully");
+                    *pid_guard = None;
+                    Ok(true)
+                }
+                Err(e) => {
+                    log::error!("[stop_translation] Failed to kill process: {}", e);
+                    *pid_guard = None;
+                    Ok(false)
+                }
+            }
+        }
+    } else {
+        log::info!("[stop_translation] No translation process running");
+        Ok(false)
+    }
 }
 
 /// Clear translation cache
