@@ -105,25 +105,38 @@ fn find_cached_translation(
 }
 
 /// Generate environment variable exports for the script
+/// Only exports variables that have values to avoid KeyError in pdf2zh
 fn build_env_exports(provider: &TranslationProviderConfig) -> String {
     match provider.service_name.as_str() {
         "openai" => {
-            format!(
-                r#"export OPENAI_API_KEY="{api_key}"
-export OPENAI_BASE_URL="{base_url}"
+            let mut exports = format!(
+                r#"export OPENAI_BASE_URL="{base_url}"
 export OPENAI_MODEL="{model}""#,
-                api_key = provider.api_key.as_deref().unwrap_or(""),
                 base_url = provider.base_url.as_deref().unwrap_or("https://api.openai.com/v1"),
                 model = provider.model.as_deref().unwrap_or("gpt-4o-mini"),
-            )
+            );
+            // Only export API key if it has a value
+            if let Some(ref api_key) = provider.api_key {
+                if !api_key.is_empty() {
+                    exports.push_str(&format!(r#"
+export OPENAI_API_KEY="{}""#, api_key));
+                }
+            }
+            exports
         }
         "gemini" => {
-            format!(
-                r#"export GEMINI_API_KEY="{api_key}"
-export GEMINI_MODEL="{model}""#,
-                api_key = provider.api_key.as_deref().unwrap_or(""),
+            let mut exports = format!(
+                r#"export GEMINI_MODEL="{model}""#,
                 model = provider.model.as_deref().unwrap_or("gemini-1.5-flash"),
-            )
+            );
+            // Only export API key if it has a value
+            if let Some(ref api_key) = provider.api_key {
+                if !api_key.is_empty() {
+                    exports.push_str(&format!(r#"
+export GEMINI_API_KEY="{}""#, api_key));
+                }
+            }
+            exports
         }
         "ollama" => {
             format!(
@@ -134,14 +147,27 @@ export OLLAMA_MODEL="{model}""#,
             )
         }
         "openailiked" => {
-            format!(
-                r#"export OPENAILIKED_BASE_URL="{base_url}"
-export OPENAILIKED_API_KEY="{api_key}"
-export OPENAILIKED_MODEL="{model}""#,
-                base_url = provider.base_url.as_deref().unwrap_or(""),
-                api_key = provider.api_key.as_deref().unwrap_or(""),
-                model = provider.model.as_deref().unwrap_or(""),
-            )
+            let mut exports = String::new();
+            // Only export variables that have values
+            if let Some(ref base_url) = provider.base_url {
+                if !base_url.is_empty() {
+                    exports.push_str(&format!(r#"export OPENAILIKED_BASE_URL="{}"
+"#, base_url));
+                }
+            }
+            if let Some(ref api_key) = provider.api_key {
+                if !api_key.is_empty() {
+                    exports.push_str(&format!(r#"export OPENAILIKED_API_KEY="{}"
+"#, api_key));
+                }
+            }
+            if let Some(ref model) = provider.model {
+                if !model.is_empty() {
+                    exports.push_str(&format!(r#"export OPENAILIKED_MODEL="{}"
+"#, model));
+                }
+            }
+            exports.trim_end().to_string()
         }
         _ => String::new(),
     }
