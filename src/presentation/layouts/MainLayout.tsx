@@ -486,23 +486,21 @@ function MainLayout() {
           <FileView />
         </Panel>
 
-        {/* Translation Panel - only render when active */}
-        {isTranslationActive && (
-          <>
-            <Separator className="panel-resize-handle" />
-            <Panel
-              id="translation"
-              defaultSize={session.panels.translation || session.panels.file}
-              minSize={20}
-              className="translation-panel"
-            >
-              <TranslationView />
-            </Panel>
+      {/* Translation Panel - only render when active */}
+      {isTranslationActive && (
+        <>
+          <Separator className="panel-resize-handle" />
+          <Panel
+            id="translation"
+            defaultSize={session.panels.translation || session.panels.file}
+            minSize={20}
+            className="translation-panel"
+          >
+            <TranslationView />
+          </Panel>
+          <Separator className="panel-resize-handle" />
         </>
       )}
-
-      {/* Separator between Translation and Right Panel when translation is active */}
-      {isTranslationActive && <Separator className="panel-resize-handle" />}
 
       {/* Right Panel: AI + Notes (vertical) */}
       <Panel
