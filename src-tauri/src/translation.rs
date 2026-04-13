@@ -561,26 +561,39 @@ pub async fn stop_translation() -> Result<bool, String> {
 
         #[cfg(unix)]
         {
-            // On Unix, try to kill the process using libc::kill
+            // On Unix, try to kill the process using kill -9 (SIGKILL) for forceful termination
+            // SIGTERM might be ignored by child processes, SIGKILL cannot be caught or ignored
             use std::process::Command;
-            let output = Command::new("kill")
-                .arg("-TERM")
+            
+            // Kill the main process with SIGKILL
+            let _ = Command::new("kill")
+                .arg("-9")
                 .arg(pid.to_string())
                 .output();
             
-            match output {
-                Ok(_) => {
-                    log::info!("[stop_translation] Translation process stopped successfully");
-                    *pid_guard = None;
-                    Ok(true)
-                }
-                Err(e) => {
-                    log::error!("[stop_translation] Failed to kill process: {}", e);
-                    // Process might already be dead, clear it anyway
-                    *pid_guard = None;
-                    Ok(false)
-                }
-            }
+            // Also kill any child processes (pdf2zh spawns python processes)
+            // Kill all processes in the process group
+            let _ = Command::new("kill")
+                .arg("-9")
+                .arg("-").arg(pid.to_string())  // Negative PID kills process group
+                .output();
+            
+            // Also try to kill any lingering pdf2zh or python processes
+            let _ = Command::new("pkill")
+                .arg("-9")
+                .arg("-f")
+                .arg("pdf2zh")
+                .output();
+            
+            let _ = Command::new("pkill")
+                .arg("-9")
+                .arg("-f")
+                .arg("python.*pdf2zh")
+                .output();
+            
+            log::info!("[stop_translation] Translation process and children killed");
+            *pid_guard = None;
+            Ok(true)
         }
 
         #[cfg(windows)]
