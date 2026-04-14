@@ -350,12 +350,15 @@ async fn translate_with_llm(
             .arg(&script_path)
             .spawn()
     }
-    .map_err(|e| format!("Failed to execute script: {}", e))?;
+        .map_err(|e| format!("Failed to execute script: {}", e))?;
 
     // Store the process ID globally so it can be stopped
-    {
-        let mut pid_guard = TRANSLATION_PID.lock().await;
-        *pid_guard = child.id();
+    if let Some(pid) = child.id() {
+        {
+            let mut pid_guard = TRANSLATION_PID.lock().await;
+            *pid_guard = Some(pid);
+            log::info!("[translate_with_llm] Started translation with PID: {}", pid);
+        }
     }
 
     // Wait for completion
@@ -446,9 +449,12 @@ async fn translate_with_google(
         .map_err(|e| format!("Failed to run pdf2zh: {}", e))?;
 
     // Store the process ID globally so it can be stopped
-    {
-        let mut pid_guard = TRANSLATION_PID.lock().await;
-        *pid_guard = child.id();
+    if let Some(pid) = child.id() {
+        {
+            let mut pid_guard = TRANSLATION_PID.lock().await;
+            *pid_guard = Some(pid);
+            log::info!("[translate_with_google] Started translation with PID: {}", pid);
+        }
     }
 
     // Wait for completion with timeout
@@ -589,75 +595,53 @@ pub async fn stop_translation() -> Result<bool, String> {
         #[cfg(unix)]
         {
             // On Unix, try to kill the process using kill -9 (SIGKILL) for forceful termination
-            // SIGTERM might be ignored by child processes, SIGKILL cannot be caught or ignored
             use std::process::Command;
             
+            log::info!("[stop_translation] Starting kill sequence for PID: {}", pid);
+            
             // Kill the main process with SIGKILL
-            let _ = Command::new("kill")
+            let kill_result = Command::new("kill")
                 .arg("-9")
                 .arg(pid.to_string())
                 .output();
+            log::info!("[stop_translation] kill -9 {} result: {:?}", pid, kill_result);
             
-            // Also kill any child processes (pdf2zh spawns python processes)
             // Kill all processes in the process group
-            let _ = Command::new("kill")
+            let pgrp_result = Command::new("kill")
                 .arg("-9")
-                .arg("-").arg(pid.to_string())  // Negative PID kills process group
+                .arg("-").arg(pid.to_string())
                 .output();
+            log::info!("[stop_translation] kill -9 -{} result: {:?}", pid, pgrp_result);
             
-            // Wait a moment for processes to die
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            // Wait a moment
+            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
             
-            // Find and kill any child processes of the main PID
-            let pgrep_output = Command::new("pgrep")
-                .arg("-P")
-                .arg(pid.to_string())
+            // Use ps to find and kill all python/pdf2zh processes with this PID as ancestor
+            let ps_result = Command::new("sh")
+                .arg("-c")
+                .arg(format!(r#"
+                    # Find all processes that have {} as an ancestor
+                    for p in $(ps ax -o pid,ppid,comm | awk '$2 == {} || $2 == 1 {{print $1}}'); do
+                        kill -9 $p 2>/dev/null && echo "Killed $p"
+                    done
+                    # Also kill any matching python/pdf2zh
+                    pkill -9 -f pdf2zh 2>/dev/null
+                    pkill -9 -f "python.*pdf2zh" 2>/dev/null
+                    pkill -9 -f "Python.*pdf2zh" 2>/dev/null
+                "#, pid, pid))
                 .output();
+            log::info!("[stop_translation] ps/pkill cleanup result: {:?}", ps_result);
             
-            if let Ok(result) = pgrep_output {
-                let child_pids = String::from_utf8_lossy(&result.stdout);
-                for child_pid in child_pids.lines() {
-                    if let Ok(_cpid) = child_pid.parse::<u32>() {
-                        let _ = Command::new("kill")
-                            .arg("-9")
-                            .arg(child_pid)
-                            .output();
-                        log::info!("[stop_translation] Killed child process: {}", child_pid);
-                    }
-                }
+            // Get list of running pdf2zh processes after our kill attempts
+            let check_result = Command::new("sh")
+                .arg("-c")
+                .arg(r#"ps aux | grep -i pdf2zh | grep -v grep || echo "No pdf2zh processes found""#)
+                .output();
+            if let Ok(output) = check_result {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                log::info!("[stop_translation] Remaining pdf2zh processes: {}", stdout);
             }
             
-            // Kill any process that has the parent PID in its process tree
-            // This catches processes started by the bash script
-            let _ = Command::new("sh")
-                .arg("-c")
-                .arg(format!(r#"pgrep -f "pdf2zh" | while read p; do if ps -p {} -o pid= > /dev/null 2>&1 || ps -p $p -o ppid= | grep -q "{}"; then kill -9 $p 2>/dev/null; fi; done"#, pid, pid))
-                .output();
-            
-            // Also try to kill any lingering pdf2zh or python processes
-            // Try multiple patterns to catch different ways the process might appear
-            for pattern in &["pdf2zh", "pdf2zh.py", "python.*pdf2zh"] {
-                let _ = Command::new("pkill")
-                    .arg("-9")
-                    .arg("-f")
-                    .arg(pattern)
-                    .output();
-            }
-            
-            // Also kill any python processes that might be running the translation
-            let _ = Command::new("pkill")
-                .arg("-9")
-                .arg("-f")
-                .arg("python.*translate")
-                .output();
-            
-            // Final cleanup: kill any process that has the script file open
-            let _ = Command::new("sh")
-                .arg("-c")
-                .arg(r#"lsof +D /tmp | grep studypal_translate | awk '{print $2}' | xargs -r kill -9 2>/dev/null"#)
-                .output();
-            
-            log::info!("[stop_translation] Translation process and children killed");
             *pid_guard = None;
             Ok(true)
         }

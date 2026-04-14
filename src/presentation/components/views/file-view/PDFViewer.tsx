@@ -97,12 +97,14 @@ function PDFViewer({ path, fileData, initialPage = 1, isTranslationView = false 
     return null
   }, [currentPage, totalPages, pageMode])
 
-  // Sync page changes to translation store (from original to translation)
+  // Sync page changes TO translation store (from any view to store)
   useEffect(() => {
-    if (!isTranslationView && translationStore.isActive) {
+    if (translationStore.isActive && !isSyncingRef.current) {
+      isSyncingRef.current = true
       translationStore.setCurrentPage(currentPage)
+      setTimeout(() => { isSyncingRef.current = false }, 50)
     }
-  }, [currentPage, isTranslationView, translationStore.isActive])
+  }, [currentPage, translationStore.isActive])
 
   // Sync total pages to translation store
   useEffect(() => {
@@ -125,26 +127,34 @@ function PDFViewer({ path, fileData, initialPage = 1, isTranslationView = false 
     }
   }, [pageMode, isTranslationView, translationStore.isActive])
 
-  // Listen for page changes from translation store (translation to original)
+  // Listen for page changes FROM translation store
+  // This syncs the view when store changes (works for both original and translation views)
   useEffect(() => {
-    if (isTranslationView && translationStore.isActive && translationStore.currentPage !== currentPage) {
+    // Update when store page differs from local page, preventing circular updates
+    if (translationStore.isActive && translationStore.currentPage !== currentPage && !isSyncingRef.current) {
+      isSyncingRef.current = true
       setCurrentPageState(translationStore.currentPage)
+      setTimeout(() => { isSyncingRef.current = false }, 50)
     }
-  }, [translationStore.currentPage, isTranslationView, translationStore.isActive])
+  }, [translationStore.currentPage, translationStore.isActive, currentPage])
 
-  // Listen for scale changes from translation store
+  // Listen for scale changes FROM translation store
   useEffect(() => {
-    if (isTranslationView && translationStore.isActive && translationStore.scale !== scale) {
+    if (translationStore.isActive && translationStore.scale !== scale && !isSyncingRef.current) {
+      isSyncingRef.current = true
       setScale(translationStore.scale)
+      setTimeout(() => { isSyncingRef.current = false }, 50)
     }
-  }, [translationStore.scale, isTranslationView, translationStore.isActive])
+  }, [translationStore.scale, translationStore.isActive, scale])
 
-  // Listen for page mode changes from translation store
+  // Listen for page mode changes FROM translation store
   useEffect(() => {
-    if (isTranslationView && translationStore.isActive && translationStore.pageMode !== pageMode) {
+    if (translationStore.isActive && translationStore.pageMode !== pageMode && !isSyncingRef.current) {
+      isSyncingRef.current = true
       setPageModeState(translationStore.pageMode)
+      setTimeout(() => { isSyncingRef.current = false }, 50)
     }
-  }, [translationStore.pageMode, isTranslationView, translationStore.isActive])
+  }, [translationStore.pageMode, translationStore.isActive, pageMode])
 
   const renderPage = useCallback(async (pageNum: number, canvas: HTMLCanvasElement | null) => {
     if (!pdf || !canvas) return

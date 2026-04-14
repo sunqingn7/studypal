@@ -9,6 +9,7 @@ import { RotateCcw, Square, AlertCircle } from 'lucide-react'
 import './TranslationView.css'
 
 function TranslationView() {
+  const translationStore = useTranslationStore()
   const {
     isActive,
     translatedPdfPath,
@@ -18,7 +19,7 @@ function TranslationView() {
     stopTranslation,
     isTranslating,
     canStop,
-  } = useTranslationStore()
+  } = translationStore
   const currentFile = useFileStore((state) => state.currentFile)
   const hasTranslatedRef = useRef(false)
   const [showErrorModal, setShowErrorModal] = useState(false)
@@ -184,13 +185,13 @@ function TranslationView() {
           </div>
         )}
 
-        {translatedPdfPath && (
-          <PDFViewer
-            path={translatedPdfPath}
-            initialPage={1}
-            isTranslationView={true}
-          />
-        )}
+      {translatedPdfPath && (
+        <PDFViewer
+          path={translatedPdfPath}
+          initialPage={translationStore.currentPage}
+          isTranslationView={true}
+        />
+      )}
       </div>
 
       <TranslationErrorModal
