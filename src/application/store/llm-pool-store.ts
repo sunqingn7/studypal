@@ -55,6 +55,7 @@ export interface LLMPoolState {
   // Pool management
   getHealthyProviders: () => PoolProvider[]
   getAvailableProviders: () => PoolProvider[] // Healthy and not at capacity
+  selectBestHealthyProvider: () => PoolProvider | null // Select best healthy provider based on score
   selectProviderForTask: (task: LLMTask) => PoolProvider | null
   updateProviderStats: (providerId: string, latency: number, success: boolean) => void
 
@@ -165,14 +166,48 @@ export const useLLMPoolStore = create<LLMPoolState>()(
       }))
     },
 
-    getPrimaryProvider: () => {
-      const state = get()
-      // First try to find explicitly set primary provider
-      const primary = state.providers.find((p) => p.isPrimary && p.isEnabled)
-      if (primary) return primary
-      // Otherwise return the first enabled provider (top of the list)
-      return state.providers.find((p) => p.isEnabled)
-    },
+  getPrimaryProvider: () => {
+    const state = get()
+    // First try to find explicitly set primary provider that is healthy
+    const primary = state.providers.find((p) => p.isPrimary && p.isEnabled && p.isHealthy)
+    if (primary) return primary
+
+    // If primary is not healthy, auto-failover to best available provider
+    const bestAvailable = state.selectBestHealthyProvider()
+    if (bestAvailable) {
+      console.log('[LLMPool] Primary provider unhealthy, auto-failover to:', bestAvailable.name)
+      return bestAvailable
+    }
+
+    // Fallback: return first enabled provider even if not healthy (will fail later)
+    return state.providers.find((p) => p.isEnabled)
+  },
+
+  selectBestHealthyProvider: (): PoolProvider | null => {
+    const healthy = get().getHealthyProviders()
+    if (healthy.length === 0) return null
+
+    // Score providers: higher is better
+    // Factors: priority (0-100), latency (lower is better), current tasks (fewer is better)
+    const scored = healthy.map(p => {
+      // Normalize latency: assume max 5000ms, lower is better
+      const latencyScore = Math.max(0, 1 - (p.averageLatency / 5000))
+      // Current tasks: fewer is better, max assumed 5
+      const loadScore = Math.max(0, 1 - (p.currentTasks / 5))
+      // Priority weight
+      const priorityWeight = p.priority / 100
+
+      // Weighted score: priority 40%, latency 35%, load 25%
+      const score = (priorityWeight * 0.4) + (latencyScore * 0.35) + (loadScore * 0.25)
+
+      return { provider: p, score }
+    })
+
+    // Sort by score descending
+    scored.sort((a, b) => b.score - a.score)
+
+    return scored[0]?.provider || null
+  },
 
       submitTask: (task: Omit<LLMTask, 'id' | 'retryCount' | 'createdAt' | 'maxRetries'>) => {
         const id = crypto.randomUUID()

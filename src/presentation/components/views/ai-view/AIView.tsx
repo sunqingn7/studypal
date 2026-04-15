@@ -19,6 +19,7 @@ import { getCurrentPageText, getAllPagesText } from '../../../../infrastructure/
 import { ChatMessage, AIProviderType } from '../../../../domain/models/ai-context'
 import { updateAIConfig, updateProviderConfigs } from '../../../../application/services/session-manager'
 import { getAllMCPTools, executeMCPTool } from '../../../../infrastructure/ai-providers/mcp-utils'
+import { MCPTool } from '../../../../domain/models/plugin'
 import { buildToolPrompt, parseToolCalls } from '../../../../infrastructure/ai-providers/tool-calling'
 import { getProviderColor } from '../../../../application/services/provider-colors'
 import { PERSONA_PROMPTS } from '../../../../domain/models/llm-pool'
@@ -634,16 +635,21 @@ function AIView() {
     setStreaming(true)
     setIsProcessing(true)
 
-    // targetProvider will be assigned below for single provider mode
-    let singleProvider: typeof targetProviders[0] | undefined
+  // targetProvider will be assigned below for single provider mode
+  let singleProvider: typeof targetProviders[0] | undefined
 
-    try {
-      // Build context from current file and notes
-      const context = await buildContext(routing.cleanMessage)
+  // Declare these outside try block for retry access
+  let mcpTools: MCPTool[] = []
+  let messagesWithTools: ChatMessage[] = []
+  let routingCleanMessage = routing.cleanMessage
 
-      // Get available MCP tools
-      const mcpTools = getAllMCPTools()
-      const toolPrompt = buildToolPrompt(mcpTools)
+  try {
+    // Build context from current file and notes
+    const context = await buildContext(routingCleanMessage)
+
+    // Get available MCP tools
+    mcpTools = getAllMCPTools()
+    const toolPrompt = buildToolPrompt(mcpTools)
 
       // Build messages with tool context
       const systemMessage: ChatMessage = {
@@ -1147,6 +1153,117 @@ ${personaPrompt.systemPrompt}`,
       setStreamingThinking('')
     } catch (error) {
       console.error('AI Error:', error)
+
+      // Mark the failed provider as unhealthy
+      const poolStore = useLLMPoolStore.getState()
+      if (singleProvider?.id) {
+        poolStore.setProviderHealth(singleProvider.id, false, undefined,
+          error instanceof Error ? error.message : 'Unknown error'
+        )
+        console.log('[AIView] Marked provider as unhealthy:', singleProvider.name)
+      }
+
+      // Check if we should retry with another provider (auto mode only)
+      if (routing.mode === 'auto') {
+        const healthyProvider = poolStore.getHealthyProviders()[0]
+        if (healthyProvider && healthyProvider.id !== singleProvider?.id) {
+          console.log('[AIView] Retrying with provider:', healthyProvider.name)
+          // Re-try with the healthy provider
+          setStreamingContent('')
+          setStreamingThinking('')
+
+          // Retry with the new provider
+          const retryProvider = healthyProvider
+          const retryProviderConfig = retryProvider.config
+          const retryAIProvider = getProvider(retryProviderConfig.provider)
+
+          let retryContent = ''
+          let retryThinking = ''
+
+          try {
+            // Check capabilities and retry
+            const retrySupportsThinking = 'streamChatWithThinking' in retryAIProvider
+            const retrySupportsToolCalling = 'chatWithTools' in retryAIProvider && retryAIProvider.supportsNativeFunctionCalling?.()
+
+            if (retrySupportsToolCalling && mcpTools.length > 0) {
+              await (retryAIProvider.streamChatWithTools as any)(
+                messagesWithTools,
+                retryProviderConfig,
+                mcpTools,
+                (chunk: string) => {
+                  retryContent += chunk
+                  const displayContent = retryContent.replace(TOOL_CALL_REGEX, '')
+                  setStreamingContent(displayContent)
+                },
+                async (toolCall: { name: string; arguments: string }) => {
+                  try {
+                    const args = JSON.parse(toolCall.arguments)
+                    const result = await executeMCPTool(toolCall.name, args)
+                    messagesWithTools.push({
+                      id: crypto.randomUUID(),
+                      role: 'system',
+                      content: `[Tool: ${toolCall.name}] ${result.success ? JSON.stringify(result.data) : result.error || 'Tool execution failed'}`,
+                      timestamp: Date.now()
+                    })
+                  } catch (err) {
+                    console.error('[AIView] Tool call error:', err)
+                  }
+                }
+              )
+            } else if (retrySupportsThinking) {
+              await retryAIProvider.streamChatWithThinking!(
+                messagesWithTools,
+                retryProviderConfig,
+                (chunk: string) => {
+                  retryContent += chunk
+                  const displayContent = retryContent.replace(TOOL_CALL_REGEX, '')
+                  setStreamingContent(displayContent)
+                },
+                (thinking: string) => {
+                  const filteredThinking = thinking.replace(TOOL_CALL_REGEX, '')
+                  if (filteredThinking) {
+                    retryThinking += filteredThinking
+                    setStreamingThinking(prev => prev + filteredThinking)
+                  }
+                },
+                signal
+              )
+            } else {
+              await retryAIProvider.streamChat(
+                messagesWithTools,
+                retryProviderConfig,
+                (chunk: string) => {
+                  retryContent += chunk
+                  const displayContent = retryContent.replace(TOOL_CALL_REGEX, '')
+                  setStreamingContent(displayContent)
+                },
+                signal
+              )
+            }
+
+            // Add final message with the retry provider
+            const finalRetryContent = retryContent.replace(TOOL_CALL_REGEX, '')
+            addMessage(activeTabId, 'assistant', finalRetryContent, retryThinking || undefined, {
+              providerId: retryProvider.id,
+              nickname: retryProvider.nickname || retryProvider.name,
+            })
+
+            // Update provider stats on success
+            poolStore.updateProviderStats(retryProvider.id, Date.now() - Date.now(), true)
+            return
+
+          } catch (retryError) {
+            console.error('AI Retry Error:', retryError)
+            // Mark retry provider as unhealthy too
+            poolStore.setProviderHealth(retryProvider.id, false, undefined,
+              retryError instanceof Error ? retryError.message : 'Unknown error'
+            )
+            // Fall through to show original error
+          }
+        }
+      }
+
+      // Show error if no retry succeeded or not in auto mode
       addMessage(activeTabId, 'assistant', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`, undefined, {
         providerId: singleProvider?.id || config.provider,
         nickname: singleProvider?.nickname || singleProvider?.name || config.provider,
