@@ -259,32 +259,43 @@ function MainLayout() {
       const timer = setTimeout(() => {
         const state = useSessionStore.getState()
         console.log('[MainLayout] Restoring panel sizes from session:', state.session.panels)
-        
+
         const sidebarSize = state.session.panels.sidebar
         const fileSize = state.session.panels.file
+        const translationSize = state.session.panels.translation
         const aiSize = state.session.panels.ai
         const noteSize = state.session.panels.note
-        
-        // When translation is active, we need to account for it
-        // Otherwise just use original layout
+
+        // Check session store directly for translation state during restore
+        // to avoid race condition with translation store initialization
+        const isTranslationActiveInSession = state.session.translationActive
+
         if (mainGroupRef.current) {
-          const layout = isTranslationActive
-            ? { sidebar: sidebarSize, file: fileSize * 0.5, translation: fileSize * 0.5, right: 100 - sidebarSize - fileSize }
-            : { sidebar: sidebarSize, file: fileSize, right: 100 - sidebarSize - fileSize }
-          
+          let layout: { [panelId: string]: number }
+
+          if (isTranslationActiveInSession && translationSize > 0) {
+            // Translation was active - use saved sizes for file and translation panels
+            // Recalculate right panel size to ensure total = 100
+            const rightSize = 100 - sidebarSize - fileSize - translationSize
+            layout = { sidebar: sidebarSize, file: fileSize, translation: translationSize, right: rightSize }
+          } else {
+            // Translation was not active - only sidebar, file, and right panels
+            layout = { sidebar: sidebarSize, file: fileSize, right: 100 - sidebarSize - fileSize }
+          }
+
           console.log('[MainLayout] Setting main group layout:', layout)
-          mainGroupRef.current.setLayout(layout as { [panelId: string]: number })
+          mainGroupRef.current.setLayout(layout)
         }
-        
+
         if (rightGroupRef.current) {
           rightGroupRef.current.setLayout({ ai: aiSize, note: noteSize })
         }
-        
+
         setPanelSizesRestored(true)
       }, 500)
       return () => clearTimeout(timer)
     }
-  }, [isHydrated, panelSizesRestored, isTranslationActive])
+  }, [isHydrated, panelSizesRestored])
   
   const previousFileRef = useRef<FileMetadata | null>(null)
   const previousClassroomStateRef = useRef<{ filePage: number; scrollPosition: number } | null>(null)

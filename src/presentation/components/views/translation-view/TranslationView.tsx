@@ -21,33 +21,32 @@ function TranslationView() {
     canStop,
   } = translationStore
   const currentFile = useFileStore((state) => state.currentFile)
-  const hasTranslatedRef = useRef(false)
   const [showErrorModal, setShowErrorModal] = useState(false)
   const [lastError, setLastError] = useState('')
   const llmPool = useLLMPoolStore()
 
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Translate when activated
+  // Translate when activated - use translatedPdfPath to determine if we need to translate
+  // This handles the case where translation is restored from session (translatedPdfPath might be cached)
   useEffect(() => {
     console.log('[TranslationView] Effect:', {
       isActive,
       currentFile: !!currentFile,
-      hasTranslated: hasTranslatedRef.current,
+      translatedPdfPath,
+      isTranslating,
     })
 
-    if (isActive && currentFile && !hasTranslatedRef.current) {
+    // Only translate if:
+    // 1. Translation is active
+    // 2. We have a current file
+    // 3. We don't already have a translated PDF (cached or new)
+    // 4. We're not currently translating
+    if (isActive && currentFile && !translatedPdfPath && !isTranslating) {
       console.log('[TranslationView] Calling translateAndPrefetch')
-      hasTranslatedRef.current = true
       handleTranslate()
     }
-
-    // Reset when deactivated
-    if (!isActive) {
-      console.log('[TranslationView] Deactivated, resetting')
-      hasTranslatedRef.current = false
-    }
-  }, [isActive, currentFile])
+  }, [isActive, currentFile, translatedPdfPath, isTranslating])
 
   const handleTranslate = async () => {
     try {
@@ -69,7 +68,6 @@ function TranslationView() {
         'Force retranslate? This will clear the cached translation and start over.'
       )
     ) {
-      hasTranslatedRef.current = false
       await forceRetranslate()
     }
   }

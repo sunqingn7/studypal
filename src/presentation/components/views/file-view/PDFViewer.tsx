@@ -71,24 +71,32 @@ function PDFViewer({ path, fileData, initialPage = 1, isTranslationView = false 
     loadMetadata()
   }, [path])
 
-  // Wrap setPageMode to save metadata
-  const setPageMode = useCallback((mode: PageMode) => {
-    setPageModeState(mode)
-    metadataStore.updateMetadata({ viewMode: mode })
-  }, [metadataStore])
+	// Wrap setPageMode to save metadata (only for original view)
+	const setPageMode = useCallback((mode: PageMode) => {
+		setPageModeState(mode)
+		if (!isTranslationView) {
+			metadataStore.updateMetadata({ viewMode: mode })
+		}
+	}, [metadataStore, isTranslationView])
 
-  const setCurrentPage = useCallback((page: number | ((prev: number) => number)) => {
-    if (typeof page === 'function') {
-      setCurrentPageState((prev) => {
-        const newPage = page(prev)
-        metadataStore.updateMetadata({ currentPage: newPage })
-        return newPage
-      })
-    } else {
-      metadataStore.updateMetadata({ currentPage: page })
-      setCurrentPageState(page)
-    }
-  }, [metadataStore])
+	const setCurrentPage = useCallback((page: number | ((prev: number) => number)) => {
+		if (typeof page === 'function') {
+			setCurrentPageState((prev) => {
+				const newPage = page(prev)
+				if (!isTranslationView) {
+					metadataStore.updateMetadata({ currentPage: newPage })
+				}
+				translationStore.setCurrentPage(newPage)
+				return newPage
+			})
+		} else {
+			if (!isTranslationView) {
+				metadataStore.updateMetadata({ currentPage: page })
+			}
+			translationStore.setCurrentPage(page)
+			setCurrentPageState(page)
+		}
+	}, [metadataStore, isTranslationView, translationStore])
 
   const getSecondPage = useCallback(() => {
     if (pageMode === 'double' && currentPage < totalPages) {
@@ -97,14 +105,7 @@ function PDFViewer({ path, fileData, initialPage = 1, isTranslationView = false 
     return null
   }, [currentPage, totalPages, pageMode])
 
-  // Sync page changes TO translation store (from any view to store)
-  useEffect(() => {
-    if (translationStore.isActive && !isSyncingRef.current) {
-      isSyncingRef.current = true
-      translationStore.setCurrentPage(currentPage)
-      setTimeout(() => { isSyncingRef.current = false }, 50)
-    }
-  }, [currentPage, translationStore.isActive])
+
 
   // Sync total pages to translation store
   useEffect(() => {
@@ -113,12 +114,12 @@ function PDFViewer({ path, fileData, initialPage = 1, isTranslationView = false 
     }
   }, [totalPages, isTranslationView, translationStore.isActive])
 
-  // Sync scale changes to translation store
-  useEffect(() => {
-    if (!isTranslationView && translationStore.isActive) {
-      translationStore.setScale(scale)
-    }
-  }, [scale, isTranslationView, translationStore.isActive])
+	// Sync scale changes to translation store (only from original view)
+	useEffect(() => {
+		if (!isTranslationView && translationStore.isActive) {
+			translationStore.setScale(scale)
+		}
+	}, [scale, isTranslationView, translationStore.isActive])
 
   // Sync page mode changes to translation store
   useEffect(() => {
@@ -127,86 +128,93 @@ function PDFViewer({ path, fileData, initialPage = 1, isTranslationView = false 
     }
   }, [pageMode, isTranslationView, translationStore.isActive])
 
-  // Listen for page changes FROM translation store
-  // This syncs the view when store changes (works for both original and translation views)
-  useEffect(() => {
-    // Update when store page differs from local page, preventing circular updates
-    if (translationStore.isActive && translationStore.currentPage !== currentPage && !isSyncingRef.current) {
-      isSyncingRef.current = true
-      setCurrentPageState(translationStore.currentPage)
-      setTimeout(() => { isSyncingRef.current = false }, 50)
-    }
-  }, [translationStore.currentPage, translationStore.isActive, currentPage])
+	// Listen for page changes FROM translation store - bidirectional sync
+	useEffect(() => {
+		if (!translationStore.isActive) return
+		if (translationStore.currentPage !== currentPage && !isSyncingRef.current) {
+			isSyncingRef.current = true
+			setCurrentPageState(translationStore.currentPage)
+			setTimeout(() => { isSyncingRef.current = false }, 50)
+		}
+	}, [translationStore.currentPage, translationStore.isActive, currentPage])
 
-  // Listen for scale changes FROM translation store
-  useEffect(() => {
-    if (translationStore.isActive && translationStore.scale !== scale && !isSyncingRef.current) {
-      isSyncingRef.current = true
-      setScale(translationStore.scale)
-      setTimeout(() => { isSyncingRef.current = false }, 50)
-    }
-  }, [translationStore.scale, translationStore.isActive, scale])
+	// Listen for scale changes FROM translation store (only for translation view)
+	useEffect(() => {
+		if (!isTranslationView) return
+		if (translationStore.isActive && translationStore.scale !== scale && !isSyncingRef.current) {
+			isSyncingRef.current = true
+			setScale(translationStore.scale)
+			setTimeout(() => { isSyncingRef.current = false }, 50)
+		}
+	}, [translationStore.scale, translationStore.isActive, scale, isTranslationView])
 
-  // Listen for page mode changes FROM translation store
-  useEffect(() => {
-    if (translationStore.isActive && translationStore.pageMode !== pageMode && !isSyncingRef.current) {
-      isSyncingRef.current = true
-      setPageModeState(translationStore.pageMode)
-      setTimeout(() => { isSyncingRef.current = false }, 50)
-    }
-  }, [translationStore.pageMode, translationStore.isActive, pageMode])
+	// Listen for page mode changes FROM translation store (only for translation view)
+	useEffect(() => {
+		if (!isTranslationView) return
+		if (translationStore.isActive && translationStore.pageMode !== pageMode && !isSyncingRef.current) {
+			isSyncingRef.current = true
+			setPageModeState(translationStore.pageMode)
+			setTimeout(() => { isSyncingRef.current = false }, 50)
+		}
+	}, [translationStore.pageMode, translationStore.isActive, pageMode, isTranslationView])
 
-  const renderPage = useCallback(async (pageNum: number, canvas: HTMLCanvasElement | null) => {
-    if (!pdf || !canvas) return
+	const renderPage = useCallback(async (pageNum: number, canvas: HTMLCanvasElement | null) => {
+		if (!pdf || !canvas) return
 
-    // Cancel any existing render task for this page
-    const existingTask = renderTasksRef.current.get(pageNum)
-    if (existingTask) {
-      existingTask.cancel()
-      renderTasksRef.current.delete(pageNum)
-    }
+		const existingTask = renderTasksRef.current.get(pageNum)
+		if (existingTask) {
+			existingTask.cancel()
+			renderTasksRef.current.delete(pageNum)
+		}
 
-    try {
-      const page = await pdf.getPage(pageNum)
-      const viewport = page.getViewport({ scale })
-      const context = canvas.getContext('2d')
+		let cancelled = false
+		const cancelFn = () => { cancelled = true }
+		renderTasksRef.current.set(pageNum, { cancel: cancelFn })
 
-      if (!context) return
+		try {
+			const page = await pdf.getPage(pageNum)
+			if (cancelled) return
 
-      canvas.height = viewport.height
-      canvas.width = viewport.width
+			const viewport = page.getViewport({ scale })
+			const context = canvas.getContext('2d')
 
-      const renderContext = {
-        canvasContext: context,
-        viewport: viewport,
-        canvas: canvas,
-      }
+			if (!context || cancelled) return
 
-      const renderTask = page.render(renderContext)
-      
-      // Store the render task so we can cancel it if needed
-      renderTasksRef.current.set(pageNum, {
-        cancel: () => renderTask.cancel()
-      })
+			canvas.height = viewport.height
+			canvas.width = viewport.width
 
-      await renderTask.promise
-      
-      // Remove the task after completion
-      renderTasksRef.current.delete(pageNum)
+			const renderContext = {
+				canvasContext: context,
+				viewport: viewport,
+				canvas: canvas,
+			}
 
-      // Render text layer
-      const textLayerDiv = textLayerRefs.current.get(pageNum)
-      if (textLayerDiv) {
-        renderTextLayer(textLayerDiv, page)
-      }
-    } catch (err) {
-      // Don't log cancellation errors as they're expected
-      if (err instanceof Error && err.message.includes('Rendering cancelled')) {
-        return
-      }
-      console.error(`Error rendering page ${pageNum}:`, err)
-    }
-  }, [pdf, scale])
+			const renderTask = page.render(renderContext)
+
+			renderTasksRef.current.set(pageNum, {
+				cancel: () => {
+					cancelled = true
+					renderTask.cancel()
+				}
+			})
+
+			await renderTask.promise
+
+			if (cancelled) return
+
+			renderTasksRef.current.delete(pageNum)
+
+			const textLayerDiv = textLayerRefs.current.get(pageNum)
+			if (textLayerDiv && !cancelled) {
+				renderTextLayer(textLayerDiv, page)
+			}
+		} catch (err) {
+			if (err instanceof Error && err.message.includes('Rendering cancelled')) {
+				return
+			}
+			console.error(`Error rendering page ${pageNum}:`, err)
+		}
+	}, [pdf, scale])
 
 const renderTextLayer = async (container: HTMLDivElement, page: pdfjsLib.PDFPageProxy) => {
   container.innerHTML = ''
@@ -448,28 +456,32 @@ useEffect(() => {
     const currentScroll = container.scrollTop
     
     // Only scroll if difference is significant (> 5px)
-    if (Math.abs(targetScroll - currentScroll) > 5) {
+    if (Math.abs(targetScroll - currentScroll) > 5 && !isSyncingRef.current) {
       isSyncingRef.current = true
       container.scrollTop = targetScroll
       setTimeout(() => { isSyncingRef.current = false }, 50)
     }
   }, [translationStore.scrollPercent, translationStore.isActive, isTranslationView])
 
-  const zoomIn = () => {
-    setScale((prev) => {
-      const newScale = Math.min(3, prev + 0.2)
-      metadataStore.updateMetadata({ scale: newScale })
-      return newScale
-    })
-  }
+	const zoomIn = () => {
+		setScale((prev) => {
+			const newScale = Math.min(3, prev + 0.2)
+			if (!isTranslationView) {
+				metadataStore.updateMetadata({ scale: newScale })
+			}
+			return newScale
+		})
+	}
 
-  const zoomOut = () => {
-    setScale((prev) => {
-      const newScale = Math.max(0.5, prev - 0.2)
-      metadataStore.updateMetadata({ scale: newScale })
-      return newScale
-    })
-  }
+	const zoomOut = () => {
+		setScale((prev) => {
+			const newScale = Math.max(0.5, prev - 0.2)
+			if (!isTranslationView) {
+				metadataStore.updateMetadata({ scale: newScale })
+			}
+			return newScale
+		})
+	}
 
   if (loading) {
     return (
