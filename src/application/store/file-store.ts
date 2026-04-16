@@ -345,12 +345,19 @@ export const useFileStore = create<FileStore>((set, get) => ({
               noteStoreActions.createTabForNote(note.id, note.title);
             });
           });
-        } else {
-          const noteStoreActions = useNoteStore.getState();
-          noteStoreActions.clear();
-          await new Promise(resolve => setTimeout(resolve, 10));
-          noteStoreActions.addTab(null, 'Note-1');
-        }
+  } else {
+    // No notes from files - only create default if store is truly empty
+    const noteStoreActions = useNoteStore.getState();
+    const hasExistingNotes = noteStoreActions.globalNotes.length > 0 || noteStoreActions.topicNotes.size > 0;
+
+    if (!hasExistingNotes) {
+      noteStoreActions.clear();
+      await new Promise(resolve => setTimeout(resolve, 10));
+      noteStoreActions.addTab(null, 'Note-1');
+    } else {
+      console.log('[FileStore] loadDocumentState: Keeping existing notes, not creating default');
+    }
+  }
 
         // ===== LOAD CHATS INTO STORE =====
         
@@ -470,14 +477,20 @@ export const useFileStore = create<FileStore>((set, get) => ({
         notesFromFiles.forEach((note: any) => {
           noteStoreActions.createTabForNote(note.id, note.title);
         });
-      } else {
-        // Create default system note if none exists
-        const noteStoreActions = useNoteStore.getState();
-        if (noteStoreActions.globalNotes.length === 0) {
-          noteStoreActions.createNote(null, 'System Note', 'note');
-          noteStoreActions.addTab(null, 'System Note');
-        }
-      }
+  } else {
+    // No notes from files - only clear if store is already empty to avoid losing data
+    const noteStoreActions = useNoteStore.getState();
+    const hasExistingNotes = noteStoreActions.globalNotes.length > 0 || noteStoreActions.topicNotes.size > 0;
+
+    if (!hasExistingNotes) {
+      // Only clear and create default if truly empty
+      noteStoreActions.clear();
+      await new Promise(resolve => setTimeout(resolve, 10));
+      noteStoreActions.addTab(null, 'Note-1');
+    } else {
+      console.log('[FileStore] loadSystemState: Keeping existing notes, not creating default');
+    }
+  }
     } catch (e) {
       console.error('[FileStore] Error loading system state:', e);
     }
