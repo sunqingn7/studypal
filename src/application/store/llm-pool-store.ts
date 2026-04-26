@@ -287,27 +287,28 @@ export const useLLMPoolStore = create<LLMPoolState>()(
           const task = state.runningTasks.find((t) => t.id === taskId)
           if (!task) return state
 
-          // Check if we should retry
-          if (task.retryCount < task.maxRetries) {
-            const retryTask: TrackedTask = {
-              ...task,
-              status: 'retrying',
-              retryCount: task.retryCount + 1,
-            }
+      // Check if we should retry
+      if (task.retryCount < task.maxRetries) {
+        const retryTask: TrackedTask = {
+          ...task,
+          status: 'retrying',
+          retryCount: task.retryCount + 1,
+        }
 
-            // Update provider current tasks
-            const updatedProviders = state.providers.map((p) =>
-              p.id === task.assignedProviderId
-                ? { ...p, currentTasks: Math.max(0, p.currentTasks - 1) }
-                : p
-            )
+        // Update provider current tasks and failure count
+        const assignedProviderId = task.assignedProviderId
+        const updatedProviders = state.providers.map((p) =>
+          p.id === assignedProviderId
+            ? { ...p, currentTasks: Math.max(0, p.currentTasks - 1), failureCount: p.failureCount + 1 }
+            : p
+        )
 
-            return {
-              runningTasks: state.runningTasks.filter((t) => t.id !== taskId),
-              pendingTasks: [retryTask, ...state.pendingTasks],
-              providers: updatedProviders,
-            }
-          }
+        return {
+          runningTasks: state.runningTasks.filter((t) => t.id !== taskId),
+          pendingTasks: [retryTask, ...state.pendingTasks],
+          providers: updatedProviders,
+        }
+      }
 
           // Max retries reached, mark as failed
           const failedTask: TrackedTask = {

@@ -263,20 +263,30 @@ export class OpenAIProvider implements AIProvider {
           onChunk(event.payload.content)
         }
 
-        if (event.payload.thinking && onToolCall) {
-          try {
-            const parsed = JSON.parse(event.payload.thinking)
-            if (parsed.type === 'tool_call' && parsed.data) {
-              const tc = parsed.data
-              onToolCall({
-                name: tc.function?.name || '',
-                arguments: JSON.parse(tc.function?.arguments || '{}'),
-              })
+    if (event.payload.thinking && onToolCall) {
+      try {
+        const parsed = JSON.parse(event.payload.thinking)
+        if (parsed.type === 'tool_call' && parsed.data) {
+          const tc = parsed.data
+          let args: Record<string, unknown> = {}
+          if (tc.function?.arguments) {
+            try {
+              args = JSON.parse(tc.function.arguments)
+            } catch (e) {
+              console.error('[openai-provider] Failed to parse tool arguments:', e)
+              args = {}
             }
-          } catch {
-            // Not a tool call JSON
           }
+          onToolCall({
+            name: tc.function?.name || '',
+            arguments: args,
+          })
         }
+      } catch (e) {
+        // Not a tool call JSON
+        console.debug('[openai-provider] Skipping non-tool-call thinking payload')
+      }
+    }
       })
 
       await invoke<void>('stream_chat_with_tools', { request: payloadWithStream, provider: 'openai' })

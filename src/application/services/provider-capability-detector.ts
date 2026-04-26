@@ -40,7 +40,7 @@ function inferFromModelName(providerType: string, model: string): Partial<Provid
 
 async function probeProvider(
   provider: PoolProvider,
-  configOverride?: Partial<AIConfig>
+  configOverride?: Partial<AIConfig> & { signal?: AbortSignal }
 ): Promise<ProviderCapabilities | null> {
   const aiProvider = getProvider(provider.config.provider)
   if (!aiProvider) return null
@@ -50,6 +50,11 @@ async function probeProvider(
 
   // Infer base capabilities from model name
   const baseCaps = inferFromModelName(provider.config.provider, model)
+
+  // Check if probe was aborted
+  if (configOverride?.signal?.aborted) {
+    throw new Error('Capability detection aborted')
+  }
 
   // Probe for streaming support
   let streamingWorks = false
@@ -69,6 +74,11 @@ async function probeProvider(
       streamingWorks = false
     } finally {
       clearTimeout(timeoutId)
+    }
+
+    // Check abort again after probe
+    if (configOverride?.signal?.aborted) {
+      throw new Error('Capability detection aborted')
     }
   }
 
@@ -113,13 +123,25 @@ export async function detectProviderCapabilities(
     }
   }
 
+  // Create timeout controller
+  const timeoutController = new AbortController()
+  const timeoutId = setTimeout(() => {
+    timeoutController.abort()
+  }, DETECTION_TIMEOUT)
+
   try {
     const caps = await Promise.race([
-      probeProvider(provider),
-      new Promise<null>((_, reject) =>
-        setTimeout(() => reject(new Error('Capability detection timeout')), DETECTION_TIMEOUT)
-      ),
+      probeProvider(provider, { signal: timeoutController.signal }),
+      new Promise<null>((_, reject) => {
+        const checkInterval = setInterval(() => {
+          if (timeoutController.signal.aborted) {
+            clearInterval(checkInterval)
+            reject(new Error('Capability detection timeout'))
+          }
+        }, 100)
+      }),
     ])
+    clearTimeout(timeoutId)
     return caps
   } catch (error) {
     console.warn(`[CapabilityDetector] Failed to detect capabilities for ${provider.name}:`, error)

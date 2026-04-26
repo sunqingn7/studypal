@@ -64,7 +64,8 @@ export class AnthropicProvider implements AIProvider {
   async streamChat(
     messages: ChatMessage[],
     config: AIConfig,
-    onChunk: (chunk: string) => void | Promise<void>
+    onChunk: (chunk: string) => void | Promise<void>,
+    signal?: AbortSignal
   ): Promise<void> {
     const payload: ChatRequestPayload = {
       endpoint: config.endpoint,
@@ -89,18 +90,27 @@ export class AnthropicProvider implements AIProvider {
       const streamId = `anthropic-stream-${crypto.randomUUID()}`
       const payloadWithStream = { ...payload, streamEvent: streamId }
 
-      unlisten = await listen<StreamChunkData>(streamId, (event) => {
-        if (event.payload.done) {
-          return
-        }
+    unlisten = await listen<StreamChunkData>(streamId, (event) => {
+      if (event.payload.done) {
+        return
+      }
 
-        if (event.payload.content) {
-          fullContent += event.payload.content
-          onChunk(event.payload.content)
+      if (event.payload.content) {
+        fullContent += event.payload.content
+        onChunk(event.payload.content)
+      }
+    })
+
+    if (signal) {
+      signal.addEventListener('abort', () => {
+        if (unlisten) {
+          unlisten()
+          unlisten = null
         }
       })
+    }
 
-      await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'anthropic' })
+    await invoke<void>('stream_chat_with_provider', { request: payloadWithStream, provider: 'anthropic' })
     } catch (error) {
       console.error('[anthropic-provider] streamChat error:', error)
       throw error
@@ -209,10 +219,21 @@ export class AnthropicProvider implements AIProvider {
         }>
       }>('chat_with_tools', { request: payload, provider: 'anthropic' })
 
-      const toolCalls: ToolCall[] = (result.tool_calls || []).map((tc) => ({
-        name: tc.function.name,
-        arguments: JSON.parse(tc.function.arguments || '{}'),
-      }))
+    const toolCalls: ToolCall[] = (result.tool_calls || []).map((tc) => {
+      let args: Record<string, unknown> = {}
+      if (tc.function?.arguments) {
+        try {
+          args = JSON.parse(tc.function.arguments)
+        } catch (e) {
+          console.error('[anthropic-provider] Failed to parse tool arguments:', e)
+          args = {}
+        }
+      }
+      return {
+        name: tc.function?.name || '',
+        arguments: args,
+      }
+    })
 
       return {
         content: result.content || '',
@@ -265,20 +286,32 @@ export class AnthropicProvider implements AIProvider {
           onChunk(event.payload.content)
         }
 
-        if (event.payload.thinking && onToolCall) {
-          try {
-            const parsed = JSON.parse(event.payload.thinking)
-            if (parsed.type === 'tool_call' && parsed.data) {
-              const tc = parsed.data
-              onToolCall({
-                name: tc.name || '',
-                arguments: typeof tc.input === 'object' ? tc.input : JSON.parse(tc.input || '{}'),
-              })
+    if (event.payload.thinking && onToolCall) {
+      try {
+        const parsed = JSON.parse(event.payload.thinking)
+        if (parsed.type === 'tool_call' && parsed.data) {
+          const tc = parsed.data
+          let args: Record<string, unknown> = {}
+          if (typeof tc.input === 'object' && tc.input !== null) {
+            args = tc.input
+          } else if (typeof tc.input === 'string') {
+            try {
+              args = JSON.parse(tc.input || '{}')
+            } catch (e) {
+              console.error('[anthropic-provider] Failed to parse tool arguments:', e)
+              args = {}
             }
-          } catch {
-            // Not a tool call JSON
           }
+          onToolCall({
+            name: tc.name || '',
+            arguments: args,
+          })
         }
+      } catch (e) {
+        // Not a tool call JSON
+        console.debug('[anthropic-provider] Skipping non-tool-call thinking payload')
+      }
+    }
       })
 
       await invoke<void>('stream_chat_with_tools', { request: payloadWithStream, provider: 'anthropic' })
