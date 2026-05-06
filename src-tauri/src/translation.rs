@@ -3,13 +3,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::fs;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TranslateRequest {
-    input_path: String,
-    source_lang: String,
-    target_lang: String,
-    pages: Option<Vec<i32>>,
-}
+// Note: TranslateRequest is kept for future API compatibility
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TranslateResponse {
@@ -68,7 +62,7 @@ pub async fn translate_document(
     input_path: String,
     source_lang: String,
     target_lang: String,
-    pages: Option<Vec<i32>>,
+    _pages: Option<Vec<i32>>,
 ) -> Result<TranslateResponse, String> {
     log::info!("[translate_document] Starting translation: {} -> {}", source_lang, target_lang);
     
@@ -124,11 +118,11 @@ pub async fn translate_document(
                 if output.status.success() {
                     log::info!("[translate_document] Translation completed successfully");
                     
-                    // Try to find the output file
-                    if dual_path.exists() {
-                        dual_path.clone()
-                    } else if mono_path.exists() {
+                    // Try to find the output file - prefer mono, then dual
+                    if mono_path.exists() {
                         mono_path.clone()
+                    } else if dual_path.exists() {
+                        dual_path.clone()
                     } else {
                         return Ok(TranslateResponse {
                             success: false,

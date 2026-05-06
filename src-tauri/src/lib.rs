@@ -450,8 +450,8 @@ async fn chat_with_tools_openai_compatible(
     // Extract content and tool calls from response
     let mut output = serde_json::Map::new();
     
-    if let Some(Choice) = result.get("choices").and_then(|c| c.as_array()) {
-        if let Some(first_choice) = Choice.first() {
+    if let Some(choice) = result.get("choices").and_then(|c| c.as_array()) {
+        if let Some(first_choice) = choice.first() {
             if let Some(message) = first_choice.get("message") {
                 if let Some(content) = message.get("content").and_then(|c| c.as_str()) {
                     output.insert("content".to_string(), serde_json::json!(content));

@@ -104,11 +104,25 @@ export const useDocumentMetadataStore = create<DocumentMetadataStore>()(
           }
 
           set((state) => ({
-            currentMetadata: defaultMetadata,
-            metadataCache: new Map(state.metadataCache).set(documentPath, defaultMetadata),
-          }))
+             currentMetadata: defaultMetadata,
+             metadataCache: new Map(state.metadataCache).set(documentPath, defaultMetadata),
+           }))
 
-          return defaultMetadata
+           // Save default metadata to database
+           await invoke('save_document_metadata', { metadata: {
+             id: defaultMetadata.id,
+             document_path: defaultMetadata.documentPath,
+             chat_id: defaultMetadata.chatId,
+             view_mode: defaultMetadata.viewMode,
+             scale: defaultMetadata.scale,
+             current_page: defaultMetadata.currentPage,
+             scroll_position: defaultMetadata.scrollPosition,
+             settings_json: JSON.stringify(defaultMetadata.settings),
+             created_at: defaultMetadata.createdAt,
+             updated_at: defaultMetadata.updatedAt,
+           }})
+
+           return defaultMetadata
         } catch (e) {
           console.error('[DocumentMetadata] Error loading metadata:', e)
           return null
@@ -120,7 +134,7 @@ export const useDocumentMetadataStore = create<DocumentMetadataStore>()(
           const { invoke } = await import('@tauri-apps/api/core')
 
           const now = Date.now()
-          const existing = get().metadataCache.get(metadata.documentPath)
+          const existing = get().metadataCache.get(metadata.documentPath) || get().currentMetadata
           
           // Skip if page is already the same (avoid unnecessary writes)
           if (existing && existing.currentPage === metadata.currentPage && metadata.currentPage !== undefined) {
