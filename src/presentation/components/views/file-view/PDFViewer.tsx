@@ -71,13 +71,16 @@ function PDFViewer({ path, fileData, initialPage = 1, isTranslationView = false 
     loadMetadata()
   }, [path])
 
-	// Wrap setPageMode to save metadata (only for original view)
-	const setPageMode = useCallback((mode: PageMode) => {
-		setPageModeState(mode)
-		if (!isTranslationView) {
-			metadataStore.updateMetadata({ viewMode: mode })
-		}
-	}, [metadataStore, isTranslationView])
+  // Wrap setPageMode to save metadata (only for original view) and sync to translation store
+  const setPageMode = useCallback((mode: PageMode) => {
+    setPageModeState(mode)
+    if (!isTranslationView) {
+      metadataStore.updateMetadata({ viewMode: mode })
+    } else if (translationStore.isActive) {
+      // Sync page mode to translation store when in translation view
+      translationStore.setPageMode(mode)
+    }
+  }, [metadataStore, isTranslationView, translationStore])
 
 	const setCurrentPage = useCallback((page: number | ((prev: number) => number)) => {
 		if (typeof page === 'function') {
@@ -463,25 +466,31 @@ useEffect(() => {
     }
   }, [translationStore.scrollPercent, translationStore.isActive, isTranslationView])
 
-	const zoomIn = () => {
-		setScale((prev) => {
-			const newScale = Math.min(3, prev + 0.2)
-			if (!isTranslationView) {
-				metadataStore.updateMetadata({ scale: newScale })
-			}
-			return newScale
-		})
-	}
+  const zoomIn = () => {
+    setScale((prev) => {
+      const newScale = Math.min(3, prev + 0.2)
+      if (!isTranslationView) {
+        metadataStore.updateMetadata({ scale: newScale })
+      } else if (translationStore.isActive) {
+        // Update translation store when zooming in translation view
+        translationStore.setScale(newScale)
+      }
+      return newScale
+    })
+  }
 
-	const zoomOut = () => {
-		setScale((prev) => {
-			const newScale = Math.max(0.5, prev - 0.2)
-			if (!isTranslationView) {
-				metadataStore.updateMetadata({ scale: newScale })
-			}
-			return newScale
-		})
-	}
+  const zoomOut = () => {
+    setScale((prev) => {
+      const newScale = Math.max(0.5, prev - 0.2)
+      if (!isTranslationView) {
+        metadataStore.updateMetadata({ scale: newScale })
+      } else if (translationStore.isActive) {
+        // Update translation store when zooming in translation view
+        translationStore.setScale(newScale)
+      }
+      return newScale
+    })
+  }
 
   if (loading) {
     return (
