@@ -76,12 +76,11 @@ const formatTime = (timestamp: number): string => {
   return date.toLocaleDateString();
 };
 
-const pendingFileOpens = new Set<string>();
-
 export const HistoryView: React.FC = () => {
   const [fileHistory, setFileHistory] = useState<FileHistoryItem[]>([]);
   const { getFileHistory, clearFileHistory } = useSessionStore();
   const isProcessingRef = useRef(false);
+  const pendingFileOpensRef = useRef(new Set<string>());
 
   useEffect(() => {
     const history = getFileHistory();
@@ -90,11 +89,11 @@ export const HistoryView: React.FC = () => {
   }, [getFileHistory]);
 
   const handleFileClick = async (filePath: string) => {
-    if (pendingFileOpens.has(filePath)) {
+    if (pendingFileOpensRef.current.has(filePath)) {
       return;
     }
 
-    pendingFileOpens.add(filePath);
+    pendingFileOpensRef.current.add(filePath);
 
     try {
       const fileInfo = await invoke("open_file_from_browser", { filePath });
@@ -109,7 +108,7 @@ export const HistoryView: React.FC = () => {
       console.error("Error opening file from history:", err);
     } finally {
       setTimeout(() => {
-        pendingFileOpens.delete(filePath);
+        pendingFileOpensRef.current.delete(filePath);
       }, 500);
     }
   };
@@ -117,9 +116,8 @@ export const HistoryView: React.FC = () => {
   const handleNewSession = (e?: React.MouseEvent) => {
     e?.preventDefault();
     e?.stopPropagation();
-    console.log("[HistoryView] handleNewSession called");
+
     if (isProcessingRef.current) {
-      console.log("[HistoryView] Already processing, returning");
       return;
     }
     isProcessingRef.current = true;
@@ -127,15 +125,12 @@ export const HistoryView: React.FC = () => {
     const confirmed = window.confirm(
       "Create a new session? This will clear the current document and notes.",
     );
-    console.log("[HistoryView] Confirm result:", confirmed);
+
     if (!confirmed) {
       isProcessingRef.current = false;
       return;
     }
 
-    console.log("[HistoryView] Proceeding to clear session");
-
-    // Use setTimeout to ensure this happens after the dialog closes
     setTimeout(() => {
       const fileStore = useFileStore.getState();
       const noteStoreActions = useNoteStore.getState();
