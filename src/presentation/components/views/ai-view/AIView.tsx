@@ -17,10 +17,11 @@ import { getProvider, AVAILABLE_PROVIDERS } from '../../../../infrastructure/ai-
 import { fetchAvailableModels, ModelInfo, getModelMaxTokens } from '../../../../infrastructure/ai-providers/model-detector'
 import { getCurrentPageText, getAllPagesText } from '../../../../infrastructure/file-handlers/pdf-utils'
 import { ChatMessage, AIProviderType } from '../../../../domain/models/ai-context'
+import { AIProvider } from '../../../../infrastructure/ai-providers/base-provider'
 import { updateAIConfig, updateProviderConfigs } from '../../../../application/services/session-manager'
 import { getAllMCPTools, executeMCPTool } from '../../../../infrastructure/ai-providers/mcp-utils'
 import { MCPTool } from '../../../../domain/models/plugin'
-import { buildToolPrompt, parseToolCalls } from '../../../../infrastructure/ai-providers/tool-calling'
+import { buildToolPrompt, parseToolCalls, ToolCall } from '../../../../infrastructure/ai-providers/tool-calling'
 import { getProviderColor } from '../../../../application/services/provider-colors'
 import { PERSONA_PROMPTS } from '../../../../domain/models/llm-pool'
 import { getRandomDiscussPrompt } from '../../../../domain/models/discuss-prompt'
@@ -816,7 +817,7 @@ ${personaPrompt.systemPrompt}`,
             const supportsThinking = 'streamChatWithThinking' in provider
 
             if (supportsToolCalling && mcpTools.length > 0) {
-              await (provider.streamChatWithTools as any)(
+              await (provider as AIProvider & Required<Pick<AIProvider, 'streamChatWithTools'>>).streamChatWithTools(
                 providerMessages,
                 providerConfig,
                 mcpTools,
@@ -834,10 +835,9 @@ ${personaPrompt.systemPrompt}`,
                     })
                   }
                 },
-                async (toolCall: { name: string; arguments: string }) => {
+                async (toolCall: ToolCall) => {
                   try {
-                    const args = JSON.parse(toolCall.arguments)
-                    const result = await executeMCPTool(toolCall.name, args)
+                    const result = await executeMCPTool(toolCall.name, toolCall.arguments)
                     // Append tool result to messages for next iteration
                     const toolResultMessage: ChatMessage = {
                       id: crypto.randomUUID(),
@@ -1007,7 +1007,7 @@ ${personaPrompt.systemPrompt}`,
       if (supportsToolCalling && mcpTools.length > 0) {
         // Use native function calling (for OpenAI, Anthropic, etc.)
         console.log('[AIView] Using native function calling')
-        await (provider.streamChatWithTools as any)(
+        await (provider as AIProvider & Required<Pick<AIProvider, 'streamChatWithTools'>>).streamChatWithTools(
           messagesWithTools,
           providerConfig,
           mcpTools,
@@ -1016,10 +1016,9 @@ ${personaPrompt.systemPrompt}`,
             const displayContent = localContent.replace(TOOL_CALL_REGEX, '')
             setStreamingContent(displayContent)
           },
-          async (toolCall: { name: string; arguments: string }) => {
+          async (toolCall: ToolCall) => {
             try {
-              const args = JSON.parse(toolCall.arguments)
-              const result = await executeMCPTool(toolCall.name, args)
+              const result = await executeMCPTool(toolCall.name, toolCall.arguments)
               messagesWithTools.push({
                 id: crypto.randomUUID(),
                 role: 'system',
@@ -1186,7 +1185,7 @@ ${personaPrompt.systemPrompt}`,
             const retrySupportsToolCalling = 'chatWithTools' in retryAIProvider && retryAIProvider.supportsNativeFunctionCalling?.()
 
             if (retrySupportsToolCalling && mcpTools.length > 0) {
-              await (retryAIProvider.streamChatWithTools as any)(
+              await (retryAIProvider as AIProvider & Required<Pick<AIProvider, 'streamChatWithTools'>>).streamChatWithTools(
                 messagesWithTools,
                 retryProviderConfig,
                 mcpTools,
@@ -1195,10 +1194,9 @@ ${personaPrompt.systemPrompt}`,
                   const displayContent = retryContent.replace(TOOL_CALL_REGEX, '')
                   setStreamingContent(displayContent)
                 },
-                async (toolCall: { name: string; arguments: string }) => {
+                async (toolCall: ToolCall) => {
                   try {
-                    const args = JSON.parse(toolCall.arguments)
-                    const result = await executeMCPTool(toolCall.name, args)
+                    const result = await executeMCPTool(toolCall.name, toolCall.arguments)
                     messagesWithTools.push({
                       id: crypto.randomUUID(),
                       role: 'system',

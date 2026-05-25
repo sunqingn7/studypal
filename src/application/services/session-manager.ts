@@ -48,7 +48,7 @@ export async function initializeSession(): Promise<void> {
       );
     } else {
       if (session.aiConfig?.provider) {
-        useAIChatStore.getState().switchProvider(session.aiConfig.provider as any);
+        useAIChatStore.getState().switchProvider(session.aiConfig.provider);
       }
     }
 

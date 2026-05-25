@@ -3,6 +3,7 @@ import { useClassroomStore } from '../../../../application/store/classroom-store
 import { useSettingsStore } from '../../../../application/store/settings-store'
 import { useLLMPoolStore } from '../../../../application/store/llm-pool-store'
 import { getProvider } from '../../../../infrastructure/ai-providers/provider-factory'
+import { AIProvider } from '../../../../infrastructure/ai-providers/base-provider'
 import { ChatMessage } from '../../../../domain/models/ai-context'
 import { PaperLink } from '../../views/ai-view/components/PaperLink'
 import ReactMarkdown from 'react-markdown'
@@ -161,7 +162,7 @@ ${contextParts.join('')}`,
       const supportsThinking = 'streamChatWithThinking' in provider
 
       if (supportsThinking) {
-        await (provider as any).streamChatWithThinking(
+        await (provider as AIProvider & Required<Pick<AIProvider, 'streamChatWithThinking'>>).streamChatWithThinking(
           messagesWithContext,
           providerConfig,
           (chunk: string) => {
