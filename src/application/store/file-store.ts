@@ -121,8 +121,8 @@ export const useFileStore = create<FileStore>((set, get) => ({
             content: note.content,
             noteType: note.type,
             topicId: note.topicId || null,
-            created_at: note.createdAt,
-            updated_at: note.updatedAt
+            created_at: note.createdAt || Date.now(),
+            updated_at: note.updatedAt || Date.now()
           });
 
         }

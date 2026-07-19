@@ -2132,8 +2132,8 @@ async fn read_file(file_path: String) -> Result<FileOpenResult, String> {
 
     let size = metadata.len();
 
-    // Read file content for files under 10MB
-    let content = if size < 10_000_000 {
+    // Read file content for files under 100MB
+    let content = if size < 100_000_000 {
         match fs::read(&path) {
             Ok(data) => Some(data),
             Err(e) => {

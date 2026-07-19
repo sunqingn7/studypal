@@ -84,6 +84,7 @@ function TranslationView() {
     try {
       await translateDocument(currentFile.path, 'en', 'zh', {
         retryProviderId: providerId,
+        useLlm: true,
       })
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
@@ -97,9 +98,9 @@ function TranslationView() {
     if (!currentFile) return
 
     try {
-      // Force use google by setting service to google in temporary request
       const result = await translateDocument(currentFile.path, 'en', 'zh', {
         forceRetranslate: true,
+        useLlm: false,
       })
       if (!result.success) {
         setLastError(result.error || 'Google translation failed')

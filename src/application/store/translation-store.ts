@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import { translateDocument, forceRetranslate as forceRetranslateService, stopTranslation as stopTranslationService } from '../services/translation-service';
+import { translateDocument, stopTranslation as stopTranslationService } from '../services/translation-service';
 import { useFileStore } from './file-store';
+import { useLLMPoolStore } from './llm-pool-store';
 
 export type Lang = 'en' | 'zh';
 
@@ -139,47 +140,99 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
       error: null,
     });
 
-    try {
-      // Translate the entire document (more efficient)
+    const tryTranslate = async (providerId?: string, useLlm?: boolean): Promise<string | null> => {
       const result = await translateDocument(
-        state.currentDocPath,
+        state.currentDocPath!,
         state.sourceLang,
         state.targetLang,
-        undefined // No page restriction - translate full doc
+        {
+          forceRetranslate: true,
+          retryProviderId: providerId,
+          useLlm,
+        }
       );
 
       if (result.success && result.output_paths.length > 0) {
-        const translatedPath = result.output_paths[0];
+        return result.output_paths[0];
+      }
+      return null;
+    };
 
+    try {
+      // Build list of fallback strategies
+      const llmPool = useLLMPoolStore.getState();
+      const enabledProviders = llmPool.providers.filter(p => p.isEnabled);
+      const primaryProvider = llmPool.getPrimaryProvider();
+      
+      // Collect provider IDs to try, primary first
+      const providerIds: string[] = [];
+      if (primaryProvider) {
+        providerIds.push(primaryProvider.id);
+      }
+      for (const p of enabledProviders) {
+        if (!providerIds.includes(p.id)) {
+          providerIds.push(p.id);
+        }
+      }
+
+      let translatedPath: string | null = null;
+
+      // Try each LLM provider in order
+      if (providerIds.length > 0) {
+        for (let i = 0; i < providerIds.length; i++) {
+          // Check if user stopped
+          if (!get().isTranslating) {
+            return null;
+          }
+
+          if (i === 0) {
+            // First provider: use default (no retryProviderId)
+            translatedPath = await tryTranslate(undefined, true);
+          } else {
+            console.log(`[TranslationStore] Falling back to provider: ${providerIds[i]}`);
+            translatedPath = await tryTranslate(providerIds[i], true);
+          }
+
+          if (translatedPath) break;
+        }
+      }
+
+      // If all LLM providers failed, fall back to Google Translate
+      if (!translatedPath) {
+        // Check if user stopped
+        if (!get().isTranslating) {
+          return null;
+        }
+
+        console.log('[TranslationStore] All LLM providers failed, falling back to Google Translate');
+        translatedPath = await tryTranslate(undefined, false);
+      }
+
+      if (translatedPath) {
         set({
           translatedPdfPath: translatedPath,
           isTranslating: false,
           canStop: false,
           error: null,
         });
-
         return translatedPath;
       } else {
-        const errorMsg = result.error || 'Translation failed';
-        console.error('[TranslationStore] Translation error:', errorMsg);
-
+        const errorMsg = 'All translation methods failed. Please check your provider configuration.';
+        console.error('[TranslationStore] All translation methods failed');
         set({
           isTranslating: false,
           canStop: false,
           error: errorMsg,
         });
-
         return null;
       }
     } catch (error) {
       console.error('[TranslationStore] Exception:', error);
-
       set({
         isTranslating: false,
         canStop: false,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-
       return null;
     }
   },
@@ -221,15 +274,59 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
       translatedPdfPath: null,
     });
 
-    try {
-      const result = await forceRetranslateService(
-        state.currentDocPath,
+    const tryTranslate = async (providerId?: string, useLlm?: boolean): Promise<string | null> => {
+      const result = await translateDocument(
+        state.currentDocPath!,
         state.sourceLang,
-        state.targetLang
+        state.targetLang,
+        {
+          forceRetranslate: true,
+          retryProviderId: providerId,
+          useLlm,
+        }
       );
-
       if (result.success && result.output_paths.length > 0) {
-        const translatedPath = result.output_paths[0];
+        return result.output_paths[0];
+      }
+      return null;
+    };
+
+    try {
+      const llmPool = useLLMPoolStore.getState();
+      const enabledProviders = llmPool.providers.filter(p => p.isEnabled);
+      const primaryProvider = llmPool.getPrimaryProvider();
+
+      const providerIds: string[] = [];
+      if (primaryProvider) {
+        providerIds.push(primaryProvider.id);
+      }
+      for (const p of enabledProviders) {
+        if (!providerIds.includes(p.id)) {
+          providerIds.push(p.id);
+        }
+      }
+
+      let translatedPath: string | null = null;
+
+      if (providerIds.length > 0) {
+        for (let i = 0; i < providerIds.length; i++) {
+          if (!get().isTranslating) return;
+
+          if (i === 0) {
+            translatedPath = await tryTranslate(undefined, true);
+          } else {
+            translatedPath = await tryTranslate(providerIds[i], true);
+          }
+          if (translatedPath) break;
+        }
+      }
+
+      if (!translatedPath) {
+        if (!get().isTranslating) return;
+        translatedPath = await tryTranslate(undefined, false);
+      }
+
+      if (translatedPath) {
         set({
           translatedPdfPath: translatedPath,
           isTranslating: false,
@@ -237,12 +334,10 @@ export const useTranslationStore = create<TranslationState>((set, get) => ({
           error: null,
         });
       } else {
-        const errorMsg = result.error || 'Force retranslate failed';
-        console.error('[TranslationStore] Force retranslate error:', errorMsg);
         set({
           isTranslating: false,
           canStop: false,
-          error: errorMsg,
+          error: 'All translation methods failed. Please check your provider configuration.',
         });
       }
     } catch (error) {

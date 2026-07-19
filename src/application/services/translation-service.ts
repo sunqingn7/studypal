@@ -164,12 +164,13 @@ export async function translateDocument(
     pages?: number[];
     forceRetranslate?: boolean;
     retryProviderId?: string;
+    useLlm?: boolean;
   }
 ): Promise<TranslateResponse> {
   const settings = useSettingsStore.getState().global.translation;
   
-  // Determine if we should use LLM
-  let useLLM = settings.service !== 'google';
+  // Determine if we should use LLM (options override settings)
+  let useLLM = options?.useLlm ?? settings.service !== 'google';
   let providerConfig: TranslationProviderConfig | undefined = undefined;
   
   if (useLLM) {
@@ -229,14 +230,13 @@ export async function translateDocument(
   }
 }
 
-/**
- * Stop running translation
- * Note: Currently not implemented. Returns false.
- * TODO: Implement with tokio::process async process management in Rust
- */
 export async function stopTranslation(): Promise<boolean> {
-  console.log('[TranslationService] Stop translation not yet implemented');
-  return false;
+  try {
+    return await invoke<boolean>('stop_translation');
+  } catch (error) {
+    console.error('[TranslationService] Failed to stop translation:', error);
+    return false;
+  }
 }
 
 /**
