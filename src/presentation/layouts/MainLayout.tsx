@@ -7,7 +7,6 @@ import { useAIChatStore } from '../../application/store/ai-chat-store'
 import { useThemeStore } from '../../application/store/theme-store'
 import { useSessionStore } from '../../application/store/session-store'
 import { useSettingsStore } from '../../application/store/settings-store'
-import { useAIStore } from '../../application/store/ai-store'
 import { initializeSession, updateAIConfig } from '../../application/services/session-manager'
 import { pluginRegistry } from '../../infrastructure/plugins/plugin-registry'
 import { SidebarTabs } from '../../plugins/file-browser-view/SidebarTabs'
@@ -389,15 +388,6 @@ function MainLayout() {
       updateAIConfig(aiConfig)
     }
   }, [aiConfig])
-
-  // Save AI chat history when it changes
-  const chatHistory = useAIStore((state) => state.chatHistory)
-  useEffect(() => {
-    if (isHydrated && chatHistory.length > 0) {
-      console.log('[MainLayout] Saving chat history to session, length:', chatHistory.length)
-      useSessionStore.getState().setChatHistory(chatHistory)
-    }
-  }, [chatHistory, isHydrated])
 
   const handleThemeToggle = () => {
     const newTheme = theme === 'light' ? 'dark' : 'light'

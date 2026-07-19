@@ -206,7 +206,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
         
         // ===== MIGRATION: Notes from sessionStorage to Markdown files =====
         if (hasSessionNotes) {
-          const noteData = hasSessionNotes as any;
+          const noteData = hasSessionNotes;
           const sessionNoteIds = new Set<string>();
           
           // Collect all note IDs from session
@@ -276,7 +276,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
         if ((chatData.length === 0 || (chatData.length > 0 && chatData.every(tab => !tab.messages || tab.messages.length === 0))) && hasSessionChats) {
           try {
             const { invoke } = await import('@tauri-apps/api/core');
-            const chatDataSession = hasSessionChats as any;
+            const chatDataSession = hasSessionChats;
             
             if (chatDataSession.tabs && chatDataSession.tabs.length > 0) {
               const chatTabsToSave = chatDataSession.tabs.map((tab: any) => ({

@@ -343,7 +343,7 @@ async fn chat_with_provider(
     match provider.as_str() {
         "anthropic" => chat_with_anthropic(&client, &request).await,
         "gemini" => chat_with_gemini(&client, &request).await,
-        "openai" | "vllm" | "llamacpp" | "ollama" | "nvidia" | "openrouter" => {
+        "openai" | "vllm" | "llamacpp" | "ollama" | "nvidia" | "openrouter" | "custom" => {
             // These providers use OpenAI-compatible format
             chat_with_openai_compatible(&client, &request).await
         }
@@ -370,7 +370,7 @@ async fn stream_chat_with_provider(
     let result = match provider.as_str() {
         "anthropic" => stream_chat_with_anthropic(&app_handle, &client, &request, &stream_event).await,
         "gemini" => stream_chat_with_gemini(&app_handle, &client, &request, &stream_event).await,
-        "openai" | "vllm" | "llamacpp" | "ollama" | "nvidia" | "openrouter" => {
+        "openai" | "vllm" | "llamacpp" | "ollama" | "nvidia" | "openrouter" | "custom" => {
             stream_chat_with_openai_compatible(&app_handle, &client, &request, &stream_event).await
         }
         _ => Err(format!("Unknown provider: {}", provider)),
@@ -402,7 +402,7 @@ async fn chat_with_tools(
     match provider.as_str() {
         "anthropic" => chat_with_tools_anthropic(&client, &request).await,
         "gemini" => chat_with_tools_gemini(&client, &request).await,
-        "openai" | "vllm" | "ollama" | "nvidia" | "openrouter" => {
+        "openai" | "vllm" | "llamacpp" | "ollama" | "nvidia" | "openrouter" | "custom" => {
             chat_with_tools_openai_compatible(&client, &request).await
         }
         _ => Err(format!("Unknown provider for tool calling: {}", provider)),
@@ -745,7 +745,7 @@ async fn stream_chat_with_tools(
     let result = match provider.as_str() {
         "anthropic" => stream_chat_with_tools_anthropic(&app_handle, &client, &request, &stream_event).await,
         "gemini" => stream_chat_with_tools_gemini(&app_handle, &client, &request, &stream_event).await,
-        "openai" | "vllm" | "ollama" | "nvidia" | "openrouter" => {
+        "openai" | "vllm" | "llamacpp" | "ollama" | "nvidia" | "openrouter" | "custom" => {
             stream_chat_with_tools_openai_compatible(&app_handle, &client, &request, &stream_event).await
         }
         _ => Err(format!("Unknown provider for tool calling: {}", provider)),
